@@ -460,7 +460,7 @@ struct
     sort l
 end
 
-type constraint_type = AcyclicGraph.constraint_type = Lt | Le | Eq
+type constraint_type = Loop_checking.constraint_type = Lt | Le | Eq
 
 let constraint_type_ord c1 c2 = match c1, c2 with
 | Lt, Lt -> 0

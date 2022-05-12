@@ -17,6 +17,8 @@ open UVars
 
 module UnivFlex = UnivFlex
 
+let _debug_ustate_flag, debug = CDebug.create_full ~name:"ustate" ()
+
 type universes_entry =
 | Monomorphic_entry of Univ.ContextSet.t
 | Polymorphic_entry of UVars.UContext.t
@@ -663,6 +665,36 @@ let process_universe_constraints uctx cstrs =
   let local = UnivProblem.Set.fold unify_universes cstrs local in
   let extra = { UnivMinim.above_prop = local.local_above_prop; UnivMinim.weak_constraints = local.local_weak } in
   !vars, extra, local.local_cst, local.local_sorts
+
+let process_universe_constraints uctx cstrs =
+  debug Pp.(fun () -> str"Calling process_universe_constraints");
+  try let res = process_universe_constraints uctx cstrs in
+    debug Pp.(fun () -> str"process_universe_constraint terminated");
+    res
+  with Stack_overflow ->
+    CErrors.anomaly (Pp.str "process_universe_constraint raised a stack overflow")
+
+
+let add_constraints uctx cstrs =
+  let univs, old_cstrs = uctx.local in
+  let cstrs' = Constraints.fold (fun (l,d,r) acc ->
+    let l = Universe.make l and r = Sorts.sort_of_univ @@ Universe.make r in
+    let cstr' = let open UnivProblem in
+      match d with
+      | Lt ->
+        ULe (Sorts.sort_of_univ @@ Universe.super l, r)
+      | Le -> ULe (Sorts.sort_of_univ l, r)
+      | Eq -> UEq (Sorts.sort_of_univ l, r)
+    in UnivProblem.Set.add cstr' acc)
+    cstrs UnivProblem.Set.empty
+  in
+  let vars, extra, cstrs', sorts = process_universe_constraints uctx cstrs' in
+  { uctx with
+    local = (univs, Constraints.union old_cstrs cstrs');
+    univ_variables = vars;
+    universes = UGraph.merge_constraints cstrs' uctx.universes;
+    sort_variables = sorts;
+    minim_extra = extra; }
 
 let add_universe_constraints uctx cstrs =
   let univs, local = uctx.local in
