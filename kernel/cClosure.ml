@@ -296,7 +296,13 @@ type clos_infos = {
   i_relevances : Sorts.relevance Range.t;
   i_cache : infos_cache }
 
-type clos_tab = (fconstr, Empty.t) constant_def KeyTable.t
+type value_cache_entry =
+  | Def of fconstr
+  | Rules of Rewrite_rule.t list
+  | Primitive of CPrimitives.t
+  | Undef
+
+type clos_tab = value_cache_entry KeyTable.t
 
 let info_flags info = info.i_flags
 let info_env info = info.i_cache.i_env
@@ -490,10 +496,12 @@ let assoc_defined = function
 | LocalAssum (_, _) -> raise Not_found
 
 let constant_value_in u = function
-| Def b -> injectu b u
-| OpaqueDef _ -> raise (NotEvaluableConst Opaque)
-| Undef _ -> raise (NotEvaluableConst NoBody)
-| Primitive p -> raise (NotEvaluableConst (IsPrimitive (u,p)))
+| Declarations.Def b -> injectu b u
+| Declarations.OpaqueDef _ -> raise (NotEvaluableConst Opaque)
+| Declarations.Undef _ -> raise (NotEvaluableConst NoBody)
+| Declarations.Primitive p -> raise (NotEvaluableConst (IsPrimitive (u,p)))
+
+exception FoundRules of Rewrite_rule.t list
 
 let ref_value_cache info flags tab ref =
   let env = info.i_cache.i_env in
@@ -526,16 +534,18 @@ let ref_value_cache info flags tab ref =
           | ConstKey (cst,u) ->
             let cb = lookup_constant cst env in
             let () = shortcut_irrelevant info (cb.const_relevance) in
+            match Cmap_env.find_opt cst env.symb_pats with Some r -> raise (FoundRules r) | None -> ();
             if TransparentState.is_transparent_constant flags cst then constant_value_in u cb.const_body
             else raise Not_found
         in
-        Def body
+        (Def body : value_cache_entry)
       with
       | Irrelevant -> Def mk_irrelevant
       | NotEvaluableConst (IsPrimitive (_u,op)) (* Const *) -> Primitive op
+      | FoundRules r -> Rules r
       | Not_found (* List.assoc *)
       | NotEvaluableConst _ (* Const *)
-        -> Undef None
+        -> Undef
     in
     KeyTable.add tab ref v; v
 
@@ -1432,6 +1442,85 @@ let conv : (clos_infos -> clos_tab -> fconstr -> fconstr -> bool) ref
   = ref (fun _ _ _ _ -> (assert false : bool))
 let set_conv f = conv := f
 
+
+exception PatternFailure
+
+let rec get_args_complete n = function
+    | Zupdate _r :: _s ->
+        (** The stack contains [Zupdate] mark only if in sharing mode *)
+        assert false;
+        (* get_args_complete n s *)
+    | Zshift _k :: s ->
+      get_args_complete n s
+    | Zapp l :: s ->
+        let na = Array.length l in
+        if n == na then l, s
+        else if n < na then (* more arguments *)
+          let args = Array.sub l 0 na in
+          let eargs = Array.sub l n (na-n) in
+          (args, Zapp eargs :: s)
+        else (* more lambdas *)
+          let l', s = get_args_complete (n-na) s in
+          Array.append l l', s
+    | ((ZcaseT _ | Zproj _ | Zfix _ | Zprimitive _) :: _ | []) -> raise PatternFailure
+
+
+let rec match_arg_pattern p t =
+  match [@ocaml.warning "-4"] p, t.term with
+  | Rewrite_rule.APHole, _ -> [t]
+  | Rewrite_rule.APInd ind, FInd (ind', _) ->
+      if Ind.CanOrd.equal ind ind' then [] else raise PatternFailure
+  | Rewrite_rule.APConstr constr, FConstruct (constr', _) ->
+    if Construct.CanOrd.equal constr constr' then [] else raise PatternFailure
+  | Rewrite_rule.APInt i, FInt i' ->
+      if Uint63.equal i i' then [] else raise PatternFailure
+  | Rewrite_rule.APFloat f, FFloat f' ->
+      if Float64.equal f f' then [] else raise PatternFailure
+  | Rewrite_rule.APApp (pf, pargs), FApp (f, args) ->
+      if Array.length args <> Array.length pargs then raise PatternFailure;
+      let fss = Array.map2 match_arg_pattern pargs args in
+      let fs = match_arg_pattern pf f in
+      fs @ List.concat (Array.to_list fss)
+  | _, _ -> raise PatternFailure
+
+
+let rec apply_rule info tab p m stk fs =
+  match p with
+  | Rewrite_rule.PConst c ->
+      (match [@ocaml.warning "-4"] m.term with
+      | FFlex ConstKey (c', u) when Constant.CanOrd.equal c c' -> (fs, u, stk)
+      | _ -> raise PatternFailure)
+  | Rewrite_rule.PApp (pf, pargs) ->
+      let args, stk = get_args_complete (Array.length pargs) stk in
+      let fss = Array.map2 match_arg_pattern pargs args in
+      apply_rule info tab pf m stk (fs @ List.concat (Array.to_list fss))
+  | Rewrite_rule.PCase (ci, pret, pc, pbrs) ->
+      (match [@ocaml.warning "-4"] strip_update_shift_app m stk with
+      | _depth, _args, ZcaseT (ci', _, _, ret, brs, _e) :: stk ->
+        if not @@ Ind.CanOrd.equal ci.Rewrite_rule.ci_ind ci'.ci_ind then raise PatternFailure;
+        let fsret = match_arg_pattern pret (inject (snd ret)) in
+        let fsbrs = Array.map2 (fun a (_, b) -> match_arg_pattern a (inject b)) pbrs brs in
+        apply_rule info tab pc m stk (fs @ fsret @ List.concat (Array.to_list fsbrs))
+      | _ -> raise PatternFailure)
+  | Rewrite_rule.PProj (proj, pc) ->
+      (match [@ocaml.warning "-4"] strip_update_shift_app m stk with
+      | _depth, _args, Zproj proj' :: stk ->
+        if not @@ Projection.Repr.CanOrd.equal (Projection.repr proj) proj' then raise PatternFailure;
+        apply_rule info tab pc m stk fs
+      | _ -> raise PatternFailure
+      )
+
+let rec apply_rules info tab r m stk =
+  match r with
+  | [] -> (m, stk)
+  | r :: rs ->
+    try
+      let (fs, fus, stk) = apply_rule info tab r.Rewrite_rule.lhs_pat m stk [] in
+      let subst = List.fold_right subs_cons fs (subs_id 0) in
+      mk_clos (subst, fus) r.Rewrite_rule.rhs, stk
+    with PatternFailure -> apply_rules info tab rs m stk
+
+
 (* Computes a weak head normal form from the result of knh. *)
 let rec knr info tab m stk =
   match m.term with
@@ -1450,7 +1539,8 @@ let rec knr info tab m stk =
           else
             (* Similarly to fix, partially applied primitives are not Ntrl! *)
             (m, stk)
-        | Undef _ | OpaqueDef _ -> (set_ntrl m; (m,stk)))
+        | Rules r -> apply_rules info tab r m stk
+        | Undef -> (set_ntrl m; (m,stk)))
   | FConstruct(c,_u) ->
      let use_match = red_set info.i_flags fMATCH in
      let use_fix = red_set info.i_flags fFIX in
@@ -1759,4 +1849,4 @@ let unfold_ref_with_args infos tab fl v =
     let c = match [@ocaml.warning "-4"] fl with ConstKey c -> c | _ -> assert false in
     let rargs, a, nargs, v = get_native_args1 op c v in
     Some (a, (Zupdate a::(Zprimitive(op,c,rargs,nargs)::v)))
-  | Undef _ | OpaqueDef _ | Primitive _ -> None
+  | Undef | Rules _ | Primitive _ -> None

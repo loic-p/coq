@@ -83,6 +83,7 @@ type env = {
   env_universes_lbound : UGraph.Bound.t;
   irr_constants : Cset_env.t;
   irr_inds : Indset_env.t;
+  symb_pats: Rewrite_rule.t list Cmap_env.t;
   env_typing_flags  : typing_flags;
   retroknowledge : Retroknowledge.retroknowledge;
 }
@@ -112,6 +113,7 @@ let empty_env = {
   env_universes_lbound = UGraph.Bound.Set;
   irr_constants = Cset_env.empty;
   irr_inds = Indset_env.empty;
+  symb_pats = Cmap_env.empty;
   env_typing_flags = Declareops.safe_flags Conv_oracle.empty;
   retroknowledge = Retroknowledge.empty;
 }
