@@ -558,6 +558,145 @@ let apply_branch env sigma (ind, i) args (ci, u, pms, iv, r, lf) =
   in
   Vars.substl subst (snd br)
 
+
+exception PatternFailure
+
+let rec epattern_head_of_pattern_head =
+  let open Declarations in
+  function
+  | PHLambda (p1, p2) -> PHLambda (Array.map pattern_arg_of_arg_pattern p1, pattern_arg_of_arg_pattern p2)
+  | PHProd (p1, p2) -> PHProd (Array.map pattern_arg_of_arg_pattern p1, pattern_arg_of_arg_pattern p2)
+  | PHSort _ | PHSymbol _ | PHInd _ | PHConstr _ | PHInt _ | PHFloat _ as p -> p
+
+and eliminations_of_rigid_pattern acc =
+  let open Declarations in
+  function
+  | APHead h -> epattern_head_of_pattern_head h, acc
+  | APApp (f, args) -> eliminations_of_rigid_pattern (PEApp (Array.map pattern_arg_of_arg_pattern args) :: acc) f
+and pattern_arg_of_arg_pattern =
+  let open Declarations in
+  function
+  | APHole -> EHole
+  | APHoleIgnored -> EHoleIgnored
+  | APRigid p -> ERigid (eliminations_of_rigid_pattern [] p)
+
+let rec eliminations_of_pattern acc =
+  let open Declarations in
+  function
+  | PHead (_, u) -> acc, u
+  | PApp (f, args) -> eliminations_of_pattern (PEApp (Array.map pattern_arg_of_arg_pattern args) :: acc) f
+  | PCase (ind, u, ret, c, brs) ->
+      eliminations_of_pattern (PECase (ind, u, pattern_arg_of_arg_pattern ret, Array.map pattern_arg_of_arg_pattern brs) :: acc) c
+  | PProj (p, c) -> eliminations_of_pattern (PEProj p :: acc) c
+let eliminations_of_pattern = eliminations_of_pattern []
+
+let match_universes pu u =
+  List.filter_with (Array.to_list pu) (Array.to_list (Univ.Instance.to_array u))
+let match_euniverses sigma pu u = match_universes pu (EInstance.kind sigma u)
+
+let rec cbn_match_arg_pattern whrec env sigma p t =
+  let open Declarations in
+  match p with
+  | EHole -> [t], []
+  | EHoleIgnored -> [], []
+  | ERigid (ph, es) ->
+      let (t, stk), _ = whrec Cst_stack.empty (t, Stack.empty) in
+      let fsfus = cbn_match_rigid_arg_pattern whrec env sigma ph t in
+      let fsfus, stk = cbn_apply_rule whrec env sigma fsfus es stk in
+      match stk with
+      | [] -> fsfus
+      | _ :: _ -> raise PatternFailure
+
+and match_sort (ps, pu) s =
+  let open Sorts in
+  match [@ocaml.warning "-4"] ps, s with
+  | InProp, Prop -> [], []
+  | InSProp, SProp -> [], []
+  | InSet, Set -> [], []
+  | InType, Type u ->
+      assert (Array.length pu = 1);
+      if not pu.(0) then [], []
+      else if not (Univ.Universe.is_level u) then assert false
+      else [], [Option.get (Univ.Universe.level u)]
+  | (InProp | InSProp | InSet | InType), _ -> raise PatternFailure
+
+and cbn_match_rigid_arg_pattern whrec env sigma p t =
+  let open Declarations in
+  match [@ocaml.warning "-4"] p, EConstr.kind sigma t with
+  | PHInd (ind, pu), Ind (ind', u) ->
+    if Ind.CanOrd.equal ind ind' then [], match_euniverses sigma pu u else raise PatternFailure
+  | PHConstr (constr, pu), Construct (constr', u) ->
+    if Construct.CanOrd.equal constr constr' then [], match_euniverses sigma pu u else raise PatternFailure
+  | PHSort ps, Sort s -> match_sort ps (ESorts.kind sigma s)
+  | PHSymbol (c, pu), Const (c', u) ->
+    if Constant.CanOrd.equal c c' then [], match_euniverses sigma pu u else raise PatternFailure
+  | PHInt i, Int i' ->
+    if Uint63.equal i i' then [], [] else raise PatternFailure
+  | PHFloat f, Float f' ->
+    if Float64.equal f f' then [], [] else raise PatternFailure
+  | PHLambda (ptys, pbod), _ ->
+    let ntys, body = EConstr.decompose_lam sigma t in
+    let tys = Array.map_of_list snd ntys in
+    if Array.length ptys <> Array.length tys then raise PatternFailure;
+    let fss, fuss = Array.split @@ Array.map2 (cbn_match_arg_pattern whrec env sigma) ptys tys in
+    let fs, fus = cbn_match_arg_pattern whrec env sigma pbod t in
+    (List.concat (Array.to_list fss) @ fs, List.concat (Array.to_list fuss) @ fus)
+  | PHProd (ptys, pbod), _ ->
+    let ntys, body = EConstr.decompose_prod sigma t in
+    let tys = Array.map_of_list snd ntys in
+    let na = Array.length tys in
+    if Array.length ptys <> na then raise PatternFailure;
+    let fss, fuss = Array.split @@ Array.map2 (cbn_match_arg_pattern whrec env sigma) ptys tys in
+    let funbody = List.fold_left (fun c (n, t) -> EConstr.mkProd (n, t, c)) body ntys in
+    let fs, fus = cbn_match_arg_pattern whrec env sigma pbod funbody in
+    (List.concat (Array.to_list fss) @ fs, List.concat (Array.to_list fuss) @ fus)
+  | (PHInd _ | PHConstr _ | PHInt _ | PHFloat _ | PHSort _ | PHSymbol _), _ -> raise PatternFailure
+
+and extract_n_stack args n s =
+  if n = 0 then List.rev args, s else
+  match Stack.decomp s with
+  | Some (arg, rest) -> extract_n_stack (arg :: args) (n-1) rest
+  | None -> raise PatternFailure
+
+and cbn_apply_rule whrec env sigma fsfus es stk =
+  match [@ocaml.warning "-4"] es, stk with
+  | [], _ -> fsfus, stk
+  | Declarations.PEApp pargs :: e, s ->
+      let np = Array.length pargs in
+      let pargs = Array.to_list pargs in
+      let args, s = extract_n_stack [] np s in
+      let fs, fus = fsfus in
+      let fss, fuss = List.split @@ List.map2 (cbn_match_arg_pattern whrec env sigma) pargs args in
+      cbn_apply_rule whrec env sigma (fs @ List.concat fss, fus @ List.concat fuss) e s
+  | Declarations.PECase (pind, pu, pret, pbrs) :: e, Stack.Case ((ci, u, pms, p, iv, brs), cst_l) :: s ->
+      if not @@ Ind.CanOrd.equal pind ci.ci_ind then raise PatternFailure;
+      let dummy = mkProp in
+      let fs, fus = fsfus in
+      let fuus = match_euniverses sigma pu u in
+      let (_, p, _, _, brs) = EConstr.expand_case env sigma (ci, u, pms, p, NoInvert, dummy, brs) in
+      let fsret, fusret = cbn_match_arg_pattern whrec env sigma pret p in
+      let fsbrs, fusbrs = Array.split @@ Array.map2 (cbn_match_arg_pattern whrec env sigma) pbrs brs in
+      cbn_apply_rule whrec env sigma (fs @ fsret @ List.concat (Array.to_list fsbrs), fus @ fuus @ fusret @ List.concat (Array.to_list fusbrs)) e s
+  | Declarations.PEProj proj :: e, Stack.Proj (proj', cst_l') :: s ->
+      if not @@ Projection.CanOrd.equal proj proj' then raise PatternFailure;
+      cbn_apply_rule whrec env sigma fsfus e s
+  | _, _ -> raise PatternFailure
+
+
+let rec cbn_apply_rules whrec env sigma u r stk =
+  let open Declarations in
+  match r with
+  | [] -> raise PatternFailure
+  | r :: rs ->
+    try
+      let elims, pu = eliminations_of_pattern r.lhs_pat in
+      let (fs, fus), stk = cbn_apply_rule whrec env sigma ([], []) elims stk in
+      EConstr.of_constr r.rhs, fs, match_euniverses sigma pu u @ fus, stk
+    with PatternFailure -> cbn_apply_rules whrec env sigma u rs stk
+
+
+
+
 let whd_state_gen ?csts flags env sigma =
   let open Context.Named.Declaration in
   let open ReductionBehaviour in
@@ -662,6 +801,16 @@ let whd_state_gen ?csts flags env sigma =
           (* Should not fail thanks to [check_native_args] *)
           let (before,a,after) = Option.get o in
           whrec Cst_stack.empty (a,Stack.Primitive(p,const,before,kargs,cst_l)::after)
+       | exception NotEvaluableConst (HasRules r) ->
+          begin try
+            let rhs, fs, fus, stack = cbn_apply_rules whrec env sigma u r stack in
+            let usubst = Univ.Instance.of_array (Array.of_list fus) in
+            let rhsu = subst_instance_constr usubst rhs in
+            let rhs' = substl fs rhsu in
+            whrec Cst_stack.empty (rhs', stack)
+          with PatternFailure ->
+            fold ()
+          end
        | exception NotEvaluableConst _ -> fold ()
       else fold ()
     | Proj (p, c) when CClosure.RedFlags.red_projection flags p ->

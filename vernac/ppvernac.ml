@@ -181,6 +181,7 @@ let string_of_logical_kind = let open Decls in function
     | IsDefinition k -> string_of_definition_object_kind k
     | IsProof k -> string_of_theorem_kind k
     | IsPrimitive -> "Primitive"
+    | IsSymbol -> "Symbol"
 
 let pr_notation_entry = function
   | InConstrEntry -> keyword "constr"
@@ -841,6 +842,13 @@ let pr_vernac_expr v =
     let assumptions = prlist_with_sep spc (fun p -> hov 1 (str "(" ++ pr_params p ++ str ")")) l in
     return (hov 2 (pr_assumption_token (n > 1) discharge kind ++
                    pr_non_empty_arg pr_assumption_inline t ++ spc() ++ assumptions))
+  | VernacSymbol l ->
+    let n = List.length (List.flatten (List.map fst (List.map snd l))) in
+    let pr_params (c, (xl, t)) =
+      hov 2 (prlist_with_sep sep pr_ident_decl xl ++ spc() ++
+              str(if c then ":>" else ":") ++ spc() ++ pr_lconstr_expr t) in
+    let assumptions = prlist_with_sep spc (fun p -> hov 1 (str "(" ++ pr_params p ++ str ")")) l in
+    return (hov 2 (keyword (if (n > 1) then "Symbols" else "Symbol") ++ spc() ++ assumptions))
   | VernacInductive (f,l) ->
     let pr_constructor (coe,(id,c)) =
       hov 2 (pr_lident id ++ str" " ++
@@ -1327,6 +1335,8 @@ let pr_vernac_expr v =
     return (Goal_select.pr_goal_selector i ++ str ":" ++ spc () ++ str "{")
   | VernacEndSubproof ->
     return (str "}")
+
+  | VernacAddRewRule c -> return (keyword "Rewrite Rule" ++ spc() ++ pr_smart_global c)
 
 let pr_control_flag (p : control_flag) =
   let w = match p with

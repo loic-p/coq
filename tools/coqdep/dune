@@ -1,3 +1,8 @@
+(env
+ (dev
+  (flags
+   (:standard -alert --deprecated))))
+
 (library
  (name coqdeplib)
  (modules :standard \ coqdep)

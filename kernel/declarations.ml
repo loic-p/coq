@@ -47,11 +47,12 @@ type inline = int option
     transparent body, or an opaque one *)
 
 (* Global declarations (i.e. constants) can be either: *)
-type ('a, 'opaque) constant_def =
+type ('a, 'opaque, 'rules) constant_def =
   | Undef of inline                       (** a global assumption *)
   | Def of 'a                             (** or a transparent global definition *)
   | OpaqueDef of 'opaque                  (** or an opaque global definition *)
   | Primitive of CPrimitives.t (** or a primitive operation *)
+  | Symbol of 'rules                      (** or a symbol *)
 
 type universes =
   | Monomorphic
@@ -109,7 +110,7 @@ type typing_flags = {
 type 'opaque pconstant_body = {
     const_hyps : Constr.named_context; (** younger hyp at top *)
     const_univ_hyps : Univ.Instance.t;
-    const_body : (Constr.t, 'opaque) constant_def;
+    const_body : (Constr.t, 'opaque, unit) constant_def;
     const_type : types;
     const_relevance : Sorts.relevance;
     const_body_code : Vmemitcodes.body_code option;
@@ -276,6 +277,50 @@ type mutual_inductive_body = {
     mind_private : bool option; (** allow pattern-matching: Some true ok, Some false blocked *)
 
     mind_typing_flags : typing_flags; (** typing flags at the time of the inductive creation *)
+}
+
+(** {6 Rewrite rules } *)
+
+type 'arg head_pattern =
+  | PHSort    of (Sorts.family * bool array)
+  | PHSymbol  of Constant.t * bool array
+  | PHInd     of inductive * bool array
+  | PHConstr  of constructor * bool array
+  | PHInt     of Uint63.t
+  | PHFloat   of Float64.t
+  | PHLambda  of 'arg array * 'arg
+  | PHProd    of 'arg array * 'arg
+
+type rewrite_arg_pattern =
+  | APHole
+  | APHoleIgnored
+  | APRigid   of rigid_arg_pattern
+and rigid_arg_pattern =
+  | APApp     of rigid_arg_pattern * rewrite_arg_pattern array
+  | APHead    of rewrite_arg_pattern head_pattern
+
+
+type rewrite_pattern =
+  | PApp      of rewrite_pattern * rewrite_arg_pattern array
+  | PHead     of Constant.t * bool array
+  | PCase     of inductive * bool array * rewrite_arg_pattern * rewrite_pattern * rewrite_arg_pattern array
+  | PProj     of Projection.t * rewrite_pattern
+
+type pattern_elimination =
+  | PEApp     of pattern_argument array
+  | PECase    of inductive * bool array * pattern_argument * pattern_argument array
+  | PEProj    of Projection.t
+
+and head_elimination = pattern_argument head_pattern * pattern_elimination list
+
+and pattern_argument =
+  | EHole
+  | EHoleIgnored
+  | ERigid of head_elimination
+
+type rewrite_rule = {
+  lhs_pat : rewrite_pattern;
+  rhs : constr;
 }
 
 (** {6 Module declarations } *)

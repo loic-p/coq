@@ -226,6 +226,11 @@ GRAMMAR EXTEND Gram
             VernacAssumption (stre, nl, bl) }
       | d = def_token; id = ident_decl; b = def_body ->
           { VernacDefinition (d, name_of_ident_decl id, b) }
+      | IDENT "Symbol"; bl = assum_list ->
+          { VernacSymbol bl }
+      | IDENT "Symbols"; bl = assum_list ->
+          { test_plural_form loc "Symbols" bl;
+            VernacSymbol bl }
       | IDENT "Let"; id = ident_decl; b = def_body ->
           { VernacDefinition ((DoDischarge, Let), name_of_ident_decl id, b) }
       (* Gallina inductive declarations *)
@@ -257,6 +262,8 @@ GRAMMAR EXTEND Gram
       | IDENT "Universe"; l = LIST1 identref -> { VernacUniverse l }
       | IDENT "Universes"; l = LIST1 identref -> { VernacUniverse l }
       | IDENT "Constraint"; l = LIST1 univ_constraint SEP "," -> { VernacConstraint l }
+      | IDENT "Rewrite"; IDENT "Rule"; c = smart_global ->
+        { VernacAddRewRule c }
   ] ]
   ;
   register_token:
@@ -1126,7 +1133,8 @@ GRAMMAR EXTEND Gram
       | k = assumption_token -> { IsAssumption (snd k) }
       | k = IDENT "Context" -> { IsAssumption Context }
       | k = extended_def_token -> { IsDefinition k }
-      | IDENT "Primitive" -> { IsPrimitive } ] ]
+      | IDENT "Primitive" -> { IsPrimitive }
+      | IDENT "Symbol" -> { IsSymbol } ] ]
   ;
   extended_def_token:
     [ [ k = def_token -> { snd k }

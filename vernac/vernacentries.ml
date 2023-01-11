@@ -1098,6 +1098,14 @@ let vernac_constraint ~poly l =
                   ++ str " inside sections, use Monomorphic Constraint instead.");
   DeclareUniv.do_constraint ~poly l
 
+let vernac_add_rew_rule c =
+  let open Names.GlobRef in
+  let gr = smart_global c in
+  match gr with
+  | IndRef _ | VarRef _ | ConstructRef _ ->
+    user_err ?loc:c.loc Pp.(str "Rewrite Rule must be used on a constant.")
+  | ConstRef c -> Global.add_rewrite_rule c
+
 (**********************)
 (* Modules            *)
 
@@ -2348,6 +2356,9 @@ let translate_vernac ?loc ~atts v = let open Vernacextend in match v with
         vernac_declare_module_type lid bl mtys mtyo)
   | VernacAssumption ((discharge,kind),nl,l) ->
     vtdefault(fun () -> with_def_attributes ~atts vernac_assumption discharge kind l nl)
+  | VernacSymbol l ->
+    vtdefault (fun () ->
+        ComSymbol.do_symbols ~poly:(only_polymorphism atts) l)
   | VernacInductive (finite, l) ->
     vtdefault(fun () -> vernac_inductive ~atts finite l)
   | VernacFixpoint (discharge, l) ->
@@ -2381,6 +2392,11 @@ let translate_vernac ?loc ~atts v = let open Vernacextend in match v with
     vtdefault(fun () -> vernac_universe ~poly:(only_polymorphism atts) l)
   | VernacConstraint l ->
     vtdefault(fun () -> vernac_constraint ~poly:(only_polymorphism atts) l)
+
+  | VernacAddRewRule c ->
+    vtdefault (fun () ->
+        unsupported_attributes atts;
+        vernac_add_rew_rule c)
 
   (* Modules *)
   | VernacDeclareModule (export,lid,bl,mtyo) ->

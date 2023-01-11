@@ -890,7 +890,7 @@ let compile ~fail_on_error ?universes:(universes=0) env sigma c =
     fn msg; None
 
 let compile_constant_body ~fail_on_error env univs = function
-  | Undef _ | OpaqueDef _ | Primitive _ -> Some BCconstant
+  | Undef _ | OpaqueDef _ | Primitive _ | Symbol _ -> Some BCconstant
   | Def body ->
       let instance_size = Univ.AbstractContext.size (Declareops.universes_context univs) in
       match kind body with

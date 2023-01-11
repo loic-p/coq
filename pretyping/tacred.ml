@@ -798,6 +798,9 @@ and whd_simpl_stack env sigma =
             whd_const cst env sigma (applist (x, stack)), []
           with Redelimination -> s')
 
+      | Const (cst, _) when is_symbol env cst ->
+          whd_const cst env sigma (applist s'), []
+
       | _ ->
         match match_eval_ref env sigma x stack with
         | Some (ref, u) ->

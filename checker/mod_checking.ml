@@ -49,7 +49,7 @@ let check_constant_declaration env opac kn cb opacify =
   let ty = cb.const_type in
   let _ = infer_type env ty in
   let body, env = match cb.const_body with
-    | Undef _ | Primitive _ -> None, env
+    | Undef _ | Primitive _ | Symbol _ -> None, env
     | Def c -> Some c, env
     | OpaqueDef o ->
       let c, u = !indirect_accessor o in

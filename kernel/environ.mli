@@ -82,6 +82,7 @@ type env = private {
   env_universes_lbound : UGraph.Bound.t;
   irr_constants : Cset_env.t;
   irr_inds : Indset_env.t;
+  symb_pats : rewrite_rule list Cmap_env.t;
   env_typing_flags  : typing_flags;
   retroknowledge : Retroknowledge.retroknowledge;
   indirect_pterms : Opaqueproof.opaquetab;
@@ -208,6 +209,8 @@ val evaluable_constant : Constant.t -> env -> bool
 
 val mem_constant : Constant.t -> env -> bool
 
+val add_rewrite_rule : Constant.t -> rewrite_rule -> env -> env
+
 (** New-style polymorphism *)
 val polymorphic_constant  : Constant.t -> env -> bool
 val polymorphic_pconstant : pconstant -> env -> bool
@@ -224,6 +227,7 @@ type const_evaluation_result =
   | NoBody
   | Opaque
   | IsPrimitive of Univ.Instance.t * CPrimitives.t
+  | HasRules of rewrite_rule list
 exception NotEvaluableConst of const_evaluation_result
 
 val constant_type : env -> Constant.t puniverses -> types constrained
@@ -241,6 +245,7 @@ val constant_value_in : env -> Constant.t puniverses -> constr
 val constant_type_in : env -> Constant.t puniverses -> types
 val constant_opt_value_in : env -> Constant.t puniverses -> constr option
 
+val is_symbol : env -> Constant.t -> bool
 val is_primitive : env -> Constant.t -> bool
 val get_primitive : env -> Constant.t -> CPrimitives.t option
 
@@ -274,6 +279,23 @@ val mem_mind : MutInd.t -> env -> bool
 (** The universe context associated to the inductive, empty if not
     polymorphic *)
 val mind_context : env -> MutInd.t -> Univ.AbstractContext.t
+
+(** Given a pattern-matching represented compactly, expands it so as to produce
+    lambda and let abstractions in front of the return clause and the pattern
+    branches. *)
+val expand_case : env -> case -> (case_info * constr * case_invert * constr * constr array)
+
+val expand_case_specif : Declarations.mutual_inductive_body -> case -> (case_info * constr * case_invert * constr * constr array)
+
+(** Dual operation of the above. Fails if the return clause or branch has not
+    the expected form. *)
+val contract_case : env -> (case_info * constr * case_invert * constr * constr array) -> case
+
+(** [instantiate_context u subst nas ctx] applies both [u] and [subst]
+    to [ctx] while replacing names using [nas] (order reversed). In particular,
+    assumes that [ctx] and [nas] have the same length. *)
+val instantiate_context : Instance.t -> Vars.substl -> Name.t Context.binder_annot array ->
+    rel_context -> rel_context
 
 (** New-style polymorphism *)
 val polymorphic_ind  : inductive -> env -> bool

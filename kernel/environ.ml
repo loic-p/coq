@@ -96,6 +96,7 @@ type env = {
   env_universes_lbound : UGraph.Bound.t;
   irr_constants : Cset_env.t;
   irr_inds : Indset_env.t;
+  symb_pats: rewrite_rule list Cmap_env.t;
   env_typing_flags  : typing_flags;
   retroknowledge : Retroknowledge.retroknowledge;
   indirect_pterms : Opaqueproof.opaquetab;
@@ -126,6 +127,7 @@ let empty_env = {
   env_universes_lbound = UGraph.Bound.Set;
   irr_constants = Cset_env.empty;
   irr_inds = Indset_env.empty;
+  symb_pats = Cmap_env.empty;
   env_typing_flags = Declareops.safe_flags Conv_oracle.empty;
   retroknowledge = Retroknowledge.empty;
   indirect_pterms = Opaqueproof.empty_opaquetab;
@@ -236,6 +238,15 @@ let lookup_constant kn env =
 
 let mem_constant kn env = Cmap_env.mem kn env.env_globals.Globals.constants
 
+let add_rewrite_rule c r env =
+  let add = function
+    | None -> anomaly Pp.(str "Trying to add a rule to non-symbol " ++ Constant.print c ++ str".")
+    | Some rs -> Some (r::rs)
+  in
+  { env with
+    symb_pats = Cmap_env.update c add env.symb_pats
+  }
+
 (* Mutual Inductives *)
 let lookup_mind_key kn env =
   match Mindmap_env.find_opt kn env.env_globals.Globals.inductives with
@@ -251,6 +262,102 @@ let mem_mind kn env = Mindmap_env.mem kn env.env_globals.Globals.inductives
 let mind_context env mind =
   let mib = lookup_mind mind env in
   Declareops.inductive_polymorphic_context mib
+
+
+(** {6 Changes of representation of Case nodes} *)
+
+(* raises an anomaly if not an inductive type *)
+let lookup_mind_specif env (kn, tyi) =
+  let mib = lookup_mind kn env in
+  if tyi >= Array.length mib.mind_packets then
+    user_err Pp.(str "Inductive.lookup_mind_specif: invalid inductive index");
+  (mib, mib.mind_packets.(tyi))
+
+(** Provided:
+    - a universe instance [u]
+    - a term substitution [subst]
+    - name replacements [nas]
+    [instantiate_context u subst nas ctx] applies both [u] and [subst] to [ctx]
+    while replacing names using [nas] (order reversed)
+*)
+let instantiate_context u subst nas ctx =
+  let rec instantiate i ctx = match ctx with
+  | [] -> assert (Int.equal i (-1)); []
+  | LocalAssum (_, ty) :: ctx ->
+    let ctx = instantiate (pred i) ctx in
+    let ty = substnl subst i (subst_instance_constr u ty) in
+    LocalAssum (nas.(i), ty) :: ctx
+  | LocalDef (_, ty, bdy) :: ctx ->
+    let ctx = instantiate (pred i) ctx in
+    let ty = substnl subst i (subst_instance_constr u ty) in
+    let bdy = substnl subst i (subst_instance_constr u bdy) in
+    LocalDef (nas.(i), ty, bdy) :: ctx
+  in
+  instantiate (Array.length nas - 1) ctx
+
+let expand_case_specif mib (ci, u, params, p, iv, c, br) =
+  (* Γ ⊢ c : I@{u} params args *)
+  (* Γ, indices, self : I@{u} params indices ⊢ p : Type *)
+  let open Univ in
+  let mip = mib.mind_packets.(snd ci.ci_ind) in
+  let paramdecl = Vars.subst_instance_context u mib.mind_params_ctxt in
+  let paramsubst = Vars.subst_of_rel_context_instance paramdecl params in
+  (* Expand the return clause *)
+  let ep =
+    let (nas, p) = p in
+    let realdecls, _ = List.chop mip.mind_nrealdecls mip.mind_arity_ctxt in
+    let self =
+      let args = Context.Rel.instance mkRel 0 mip.mind_arity_ctxt in
+      let inst = Instance.of_array (Array.init (Instance.length u) Level.var) in
+      mkApp (mkIndU (ci.ci_ind, inst), args)
+    in
+    let realdecls = LocalAssum (Context.anonR, self) :: realdecls in
+    let realdecls = instantiate_context u paramsubst nas realdecls in
+    Term.it_mkLambda_or_LetIn p realdecls
+  in
+  (* Expand the branches *)
+  let ebr =
+    let build_one_branch i (nas, br) (ctx, _) =
+      let ctx, _ = List.chop mip.mind_consnrealdecls.(i) ctx in
+      let ctx = instantiate_context u paramsubst nas ctx in
+      Term.it_mkLambda_or_LetIn br ctx
+    in
+    Array.map2_i build_one_branch br mip.mind_nf_lc
+  in
+  (ci, ep, iv, c, ebr)
+
+let expand_case env (ci, _, _, _, _, _, _ as case) =
+  let specif = lookup_mind (fst ci.ci_ind) env in
+  expand_case_specif specif case
+
+let contract_case env (ci, p, iv, c, br) =
+  let (mib, mip) = lookup_mind_specif env ci.ci_ind in
+  let (arity, p) = Term.decompose_lam_n_decls (mip.mind_nrealdecls + 1) p in
+  let (u, pms) = match arity with
+  | LocalAssum (_, ty) :: _ ->
+    (** Last binder is the self binder for the term being eliminated *)
+    let (ind, args) = decompose_appvect ty in
+    let (ind, u) = destInd ind in
+    let () = assert (Ind.CanOrd.equal ind ci.ci_ind) in
+    let pms = Array.sub args 0 mib.mind_nparams in
+    (** Unlift the parameters from under the index binders *)
+    let dummy = List.make mip.mind_nrealdecls mkProp in
+    let pms = Array.map (fun c -> Vars.substl dummy c) pms in
+    (u, pms)
+  | _ -> assert false
+  in
+  let p =
+    let nas = Array.of_list (List.rev_map get_annot arity) in
+    (nas, p)
+  in
+  let map i br =
+    let (ctx, br) = Term.decompose_lam_n_decls mip.mind_consnrealdecls.(i) br in
+    let nas = Array.of_list (List.rev_map get_annot ctx) in
+    (nas, br)
+  in
+  (ci, u, pms, p, iv, c, Array.mapi map br)
+
+
 
 let oracle env = env.env_typing_flags.conv_oracle
 let set_oracle env o =
@@ -501,7 +608,10 @@ let add_constant_key kn cb linkinfo env =
     then Cset_env.add kn env.irr_constants
     else env.irr_constants
   in
-  { env with irr_constants; env_globals = new_globals }
+  let symb_pats =
+    match cb.const_body with Symbol _ -> Cmap_env.add kn [] env.symb_pats | _ -> env.symb_pats
+  in
+  { env with irr_constants; symb_pats; env_globals = new_globals }
 
 let add_constant kn cb env =
   add_constant_key kn cb no_link_info env
@@ -517,6 +627,7 @@ type const_evaluation_result =
   | NoBody
   | Opaque
   | IsPrimitive of Univ.Instance.t * CPrimitives.t
+  | HasRules of rewrite_rule list
 
 exception NotEvaluableConst of const_evaluation_result
 
@@ -527,7 +638,7 @@ let constant_value_and_type env (kn, u) =
   let b' = match cb.const_body with
     | Def l_body -> Some (subst_instance_constr u l_body)
     | OpaqueDef _ -> None
-    | Undef _ | Primitive _ -> None
+    | Undef _ | Primitive _ | Symbol _ -> None
   in
   b', subst_instance_constr u cb.const_type, cst
 
@@ -548,6 +659,10 @@ let constant_value_in env (kn,u) =
     | OpaqueDef _ -> raise (NotEvaluableConst Opaque)
     | Undef _ -> raise (NotEvaluableConst NoBody)
     | Primitive p -> raise (NotEvaluableConst (IsPrimitive (u,p)))
+    | Symbol _ ->
+        match Cmap_env.find_opt kn env.symb_pats with
+        | Some r -> raise (NotEvaluableConst (HasRules r))
+        | None -> assert false
 
 let constant_opt_value_in env cst =
   try Some (constant_value_in env cst)
@@ -559,12 +674,18 @@ let evaluable_constant kn env =
     match cb.const_body with
     | Def _ -> true
     | OpaqueDef _ -> false
-    | Undef _ | Primitive _ -> false
+    | Undef _ | Primitive _ | Symbol _ -> false
 
 let is_primitive env c =
   let cb = lookup_constant c env in
   match cb.Declarations.const_body with
   | Declarations.Primitive _ -> true
+  | _ -> false
+
+let is_symbol env c =
+  let cb = lookup_constant c env in
+  match cb.Declarations.const_body with
+  | Declarations.Symbol _ -> true
   | _ -> false
 
 let get_primitive env c =

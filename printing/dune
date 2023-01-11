@@ -1,3 +1,8 @@
+(env
+ (dev
+  (flags
+   (:standard -alert --deprecated))))
+
 (library
  (name printing)
  (synopsis "Coq's Term Pretty Printing Library")

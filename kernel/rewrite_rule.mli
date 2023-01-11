@@ -8,26 +8,13 @@
 (*         *     (see LICENSE file for the text of the license)         *)
 (************************************************************************)
 
-open Vmbytecodes
-open Vmemitcodes
 open Constr
 open Declarations
-open Environ
 
-(** Should only be used for monomorphic terms *)
-val compile :
-  fail_on_error:bool -> ?universes:int ->
-  env -> (existential -> constr option) -> constr ->
-  (to_patch * fv) option
-(** init, fun, fv *)
+val pattern_of_constr : constr -> rewrite_pattern
 
-val compile_constant_body : fail_on_error:bool ->
-  env -> universes -> (Constr.t, 'opaque, unit) constant_def ->
-  body_code option
+type state
 
-(** Shortcut of the previous function used during module strengthening *)
+val safe_pattern_of_constr : Environ.env -> int -> state -> constr -> state * rewrite_pattern
 
-val compile_alias : Names.Constant.t -> body_code
-
-(** Dump the bytecode after compilation (for debugging purposes) *)
-val dump_bytecode : bool ref
+val rule_of_constant : Environ.env -> Names.Constant.t -> Names.Constant.t * rewrite_rule

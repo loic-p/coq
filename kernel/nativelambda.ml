@@ -624,7 +624,7 @@ and lambda_of_app cache env sigma f args =
             else Lconst (prefix, (kn,u))
           in
         mkLapp t (lambda_of_args cache env sigma 0 args)
-      | OpaqueDef _ | Undef _ ->
+      | OpaqueDef _ | Undef _ | Symbol _ ->
           let prefix = get_const_prefix env kn in
           mkLapp (Lconst (prefix, (kn,u))) (lambda_of_args cache env sigma 0 args)
       end

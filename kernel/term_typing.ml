@@ -130,6 +130,23 @@ let infer_primitive env { prim_entry_type = utyp; prim_entry_content = p; } =
     cook_univ_hyps = Instance.empty;
   }
 
+let infer_symbol env { symb_entry_universes; symb_entry_type } =
+  let env, usubst, _, univs = process_universes env symb_entry_universes in
+  let j = Typeops.infer env symb_entry_type in
+  let r = Typeops.assumption_of_judgment env j in
+  let t = Vars.subst_univs_level_constr usubst j.uj_val in
+  {
+    Discharge.cook_body = Symbol ();
+    cook_type = t;
+    cook_universes = univs;
+    cook_relevance = r;
+    cook_inline = false;
+    cook_flags = Environ.typing_flags env;
+    (* Symbols not allowed in sections *)
+    cook_context = None;
+    cook_univ_hyps = Instance.empty;
+  }
+
 let make_univ_hyps = function
   | None -> Instance.empty
   | Some us -> Instance.of_array us
@@ -175,6 +192,7 @@ let infer_definition ~sec_univs env entry =
 
 let infer_constant ~sec_univs env = function
   | PrimitiveEntry entry -> infer_primitive env entry
+  | SymbolEntry entry -> infer_symbol env entry
   | ParameterEntry entry -> infer_parameter ~sec_univs env entry
   | DefinitionEntry entry -> infer_definition ~sec_univs env entry
 
@@ -233,7 +251,7 @@ let build_constant_declaration env result =
            we must look at the body NOW, if any *)
         let ids_typ = global_vars_set env typ in
         let ids_def = match def with
-        | Undef _ | Primitive _ -> Id.Set.empty
+        | Undef _ | Primitive _ | Symbol _ -> Id.Set.empty
         | Def cs -> global_vars_set env cs
         | OpaqueDef _ ->
           (* Opaque definitions always come with their section variables *)
@@ -245,7 +263,7 @@ let build_constant_declaration env result =
       (* We use the declared set and chain a check of correctness *)
       declared,
       match def with
-      | Undef _ | Primitive _ | OpaqueDef _ as x -> x (* nothing to check *)
+      | Undef _ | Primitive _ | Symbol _ | OpaqueDef _ as x -> x (* nothing to check *)
       | Def cs as x ->
         let () = check_section_variables env declared typ cs in
         x
@@ -322,6 +340,6 @@ let translate_local_def env _id centry =
   in
   let c = match decl.cook_body with
   | Def c -> c
-  | Undef _ | Primitive _ | OpaqueDef _ -> assert false
+  | Undef _ | Primitive _ | Symbol _ | OpaqueDef _ -> assert false
   in
   c, decl.cook_relevance, typ

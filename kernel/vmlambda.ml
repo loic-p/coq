@@ -702,7 +702,7 @@ and lambda_of_app env f args =
       | Primitive op -> lambda_of_prim (kn,u) op (lambda_of_args env 0 args)
       | Def csubst when cb.const_inline_code ->
           lambda_of_app env csubst args
-      | Def _ | OpaqueDef _ | Undef _ -> mkLapp (Lconst c) (lambda_of_args env 0 args)
+      | Def _ | OpaqueDef _ | Undef _ | Symbol _ -> mkLapp (Lconst c) (lambda_of_args env 0 args)
       end
   | Construct (c,_) ->
       let tag, nparams, arity = Renv.get_construct_info env c in

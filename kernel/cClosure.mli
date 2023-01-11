@@ -225,7 +225,7 @@ val eta_expand_ind_stack : env -> inductive -> fconstr -> stack ->
 (** [unfold_reference] unfolds references in a [fconstr]. Produces a
     [FIrrelevant] when the reference is irrelevant. *)
 val unfold_reference : Environ.env -> TransparentState.t ->
-  clos_tab -> table_key -> (fconstr, Util.Empty.t) constant_def
+  clos_tab -> table_key -> (fconstr, Util.Empty.t, rewrite_rule list) constant_def
 
 (** Like [unfold_reference], but handles primitives: if there are not
     enough arguments, return [None]. Otherwise return [Some] with
@@ -245,6 +245,46 @@ val set_conv : (clos_infos -> clos_tab -> fconstr -> fconstr -> bool) -> unit
 (***********************************************************************
   i This is for lazy debug *)
 
+open Declarations
+type 'constr partial_subst = {
+  subst: 'constr list;
+  usubst: Univ.Level.t list;
+  rhs: constr;
+}
+
+type 'constr subst_status = Dead | Live of 'constr partial_subst
+
+type 'a status =
+  | Check of 'a
+  | Ignore
+
+type ('a, 'b) next =
+  | Continue of 'a
+  | Return of 'b
+
+type (_, _) escape =
+  | No:  ('i, 'i) escape
+  | Yes: ('i -> 'ret) * 'ret -> ('i, 'ret) escape
+
+type ('constr, 'stack) state =
+  | LocStart of { elims: pattern_elimination list status array; head: 'constr; stack: 'stack; next: ('constr, 'stack) state_next }
+  | LocArg of { patterns: pattern_argument status array; arg: 'constr; next: ('constr, 'stack) state }
+
+and ('constr, 'stack) state_next = (('constr, 'stack) state, 'constr * 'stack) next
+
+
+type ('constr, 'stack) resume_state =
+  | Resume of { states: 'constr subst_status array; patterns: head_elimination status array; next: ('constr, 'stack) state }
+
+type ('constr, 'stack, _) depth =
+  | Nil: ('constr * 'stack, 'ret) escape -> ('constr, 'stack, 'ret) depth
+  | Cons: ('constr, 'stack) resume_state * ('constr, 'stack, 'ret) depth -> ('constr, 'stack, 'ret) depth
+
+val match_main : clos_infos -> clos_tab -> pat_state:(fconstr, stack, 'a) depth -> fconstr subst_status array -> (fconstr, stack) state -> 'a
+val match_elim : clos_infos -> clos_tab -> pat_state:(fconstr, stack, 'a) depth -> (fconstr, stack) state_next -> fconstr subst_status array -> pattern_elimination list status array -> fconstr -> stack -> 'a
+val match_arg  : clos_infos -> clos_tab -> pat_state:(fconstr, stack, 'a) depth -> (fconstr, stack) state      -> fconstr subst_status array -> pattern_argument status array -> fconstr -> 'a
+val match_head : clos_infos -> clos_tab -> pat_state:(fconstr, stack, 'a) depth -> (fconstr, stack) state      -> fconstr subst_status array -> head_elimination status array -> fconstr -> stack -> 'a
+
 val lift_fconstr      : int -> fconstr -> fconstr
 val lift_fconstr_vect : int -> fconstr array -> fconstr array
 
@@ -252,7 +292,7 @@ val mk_clos      : fconstr subs -> constr -> fconstr
 val mk_clos_vect : fconstr subs -> constr array -> fconstr array
 
 val kni: clos_infos -> clos_tab -> fconstr -> stack -> fconstr * stack
-val knr: clos_infos -> clos_tab -> fconstr -> stack -> fconstr * stack
+val knr: clos_infos -> clos_tab -> pat_state:(fconstr, stack, 'a) depth -> fconstr -> stack -> 'a
 val kl : clos_infos -> clos_tab -> fconstr -> constr
 
 val zip : fconstr -> stack -> fconstr

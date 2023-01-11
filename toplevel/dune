@@ -1,3 +1,8 @@
+(env
+ (dev
+  (flags
+   (:standard -alert --deprecated))))
+
 (library
  (name toplevel)
  (public_name coq-core.toplevel)
@@ -10,4 +15,5 @@
 ; Interp provides the `zarith` library to plugins, we could also use
 ; -linkall in the plugins file, to be discussed.
 
-(coq.pp (modules g_toplevel))
+(coq.pp
+ (modules g_toplevel))

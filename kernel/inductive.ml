@@ -393,81 +393,13 @@ let check_correct_arity env c pj ind specif params =
     [instantiate_context u subst nas ctx] applies both [u] and [subst] to [ctx]
     while replacing names using [nas] (order reversed)
 *)
-let instantiate_context u subst nas ctx =
-  let rec instantiate i ctx = match ctx with
-  | [] -> assert (Int.equal i (-1)); []
-  | LocalAssum (_, ty) :: ctx ->
-    let ctx = instantiate (pred i) ctx in
-    let ty = substnl subst i (subst_instance_constr u ty) in
-    LocalAssum (nas.(i), ty) :: ctx
-  | LocalDef (_, ty, bdy) :: ctx ->
-    let ctx = instantiate (pred i) ctx in
-    let ty = substnl subst i (subst_instance_constr u ty) in
-    let bdy = substnl subst i (subst_instance_constr u bdy) in
-    LocalDef (nas.(i), ty, bdy) :: ctx
-  in
-  instantiate (Array.length nas - 1) ctx
+let instantiate_context = Environ.instantiate_context
 
-let expand_case_specif mib (ci, u, params, p, iv, c, br) =
-  (* Γ ⊢ c : I@{u} params args *)
-  (* Γ, indices, self : I@{u} params indices ⊢ p : Type *)
-  let mip = mib.mind_packets.(snd ci.ci_ind) in
-  let paramdecl = Vars.subst_instance_context u mib.mind_params_ctxt in
-  let paramsubst = Vars.subst_of_rel_context_instance paramdecl params in
-  (* Expand the return clause *)
-  let ep =
-    let (nas, p) = p in
-    let realdecls, _ = List.chop mip.mind_nrealdecls mip.mind_arity_ctxt in
-    let self =
-      let args = Context.Rel.instance mkRel 0 mip.mind_arity_ctxt in
-      let inst = Instance.of_array (Array.init (Instance.length u) Level.var) in
-      mkApp (mkIndU (ci.ci_ind, inst), args)
-    in
-    let realdecls = LocalAssum (Context.anonR, self) :: realdecls in
-    let realdecls = instantiate_context u paramsubst nas realdecls in
-    Term.it_mkLambda_or_LetIn p realdecls
-  in
-  (* Expand the branches *)
-  let ebr =
-    let build_one_branch i (nas, br) (ctx, _) =
-      let ctx, _ = List.chop mip.mind_consnrealdecls.(i) ctx in
-      let ctx = instantiate_context u paramsubst nas ctx in
-      Term.it_mkLambda_or_LetIn br ctx
-    in
-    Array.map2_i build_one_branch br mip.mind_nf_lc
-  in
-  (ci, ep, iv, c, ebr)
+let expand_case_specif = Environ.expand_case_specif
 
-let expand_case env (ci, _, _, _, _, _, _ as case) =
-  let specif = Environ.lookup_mind (fst ci.ci_ind) env in
-  expand_case_specif specif case
+let expand_case = Environ.expand_case
 
-let contract_case env (ci, p, iv, c, br) =
-  let (mib, mip) = lookup_mind_specif env ci.ci_ind in
-  let (arity, p) = Term.decompose_lam_n_decls (mip.mind_nrealdecls + 1) p in
-  let (u, pms) = match arity with
-  | LocalAssum (_, ty) :: _ ->
-    (** Last binder is the self binder for the term being eliminated *)
-    let (ind, args) = decompose_appvect ty in
-    let (ind, u) = destInd ind in
-    let () = assert (Ind.CanOrd.equal ind ci.ci_ind) in
-    let pms = Array.sub args 0 mib.mind_nparams in
-    (** Unlift the parameters from under the index binders *)
-    let dummy = List.make mip.mind_nrealdecls mkProp in
-    let pms = Array.map (fun c -> Vars.substl dummy c) pms in
-    (u, pms)
-  | _ -> assert false
-  in
-  let p =
-    let nas = Array.of_list (List.rev_map get_annot arity) in
-    (nas, p)
-  in
-  let map i br =
-    let (ctx, br) = Term.decompose_lam_n_decls mip.mind_consnrealdecls.(i) br in
-    let nas = Array.of_list (List.rev_map get_annot ctx) in
-    (nas, br)
-  in
-  (ci, u, pms, p, iv, c, Array.mapi map br)
+let contract_case = Environ.contract_case
 
 (************************************************************************)
 (* Type of case branches *)

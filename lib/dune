@@ -1,3 +1,8 @@
+(env
+ (dev
+  (flags
+   (:standard -alert --deprecated))))
+
 (library
  (name lib)
  (synopsis "Coq's Utility Library [coq-specific]")
