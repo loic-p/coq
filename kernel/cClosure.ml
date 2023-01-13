@@ -1494,10 +1494,10 @@ let rec apply_rule info tab p m stk fs =
       let args, stk = get_args_complete (Array.length pargs) stk in
       let fss = Array.map2 match_arg_pattern pargs args in
       apply_rule info tab pf m stk (fs @ List.concat (Array.to_list fss))
-  | Rewrite_rule.PCase (ci, pret, pc, pbrs) ->
+  | Rewrite_rule.PCase (ind, pret, pc, pbrs) ->
       (match [@ocaml.warning "-4"] strip_update_shift_app m stk with
-      | _depth, _args, ZcaseT (ci', _, _, ret, brs, _e) :: stk ->
-        if not @@ Ind.CanOrd.equal ci.Rewrite_rule.ci_ind ci'.ci_ind then raise PatternFailure;
+      | _depth, _args, ZcaseT (ci, _, _, ret, brs, _e) :: stk ->
+        if not @@ Ind.CanOrd.equal ind ci.ci_ind then raise PatternFailure;
         let fsret = match_arg_pattern pret (inject (snd ret)) in
         let fsbrs = Array.map2 (fun a (_, b) -> match_arg_pattern a (inject b)) pbrs brs in
         apply_rule info tab pc m stk (fs @ fsret @ List.concat (Array.to_list fsbrs))
