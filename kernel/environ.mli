@@ -194,6 +194,8 @@ val evaluable_constant : Constant.t -> env -> bool
 
 val mem_constant : Constant.t -> env -> bool
 
+val add_rewrite_rule : Constant.t -> rewrite_rule -> env -> env
+
 (** New-style polymorphism *)
 val polymorphic_constant  : Constant.t -> env -> bool
 val polymorphic_pconstant : pconstant -> env -> bool

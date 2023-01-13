@@ -258,6 +258,8 @@ GRAMMAR EXTEND Gram
       | IDENT "Universe"; l = LIST1 identref -> { VernacUniverse l }
       | IDENT "Universes"; l = LIST1 identref -> { VernacUniverse l }
       | IDENT "Constraint"; l = LIST1 univ_constraint SEP "," -> { VernacConstraint l }
+      | IDENT "Rewrite"; IDENT "Rule"; c = smart_global ->
+        { VernacAddRewRule c }
   ] ]
   ;
   register_token:

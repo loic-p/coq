@@ -978,6 +978,17 @@ let add_private_constant l uctx decl senv : (Constant.t * private_constants) * s
   in
   (kn, eff), senv
 
+(** Rewrite rules *)
+
+let add_rewrite_rule c senv =
+  if Option.has_some senv.sections
+  then CErrors.user_err Pp.(str "Adding rewrite rules not supported in sections.");
+  let rule = Rewrite_rule.rule_of_constant senv.env c in
+  (* TODO add to the revstruct
+     TODO check that the lhs is not a defined symbol? *)
+  { senv with
+    env = Environ.add_rewrite_rule c rule senv.env }
+
 (** Insertion of inductive types *)
 
 let check_mind mie lab =

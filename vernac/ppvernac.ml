@@ -1352,6 +1352,8 @@ let pr_vernac_expr v =
   | VernacEndSubproof ->
     return (str "}")
 
+  | VernacAddRewRule c -> return (keyword "Rewrite Rule" ++ spc() ++ pr_smart_global c)
+
 let pr_control_flag (p : control_flag) =
   let w = match p with
     | ControlTime _ -> keyword "Time"

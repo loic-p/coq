@@ -14,3 +14,5 @@ open Declarations
 val pattern_of_constr : constr -> rewrite_pattern
 
 val safe_pattern_of_constr : Environ.env -> int -> constr -> int * rewrite_pattern
+
+val rule_of_constant : Environ.env -> Names.Constant.t -> rewrite_rule

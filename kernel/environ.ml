@@ -213,6 +213,15 @@ let lookup_constant kn env =
 
 let mem_constant kn env = Cmap_env.mem kn env.env_globals.Globals.constants
 
+let add_rewrite_rule c r env =
+  let add = function
+    | None -> Some [r]
+    | Some rs -> Some (r::rs)
+  in
+  { env with
+    symb_pats = Cmap_env.update c add env.symb_pats
+  }
+
 (* Mutual Inductives *)
 let lookup_mind_key kn env =
   match Mindmap_env.find_opt kn env.env_globals.Globals.inductives with

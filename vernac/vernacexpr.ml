@@ -371,6 +371,7 @@ type nonrec vernac_expr =
   | VernacCombinedScheme of lident * lident list
   | VernacUniverse of lident list
   | VernacConstraint of univ_constraint_expr list
+  | VernacAddRewRule of qualid or_by_notation
 
   (* Gallina extensions *)
   | VernacBeginSection of lident
