@@ -64,6 +64,12 @@ let rec safe_pattern_of_constr env nvar t = kind t |> function
       nvar, PProj (p, pc)
   | _ -> CErrors.anomaly Pp.(str "Subterm not recognised as pattern" ++ Constr.debug_print t)
 
+let rec head_constant = function
+  | PConst c -> c
+  | PApp (h, _) -> head_constant h
+  | PCase (_, _, c, _) -> head_constant c
+  | PProj (_, c) -> head_constant c
+
 let rule_of_constant env c =
   let cb = Environ.lookup_constant c env in
   match cb.const_universes with
@@ -74,7 +80,8 @@ let rule_of_constant env c =
     (* XXX should be checking that the head is eq not some arbitrary inductive
        Maybe by registering eq in retroknowledge *)
     | App (hd, [|_;lhs;rhs|]) when isInd hd ->
-      { lhs_pat = pattern_of_constr lhs; rhs; }
+      let lhs_pat = pattern_of_constr lhs in
+      head_constant lhs_pat, { lhs_pat = lhs_pat; rhs; }
     | _ ->
       CErrors.user_err
         Pp.(str "Cannot declare as rewrite rule: doesn't look like a proof of equality.")
