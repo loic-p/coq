@@ -11,27 +11,7 @@
 open Util
 open Names
 open Constr
-
-type rewrite_arg_pattern =
-  | APHole
-  (* | APHoleIgnored *)
-  | APApp     of rewrite_arg_pattern * rewrite_arg_pattern array
-  | APInd     of inductive
-  | APConstr  of constructor
-  | APInt     of Uint63.t
-  | APFloat   of Float64.t
-
-type rewrite_pattern =
-  | PApp      of rewrite_pattern * rewrite_arg_pattern array
-  | PConst    of Constant.t  (* Symbol *)
-  | PCase     of inductive * rewrite_arg_pattern * rewrite_pattern * rewrite_arg_pattern array
-  | PProj     of Projection.t * rewrite_pattern
-
-
-type t = {
-  lhs_pat : rewrite_pattern;
-  rhs : constr;
-}
+open Declarations
 
 let rec arg_pattern_of_constr t = kind t |> function
   | Rel _ -> APHole
@@ -49,8 +29,6 @@ let rec pattern_of_constr t = kind t |> function
   | Proj (p, c) -> PProj (p, pattern_of_constr c)
   | _ -> assert false
 
-let lookup_constant _env _c = assert false
-
 let rec safe_arg_pattern_of_constr nvar t = kind t |> function
   | Rel i ->
       if nvar <> i then CErrors.anomaly Pp.(str "Variable " ++ Constr.debug_print t ++ str" not used at the right place, expected "++ Constr.debug_print (of_kind (Rel nvar)) ++str".");
@@ -67,10 +45,10 @@ let rec safe_arg_pattern_of_constr nvar t = kind t |> function
 
 let rec safe_pattern_of_constr env nvar t = kind t |> function
   | Const (c, _) ->
-      (match lookup_constant env c with
-      | Declarations.Def _ | Declarations.OpaqueDef _ | Declarations.Primitive _ ->
+      (match (Environ.lookup_constant c env).const_body with
+      | Def _ | OpaqueDef _ | Primitive _ ->
           CErrors.anomaly Pp.(str "Constant " ++ Constant.print c ++ str" used in pattern has a body.")
-      | Declarations.Undef _ -> ());
+      | Undef _ -> ());
       nvar, PConst c
   | App (f, args) ->
       let nvar, pf = safe_pattern_of_constr env nvar f in

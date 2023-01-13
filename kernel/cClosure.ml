@@ -298,7 +298,7 @@ type clos_infos = {
 
 type value_cache_entry =
   | Def of fconstr
-  | Rules of Rewrite_rule.t list
+  | Rules of rewrite_rule list
   | Primitive of CPrimitives.t
   | Undef
 
@@ -501,7 +501,7 @@ let constant_value_in u = function
 | Declarations.Undef _ -> raise (NotEvaluableConst NoBody)
 | Declarations.Primitive p -> raise (NotEvaluableConst (IsPrimitive (u,p)))
 
-exception FoundRules of Rewrite_rule.t list
+exception FoundRules of rewrite_rule list
 
 let ref_value_cache info flags tab ref =
   let env = info.i_cache.i_env in
@@ -1467,16 +1467,16 @@ let rec get_args_complete n = function
 
 let rec match_arg_pattern p t =
   match [@ocaml.warning "-4"] p, t.term with
-  | Rewrite_rule.APHole, _ -> [t]
-  | Rewrite_rule.APInd ind, FInd (ind', _) ->
+  | APHole, _ -> [t]
+  | APInd ind, FInd (ind', _) ->
       if Ind.CanOrd.equal ind ind' then [] else raise PatternFailure
-  | Rewrite_rule.APConstr constr, FConstruct (constr', _) ->
+  | APConstr constr, FConstruct (constr', _) ->
     if Construct.CanOrd.equal constr constr' then [] else raise PatternFailure
-  | Rewrite_rule.APInt i, FInt i' ->
+  | APInt i, FInt i' ->
       if Uint63.equal i i' then [] else raise PatternFailure
-  | Rewrite_rule.APFloat f, FFloat f' ->
+  | APFloat f, FFloat f' ->
       if Float64.equal f f' then [] else raise PatternFailure
-  | Rewrite_rule.APApp (pf, pargs), FApp (f, args) ->
+  | APApp (pf, pargs), FApp (f, args) ->
       if Array.length args <> Array.length pargs then raise PatternFailure;
       let fss = Array.map2 match_arg_pattern pargs args in
       let fs = match_arg_pattern pf f in
@@ -1486,15 +1486,15 @@ let rec match_arg_pattern p t =
 
 let rec apply_rule info tab p m stk fs =
   match p with
-  | Rewrite_rule.PConst c ->
+  | PConst c ->
       (match [@ocaml.warning "-4"] m.term with
       | FFlex ConstKey (c', u) when Constant.CanOrd.equal c c' -> (fs, u, stk)
       | _ -> raise PatternFailure)
-  | Rewrite_rule.PApp (pf, pargs) ->
+  | PApp (pf, pargs) ->
       let args, stk = get_args_complete (Array.length pargs) stk in
       let fss = Array.map2 match_arg_pattern pargs args in
       apply_rule info tab pf m stk (fs @ List.concat (Array.to_list fss))
-  | Rewrite_rule.PCase (ind, pret, pc, pbrs) ->
+  | PCase (ind, pret, pc, pbrs) ->
       (match [@ocaml.warning "-4"] strip_update_shift_app m stk with
       | _depth, _args, ZcaseT (ci, _, _, ret, brs, _e) :: stk ->
         if not @@ Ind.CanOrd.equal ind ci.ci_ind then raise PatternFailure;
@@ -1502,7 +1502,7 @@ let rec apply_rule info tab p m stk fs =
         let fsbrs = Array.map2 (fun a (_, b) -> match_arg_pattern a (inject b)) pbrs brs in
         apply_rule info tab pc m stk (fs @ fsret @ List.concat (Array.to_list fsbrs))
       | _ -> raise PatternFailure)
-  | Rewrite_rule.PProj (proj, pc) ->
+  | PProj (proj, pc) ->
       (match [@ocaml.warning "-4"] strip_update_shift_app m stk with
       | _depth, _args, Zproj proj' :: stk ->
         if not @@ Projection.Repr.CanOrd.equal (Projection.repr proj) proj' then raise PatternFailure;
@@ -1515,9 +1515,9 @@ let rec apply_rules info tab r m stk =
   | [] -> (m, stk)
   | r :: rs ->
     try
-      let (fs, fus, stk) = apply_rule info tab r.Rewrite_rule.lhs_pat m stk [] in
+      let (fs, fus, stk) = apply_rule info tab r.lhs_pat m stk [] in
       let subst = List.fold_right subs_cons fs (subs_id 0) in
-      mk_clos (subst, fus) r.Rewrite_rule.rhs, stk
+      mk_clos (subst, fus) r.rhs, stk
     with PatternFailure -> apply_rules info tab rs m stk
 
 

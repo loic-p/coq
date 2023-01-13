@@ -280,6 +280,28 @@ type mutual_inductive_body = {
 
 type mind_specif = mutual_inductive_body * one_inductive_body
 
+(** {6 Rewrite rules } *)
+
+type rewrite_arg_pattern =
+  | APHole
+  (* | APHoleIgnored *)
+  | APApp     of rewrite_arg_pattern * rewrite_arg_pattern array
+  | APInd     of inductive
+  | APConstr  of constructor
+  | APInt     of Uint63.t
+  | APFloat   of Float64.t
+
+type rewrite_pattern =
+  | PApp      of rewrite_pattern * rewrite_arg_pattern array
+  | PConst    of Constant.t  (* Symbol *)
+  | PCase     of inductive * rewrite_arg_pattern * rewrite_pattern * rewrite_arg_pattern array
+  | PProj     of Projection.t * rewrite_pattern
+
+type rewrite_rule = {
+  lhs_pat : rewrite_pattern;
+  rhs : constr;
+}
+
 (** {6 Module declarations } *)
 
 (** Functor expressions are forced to be on top of other expressions *)
