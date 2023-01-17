@@ -1859,11 +1859,12 @@ let unfold_ref_with_args infos tab fl v =
     Some (a, (Zupdate a::(Zprimitive(op,c,rargs,nargs)::v)))
   | Rules r ->
     let _, fus = match fl with ConstKey c -> c | RelKey _ | VarKey _ -> assert false in
-      begin try
-        let rhs, fs, v = apply_rules infos tab r v in
-        let subst = List.fold_right subs_cons fs (subs_id 0) in
-        let m' = mk_clos (subst, fus) rhs in
-        Some (m', v)
-      with PatternFailure -> None
+    begin try
+      (* not sure about calling reduction here and about dropping the transparent state *)
+      let rhs, fs, v = apply_rules (infos_with_reds infos all) tab r v in
+      let subst = List.fold_right subs_cons fs (subs_id 0) in
+      let m' = mk_clos (subst, fus) rhs in
+      Some (m', v)
+    with PatternFailure -> None
     end
   | Undef | Primitive _ -> None
