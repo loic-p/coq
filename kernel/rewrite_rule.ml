@@ -29,39 +29,42 @@ let rec pattern_of_constr t = kind t |> function
   | Proj (p, c) -> PProj (p, pattern_of_constr c)
   | _ -> assert false
 
-let rec safe_arg_pattern_of_constr nvar t = kind t |> function
+let rec safe_arg_pattern_of_constr remvar t = kind t |> function
   | Rel i ->
-      if nvar <> i then CErrors.anomaly Pp.(str "Variable " ++ Constr.debug_print t ++ str" not used at the right place, expected "++ Constr.debug_print (of_kind (Rel nvar)) ++str".");
-      (succ nvar, APHole)
+      if remvar <> i then CErrors.anomaly Pp.(str "Variable " ++ Constr.debug_print t ++ str" not used at the right place, expected "++ Constr.debug_print (of_kind (Rel remvar)) ++str".");
+      (pred remvar, APHole)
   | App (f, args) ->
-      let nvar, pf = safe_arg_pattern_of_constr nvar f in
-      let nvar, pargs = Array.fold_left_map safe_arg_pattern_of_constr nvar args in
-      nvar, APApp (pf, pargs)
-  | Ind (ind, _) -> nvar, APInd ind
-  | Construct (c, _) -> nvar, APConstr c
-  | Int i -> nvar, APInt i
-  | Float f -> nvar, APFloat f
+      let remvar, pf = safe_arg_pattern_of_constr remvar f in
+      let remvar, pargs = Array.fold_left_map safe_arg_pattern_of_constr remvar args in
+      remvar, APApp (pf, pargs)
+  | Ind (ind, _) -> remvar, APInd ind
+  | Construct (c, _) -> remvar, APConstr c
+  | Int i -> remvar, APInt i
+  | Float f -> remvar, APFloat f
   | _ -> CErrors.anomaly Pp.(str "Subterm not recognised as arg_pattern" ++ Constr.debug_print t)
 
-let rec safe_pattern_of_constr env nvar t = kind t |> function
+let shift_left n f =
+  fun n' a -> let n', a' = f (n + n') a in n' - n, a'
+
+let rec safe_pattern_of_constr env remvar t = kind t |> function
   | Const (c, _) ->
       (match (Environ.lookup_constant c env).const_body with
       | Def _ | OpaqueDef _ | Primitive _ ->
           CErrors.anomaly Pp.(str "Constant " ++ Constant.print c ++ str" used in pattern has a body.")
       | Undef _ -> ());
-      nvar, PConst c
+      remvar, PConst c
   | App (f, args) ->
-      let nvar, pf = safe_pattern_of_constr env nvar f in
-      let nvar, pargs = Array.fold_left_map safe_arg_pattern_of_constr nvar args in
-      nvar, PApp (pf, pargs)
-  | Case (ci, _, _, (_, ret), _, c, brs) ->
-      let nvar, pc = safe_pattern_of_constr env nvar c in
-      let nvar, pret = safe_arg_pattern_of_constr nvar ret in
-      let nvar, pbrs = Array.fold_left_map (fun nvar (_, br) -> safe_arg_pattern_of_constr nvar br) nvar brs in
-      nvar, PCase (ci.ci_ind, pret, pc, pbrs)
+      let remvar, pf = safe_pattern_of_constr env remvar f in
+      let remvar, pargs = Array.fold_left_map safe_arg_pattern_of_constr remvar args in
+      remvar, PApp (pf, pargs)
+  | Case (ci, _, _, (retctx, ret), _, c, brs) ->
+      let remvar, pc = safe_pattern_of_constr env remvar c in
+      let remvar, pret = shift_left (Array.length retctx) safe_arg_pattern_of_constr remvar ret in
+      let remvar, pbrs = Array.fold_left_map (fun remvar (brctx, br) -> shift_left (Array.length brctx) safe_arg_pattern_of_constr remvar br) remvar brs in
+      remvar, PCase (ci.ci_ind, pret, pc, pbrs)
   | Proj (p, c) ->
-      let nvar, pc = safe_pattern_of_constr env nvar c in
-      nvar, PProj (p, pc)
+      let remvar, pc = safe_pattern_of_constr env remvar c in
+      remvar, PProj (p, pc)
   | _ -> CErrors.anomaly Pp.(str "Subterm not recognised as pattern" ++ Constr.debug_print t)
 
 let rec head_constant = function
@@ -76,11 +79,13 @@ let rule_of_constant env c =
   | Polymorphic _ ->
     CErrors.user_err Pp.(str "Universe polymophic rewrite rules not supported yet.")
   | Monomorphic ->
-    match kind cb.const_type with
+    let ctx, eq_rule = Term.decompose_prod_decls cb.const_type in
+    match kind eq_rule with
     (* XXX should be checking that the head is eq not some arbitrary inductive
        Maybe by registering eq in retroknowledge *)
     | App (hd, [|_;lhs;rhs|]) when isInd hd ->
-      let lhs_pat = pattern_of_constr lhs in
+      let rem_hyps, lhs_pat = safe_pattern_of_constr env (Context.Rel.nhyps ctx) lhs in
+      assert (rem_hyps = 0);
       head_constant lhs_pat, { lhs_pat = lhs_pat; rhs; }
     | _ ->
       CErrors.user_err

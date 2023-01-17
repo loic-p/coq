@@ -1445,80 +1445,17 @@ let set_conv f = conv := f
 
 exception PatternFailure
 
-let rec get_args_complete n = function
-    | Zupdate _r :: _s ->
-        (** The stack contains [Zupdate] mark only if in sharing mode *)
-        assert false;
-        (* get_args_complete n s *)
-    | Zshift _k :: s ->
-      get_args_complete n s
-    | Zapp l :: s ->
-        let na = Array.length l in
-        if n == na then l, s
-        else if n < na then (* more arguments *)
-          let args = Array.sub l 0 na in
-          let eargs = Array.sub l n (na-n) in
-          (args, Zapp eargs :: s)
-        else (* more lambdas *)
-          let l', s = get_args_complete (n-na) s in
-          Array.append l l', s
-    | ((ZcaseT _ | Zproj _ | Zfix _ | Zprimitive _) :: _ | []) -> raise PatternFailure
+type pattern_elimination =
+  | PEApp     of rewrite_arg_pattern array
+  | PECase    of inductive * rewrite_arg_pattern * rewrite_arg_pattern array
+  | PEProj    of Projection.t
 
-
-let rec match_arg_pattern p t =
-  match [@ocaml.warning "-4"] p, t.term with
-  | APHole, _ -> [t]
-  | APInd ind, FInd (ind', _) ->
-      if Ind.CanOrd.equal ind ind' then [] else raise PatternFailure
-  | APConstr constr, FConstruct (constr', _) ->
-    if Construct.CanOrd.equal constr constr' then [] else raise PatternFailure
-  | APInt i, FInt i' ->
-      if Uint63.equal i i' then [] else raise PatternFailure
-  | APFloat f, FFloat f' ->
-      if Float64.equal f f' then [] else raise PatternFailure
-  | APApp (pf, pargs), FApp (f, args) ->
-      if Array.length args <> Array.length pargs then raise PatternFailure;
-      let fss = Array.map2 match_arg_pattern pargs args in
-      let fs = match_arg_pattern pf f in
-      fs @ List.concat (Array.to_list fss)
-  | _, _ -> raise PatternFailure
-
-
-let rec apply_rule info tab p m stk fs =
-  match p with
-  | PConst c ->
-      (match [@ocaml.warning "-4"] m.term with
-      | FFlex ConstKey (c', u) when Constant.CanOrd.equal c c' -> (fs, u, stk)
-      | _ -> raise PatternFailure)
-  | PApp (pf, pargs) ->
-      let args, stk = get_args_complete (Array.length pargs) stk in
-      let fss = Array.map2 match_arg_pattern pargs args in
-      apply_rule info tab pf m stk (fs @ List.concat (Array.to_list fss))
-  | PCase (ind, pret, pc, pbrs) ->
-      (match [@ocaml.warning "-4"] strip_update_shift_app m stk with
-      | _depth, _args, ZcaseT (ci, _, _, ret, brs, _e) :: stk ->
-        if not @@ Ind.CanOrd.equal ind ci.ci_ind then raise PatternFailure;
-        let fsret = match_arg_pattern pret (inject (snd ret)) in
-        let fsbrs = Array.map2 (fun a (_, b) -> match_arg_pattern a (inject b)) pbrs brs in
-        apply_rule info tab pc m stk (fs @ fsret @ List.concat (Array.to_list fsbrs))
-      | _ -> raise PatternFailure)
-  | PProj (proj, pc) ->
-      (match [@ocaml.warning "-4"] strip_update_shift_app m stk with
-      | _depth, _args, Zproj proj' :: stk ->
-        if not @@ Projection.Repr.CanOrd.equal (Projection.repr proj) proj' then raise PatternFailure;
-        apply_rule info tab pc m stk fs
-      | _ -> raise PatternFailure
-      )
-
-let rec apply_rules info tab r m stk =
-  match r with
-  | [] -> (m, stk)
-  | r :: rs ->
-    try
-      let (fs, fus, stk) = apply_rule info tab r.lhs_pat m stk [] in
-      let subst = List.fold_right subs_cons fs (subs_id 0) in
-      mk_clos (subst, fus) r.rhs, stk
-    with PatternFailure -> apply_rules info tab rs m stk
+let rec eliminations_of_pattern acc = function
+  | PConst _ -> acc
+  | PApp (f, args) -> eliminations_of_pattern (PEApp args :: acc) f
+  | PCase (ind, ret, c, brs) -> eliminations_of_pattern (PECase (ind, ret, brs) :: acc) c
+  | PProj (p, c) -> eliminations_of_pattern (PEProj p :: acc) c
+let eliminations_of_pattern = eliminations_of_pattern []
 
 
 (* Computes a weak head normal form from the result of knh. *)
@@ -1539,7 +1476,15 @@ let rec knr info tab m stk =
           else
             (* Similarly to fix, partially applied primitives are not Ntrl! *)
             (m, stk)
-        | Rules r -> apply_rules info tab r m stk
+        | Rules r ->
+            let _, fus = match fl with ConstKey c -> c | RelKey _ | VarKey _ -> assert false in
+            begin try
+              let rhs, fs, stk = apply_rules info tab r stk in
+              let subst = List.fold_right subs_cons fs (subs_id 0) in
+              let m' = mk_clos (subst, fus) rhs in
+              kni info tab m' stk
+            with PatternFailure -> m, stk
+            end
         | Undef -> (set_ntrl m; (m,stk)))
   | FConstruct(c,_u) ->
      let use_match = red_set info.i_flags fMATCH in
@@ -1646,6 +1591,69 @@ and case_inversion info tab ci u params indices v =
     in
     if Array.for_all_i check_index 0 indices
     then Some v else None
+
+and match_arg_pattern info tab p t =
+  match_arg_pattern' info tab p (fapp_stack (kni info tab t []))
+and match_arg_pattern' info tab p t =
+  match [@ocaml.warning "-4"] p, t.term with
+  | APHole, _ -> [t]
+  | APInd ind, FInd (ind', _) ->
+      if Ind.CanOrd.equal ind ind' then [] else raise PatternFailure
+  | APConstr constr, FConstruct (constr', _) ->
+    if Construct.CanOrd.equal constr constr' then [] else raise PatternFailure
+  | APInt i, FInt i' ->
+      if Uint63.equal i i' then [] else raise PatternFailure
+  | APFloat f, FFloat f' ->
+      if Float64.equal f f' then [] else raise PatternFailure
+  | _, FApp ({term=FApp _;_}, _) -> assert false
+  | APApp (pf, pargs), FApp (f, args) ->
+      if Array.length args <> Array.length pargs then raise PatternFailure;
+      let fss = Array.map2 (match_arg_pattern info tab) pargs args in
+      let fs = match_arg_pattern info tab pf f in
+      fs @ List.concat (Array.to_list fss)
+  | _, _ -> raise PatternFailure
+
+and apply_rule info tab fs es stk =
+  match [@ocaml.warning "-4"] es, stk with
+  | [], _ -> fs, stk
+  | _, Zshift _k :: s -> let f = false in assert f; apply_rule info tab fs es s
+  | _, Zupdate _m :: s -> let f = false in assert f; apply_rule info tab fs es s
+  | PEApp pargs :: e, Zapp args :: s ->
+      let np = Array.length pargs in
+      let na = Array.length args in
+      if np == na then
+        let fss = Array.map2 (match_arg_pattern info tab) pargs args in
+        apply_rule info tab (fs @ List.concat (Array.to_list fss)) e s
+      else if np < na then (* more arguments *)
+        let remargs = Array.sub args np (na-np) in
+        let usedargs = Array.sub args 0 np in
+        let fss = Array.map2 (match_arg_pattern info tab) pargs usedargs in
+        apply_rule info tab (fs @ List.concat (Array.to_list fss)) e (Zapp remargs :: s)
+      else (* more lambdas *)
+        let rempargs = Array.sub pargs na (np-na) in
+        let usedpargs = Array.sub pargs 0 na in
+        let fss = Array.map2 (match_arg_pattern info tab) usedpargs args in
+        apply_rule info tab (fs @ List.concat (Array.to_list fss)) (PEApp rempargs :: e) s
+  | PECase (pind, pret, pbrs) :: e, ZcaseT (ci, _, _, ret, brs, _e) :: s ->
+      if not @@ Ind.CanOrd.equal pind ci.ci_ind then raise PatternFailure;
+      let fsret = match_arg_pattern info tab pret (inject (snd ret)) in
+      let fsbrs = Array.map2 (fun a (_, b) -> match_arg_pattern info tab a (inject b)) pbrs brs in
+      apply_rule info tab (fs @ fsret @ List.concat (Array.to_list fsbrs)) e s
+  | PEProj proj :: e, Zproj proj' :: s ->
+      if not @@ Projection.Repr.CanOrd.equal (Projection.repr proj) proj' then raise PatternFailure;
+      apply_rule info tab fs e s
+  | _, _ -> raise PatternFailure
+
+
+and apply_rules info tab r stk =
+  match r with
+  | [] -> raise PatternFailure
+  | r :: rs ->
+    try
+      let fs, stk = apply_rule info tab [] (eliminations_of_pattern r.lhs_pat) stk in
+      r.rhs, List.rev fs, stk
+    with PatternFailure -> apply_rules info tab rs stk
+
 
 let kh info tab v stk = fapp_stack(kni info tab v stk)
 
@@ -1849,4 +1857,13 @@ let unfold_ref_with_args infos tab fl v =
     let c = match [@ocaml.warning "-4"] fl with ConstKey c -> c | _ -> assert false in
     let rargs, a, nargs, v = get_native_args1 op c v in
     Some (a, (Zupdate a::(Zprimitive(op,c,rargs,nargs)::v)))
-  | Undef | Rules _ | Primitive _ -> None
+  | Rules r ->
+    let _, fus = match fl with ConstKey c -> c | RelKey _ | VarKey _ -> assert false in
+      begin try
+        let rhs, fs, v = apply_rules infos tab r v in
+        let subst = List.fold_right subs_cons fs (subs_id 0) in
+        let m' = mk_clos (subst, fus) rhs in
+        Some (m', v)
+      with PatternFailure -> None
+    end
+  | Undef | Primitive _ -> None
