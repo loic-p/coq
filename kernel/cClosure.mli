@@ -253,7 +253,7 @@ val set_conv : (clos_infos -> clos_tab -> fconstr -> fconstr -> bool) -> unit
 type pattern_elimination = PEApp of Declarations.rewrite_arg_pattern array | PECase of inductive * Declarations.rewrite_arg_pattern * Declarations.rewrite_arg_pattern array | PEProj of Projection.t
 
 val match_arg_pattern : clos_infos -> clos_tab -> Declarations.rewrite_arg_pattern -> fconstr -> fconstr list
-val match_arg_pattern' : clos_infos -> clos_tab -> Declarations.rewrite_arg_pattern -> fconstr -> fconstr list
+val hard_match_arg_pattern : clos_infos -> clos_tab -> Declarations.rewrite_arg_pattern -> fconstr -> fconstr list
 val apply_rule : clos_infos -> clos_tab -> fconstr -> fconstr list -> pattern_elimination list -> stack -> fconstr list * stack_member list
 val apply_rules : clos_infos -> clos_tab -> fconstr -> Declarations.rewrite_rule list -> stack -> constr * fconstr list * stack_member list
 

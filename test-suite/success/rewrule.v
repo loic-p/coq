@@ -29,4 +29,7 @@ Rewrite Rule raise_bool.
 
 Check eq_refl : match raise bool as b return true = b with true => eq_refl | false => raise _ end = raise (true = raise bool).
 
-Check eq_refl : match raise bool as b return b = b with true | false => eq_refl end = raise (let b := raise bool in b = b).
+Definition eq_diag {A} (x: A) := x = x.
+Check eq_refl : match raise bool as b return eq_diag b with true | false => eq_refl end = raise (raise bool = raise bool).
+
+Check eq_refl : match raise bool as b return b = b with true | false => eq_refl end = raise (raise bool = raise bool).

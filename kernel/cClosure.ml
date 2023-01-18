@@ -1593,9 +1593,7 @@ and case_inversion info tab ci u params indices v =
     then Some v else None
 
 and match_arg_pattern info tab p t =
-  match_arg_pattern' info tab p (fapp_stack (kni info tab t []))
-and match_arg_pattern' info tab p t =
-  match [@ocaml.warning "-4"] p, t.term with
+  match [@ocaml.warning "-4"] p, (fapp_stack (knh info t [])).term with
   | APHole, _ -> [t]
   | APHoleIgnored, _ -> []
   | APInd ind, FInd (ind', _) ->
@@ -1623,7 +1621,15 @@ and match_arg_pattern' info tab p t =
         let fss = Array.map2 (match_arg_pattern info tab) usedpargs args in
         let fs = match_arg_pattern info tab (APApp (pf, rempargs)) f in
         fs @ List.concat (Array.to_list fss)
-  | _, _ -> raise PatternFailure
+  | _ -> raise PatternFailure
+
+and hard_match_arg_pattern info tab p t =
+  let h, stk = knh info t [] in
+  try
+    match_arg_pattern info tab p (zip h stk)
+  with PatternFailure ->
+    match_arg_pattern info tab p (fapp_stack (kni info tab h stk))
+
 
 and apply_rule info tab head fs es stk =
   match [@ocaml.warning "-4"] es, stk with
@@ -1636,20 +1642,20 @@ and apply_rule info tab head fs es stk =
       let np = Array.length pargs in
       let na = Array.length args in
       if np == na then
-        let fss = Array.map2 (match_arg_pattern info tab) pargs args in
+        let fss = Array.map2 (hard_match_arg_pattern info tab) pargs args in
         apply_rule info tab head (fs @ List.concat (Array.to_list fss)) e s
       else if np < na then (* more real arguments *)
         let usedargs, remargs = Array.chop np args in
-        let fss = Array.map2 (match_arg_pattern info tab) pargs usedargs in
+        let fss = Array.map2 (hard_match_arg_pattern info tab) pargs usedargs in
         apply_rule info tab head (fs @ List.concat (Array.to_list fss)) e (Zapp remargs :: s)
       else (* more pattern arguments *)
         let usedpargs, rempargs = Array.chop na pargs in
-        let fss = Array.map2 (match_arg_pattern info tab) usedpargs args in
+        let fss = Array.map2 (hard_match_arg_pattern info tab) usedpargs args in
         apply_rule info tab head (fs @ List.concat (Array.to_list fss)) (PEApp rempargs :: e) s
   | PECase (pind, pret, pbrs) :: e, ZcaseT (ci, _, _, ret, brs, _e) :: s ->
       if not @@ Ind.CanOrd.equal pind ci.ci_ind then raise PatternFailure;
-      let fsret = match_arg_pattern info tab pret (inject (snd ret)) in
-      let fsbrs = Array.map2 (fun a (_, b) -> match_arg_pattern info tab a (inject b)) pbrs brs in
+      let fsret = hard_match_arg_pattern info tab pret (inject (snd ret)) in
+      let fsbrs = Array.map2 (fun a (_, b) -> hard_match_arg_pattern info tab a (inject b)) pbrs brs in
       apply_rule info tab head (fs @ fsret @ List.concat (Array.to_list fsbrs)) e s
   | PEProj proj :: e, Zproj proj' :: s ->
       if not @@ Projection.Repr.CanOrd.equal (Projection.repr proj) proj' then raise PatternFailure;
