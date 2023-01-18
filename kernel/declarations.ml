@@ -284,7 +284,7 @@ type mind_specif = mutual_inductive_body * one_inductive_body
 
 type rewrite_arg_pattern =
   | APHole
-  (* | APHoleIgnored *)
+  | APHoleIgnored
   | APApp     of rewrite_arg_pattern * rewrite_arg_pattern array
   | APInd     of inductive
   | APConstr  of constructor

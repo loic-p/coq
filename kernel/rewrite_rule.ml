@@ -22,10 +22,23 @@ let rec arg_pattern_of_constr t = kind t |> function
   | Float f -> APFloat f
   | _ -> assert false
 
+let app_pattern_of_constr n t =
+  let f, args = decompose_appvect t in
+  let nargs = Array.length args in
+  assert (nargs >= n);
+  let remargs, usedargs = Array.chop (nargs - n) args in
+  let pusedargs = Array.map (kind %> function Rel _ -> APHoleIgnored | _ -> assert false) usedargs in
+  let t' = mkApp (f, remargs) in
+  let p' = arg_pattern_of_constr t' in
+  match p' with APApp (pf, pargs) -> APApp (pf, Array.append pargs pusedargs) | _ -> APApp (p', pusedargs)
+
+let app_pattern_of_constr' p = app_pattern_of_constr (Array.length (fst p)) (snd p)
+
 let rec pattern_of_constr t = kind t |> function
   | Const (c, _) -> PConst c
   | App (f, args) -> PApp (pattern_of_constr f, Array.map arg_pattern_of_constr args)
-  | Case (ci, _, _, p, _, c, brs) -> PCase (ci.ci_ind, arg_pattern_of_constr (snd p), pattern_of_constr c, Array.map (fun (_, br) -> arg_pattern_of_constr br) brs)
+  | Case (ci, _, _, p, _, c, brs) ->
+      PCase (ci.ci_ind, app_pattern_of_constr' p, pattern_of_constr c, Array.map app_pattern_of_constr' brs)
   | Proj (p, c) -> PProj (p, pattern_of_constr c)
   | _ -> assert false
 
@@ -43,8 +56,23 @@ let rec safe_arg_pattern_of_constr remvar t = kind t |> function
   | Float f -> remvar, APFloat f
   | _ -> CErrors.anomaly Pp.(str "Subterm not recognised as arg_pattern" ++ Constr.debug_print t)
 
-let shift_left n f =
-  fun n' a -> let n', a' = f (n + n') a in n' - n, a'
+let safe_app_pattern_of_constr remvar n t =
+  let f, args = decompose_appvect t in
+  let nargs = Array.length args in
+  if not (nargs >= n) then CErrors.anomaly Pp.(str "Subterm not recognised as pattern under binders" ++ Constr.debug_print t);
+  let remargs, usedargs = Array.chop (nargs - n) args in
+  let pusedargs = Array.map
+    (kind %> function
+      | Rel i when i <= n -> APHoleIgnored
+      | t -> CErrors.anomaly Pp.(str "Subterm not recognised as pattern under binders" ++ Constr.debug_print (of_kind t)))
+    usedargs
+  in
+  let t' = mkApp (f, remargs) in
+  let (remvar, p') = safe_arg_pattern_of_constr (remvar + n) t' in
+  remvar - n, match p' with APApp (pf, pargs) -> APApp (pf, Array.append pargs pusedargs) | _ -> APApp (p', pusedargs)
+
+let safe_app_pattern_of_constr' remvar p = safe_app_pattern_of_constr remvar (Array.length (fst p)) (snd p)
+
 
 let rec safe_pattern_of_constr env remvar t = kind t |> function
   | Const (c, _) ->
@@ -57,10 +85,10 @@ let rec safe_pattern_of_constr env remvar t = kind t |> function
       let remvar, pf = safe_pattern_of_constr env remvar f in
       let remvar, pargs = Array.fold_left_map safe_arg_pattern_of_constr remvar args in
       remvar, PApp (pf, pargs)
-  | Case (ci, _, _, (retctx, ret), _, c, brs) ->
+  | Case (ci, _, _, ret, _, c, brs) ->
       let remvar, pc = safe_pattern_of_constr env remvar c in
-      let remvar, pret = shift_left (Array.length retctx) safe_arg_pattern_of_constr remvar ret in
-      let remvar, pbrs = Array.fold_left_map (fun remvar (brctx, br) -> shift_left (Array.length brctx) safe_arg_pattern_of_constr remvar br) remvar brs in
+      let remvar, pret = safe_app_pattern_of_constr' remvar ret in
+      let remvar, pbrs = Array.fold_left_map safe_app_pattern_of_constr' remvar brs in
       remvar, PCase (ci.ci_ind, pret, pc, pbrs)
   | Proj (p, c) ->
       let remvar, pc = safe_pattern_of_constr env remvar c in
