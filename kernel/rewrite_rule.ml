@@ -26,11 +26,8 @@ let app_pattern_of_constr n t =
   let f, args = decompose_appvect t in
   let nargs = Array.length args in
   assert (nargs >= n);
-  let remargs, usedargs = Array.chop (nargs - n) args in
-  let pusedargs = Array.map (kind %> function Rel _ -> APHoleIgnored | _ -> assert false) usedargs in
-  let t' = mkApp (f, remargs) in
-  let p' = arg_pattern_of_constr t' in
-  match p' with APApp (pf, pargs) -> APApp (pf, Array.append pargs pusedargs) | _ -> APApp (p', pusedargs)
+  let remargs, _ = Array.chop (nargs - n) args in
+  arg_pattern_of_constr (mkApp (f, remargs))
 
 let app_pattern_of_constr' p = app_pattern_of_constr (Array.length (fst p)) (snd p)
 
@@ -56,20 +53,21 @@ let rec safe_arg_pattern_of_constr remvar t = kind t |> function
   | Float f -> remvar, APFloat f
   | _ -> CErrors.anomaly Pp.(str "Subterm not recognised as arg_pattern" ++ Constr.debug_print t)
 
+let shift_left n f =
+  fun n' a -> let n', a' = f (n + n') a in n' - n, a'
+
 let safe_app_pattern_of_constr remvar n t =
   let f, args = decompose_appvect t in
   let nargs = Array.length args in
   if not (nargs >= n) then CErrors.anomaly Pp.(str "Subterm not recognised as pattern under binders" ++ Constr.debug_print t);
   let remargs, usedargs = Array.chop (nargs - n) args in
-  let pusedargs = Array.map
+  let () = Array.iter
     (kind %> function
-      | Rel i when i <= n -> APHoleIgnored
+      | Rel i when i <= n -> ()
       | t -> CErrors.anomaly Pp.(str "Subterm not recognised as pattern under binders" ++ Constr.debug_print (of_kind t)))
     usedargs
   in
-  let t' = mkApp (f, remargs) in
-  let (remvar, p') = safe_arg_pattern_of_constr (remvar + n) t' in
-  remvar - n, match p' with APApp (pf, pargs) -> APApp (pf, Array.append pargs pusedargs) | _ -> APApp (p', pusedargs)
+  shift_left n safe_arg_pattern_of_constr remvar (mkApp (f, remargs))
 
 let safe_app_pattern_of_constr' remvar p = safe_app_pattern_of_constr remvar (Array.length (fst p)) (snd p)
 

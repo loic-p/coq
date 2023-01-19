@@ -1652,10 +1652,12 @@ and apply_rule info tab head fs es stk =
         let usedpargs, rempargs = Array.chop na pargs in
         let fss = Array.map2 (hard_match_arg_pattern info tab) usedpargs args in
         apply_rule info tab head (fs @ List.concat (Array.to_list fss)) (PEApp rempargs :: e) s
-  | PECase (pind, pret, pbrs) :: e, ZcaseT (ci, _, _, ret, brs, _e) :: s ->
+  | PECase (pind, pret, pbrs) :: e, ZcaseT (ci, u, pms, p, brs, e') :: s ->
       if not @@ Ind.CanOrd.equal pind ci.ci_ind then raise PatternFailure;
-      let fsret = hard_match_arg_pattern info tab pret (inject (snd ret)) in
-      let fsbrs = Array.map2 (fun a (_, b) -> hard_match_arg_pattern info tab a (inject b)) pbrs brs in
+      let dummy = mkProp in
+      let (_, p, _, _, brs) = Environ.expand_case info.i_cache.i_env (ci, u, pms, p, NoInvert, dummy, brs) in
+      let fsret = hard_match_arg_pattern info tab pret (mk_clos e' p) in
+      let fsbrs = Array.map2 (fun a b -> hard_match_arg_pattern info tab a (mk_clos e' b)) pbrs brs in
       apply_rule info tab head (fs @ fsret @ List.concat (Array.to_list fsbrs)) e s
   | PEProj proj :: e, Zproj proj' :: s ->
       if not @@ Projection.Repr.CanOrd.equal (Projection.repr proj) proj' then raise PatternFailure;
