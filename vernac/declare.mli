@@ -321,6 +321,7 @@ end
 type proof_entry
 type parameter_entry
 type primitive_entry
+type symbol_entry
 
 val definition_entry
   :  ?opaque:bool
@@ -341,6 +342,11 @@ val primitive_entry
   :  ?types:(Constr.types * UState.named_universes_entry)
   -> CPrimitives.op_or_type
   -> primitive_entry
+
+val symbol_entry
+  :  ?univs:UState.named_universes_entry
+  -> Constr.types
+  -> symbol_entry
 
 (** XXX: This is an internal, low-level API and could become scheduled
     for removal from the public API, use higher-level declare APIs
@@ -374,6 +380,7 @@ type constant_entry =
   | DefinitionEntry of proof_entry
   | ParameterEntry of parameter_entry
   | PrimitiveEntry of primitive_entry
+  | SymbolEntry of symbol_entry
 
 val prepare_parameter
   : poly:bool

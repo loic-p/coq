@@ -363,6 +363,7 @@ type nonrec vernac_expr =
   | VernacExactProof of constr_expr
   | VernacAssumption of (discharge * Decls.assumption_object_kind) *
       Declaremods.inline * (ident_decl list * constr_expr) with_coercion list
+  | VernacSymbol of (ident_decl list * constr_expr) with_coercion list
   | VernacInductive of inductive_kind * (inductive_expr * notation_declaration list) list
   | VernacFixpoint of discharge * fixpoint_expr list
   | VernacCoFixpoint of discharge * cofixpoint_expr list

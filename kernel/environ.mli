@@ -212,6 +212,7 @@ type const_evaluation_result =
   | NoBody
   | Opaque
   | IsPrimitive of Univ.Instance.t * CPrimitives.t
+  | HasRules of rewrite_rule list
 exception NotEvaluableConst of const_evaluation_result
 
 val constant_type : env -> Constant.t puniverses -> types constrained

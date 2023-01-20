@@ -90,7 +90,7 @@ let rec check_with_def (cst, ustate) env struc (idl,(c,ctx)) mp reso =
               cst
             | Def c' ->
               infer_gen_conv (cst, ustate) env' c c'
-            | Primitive _ ->
+            | Primitive _ | Symbol _ ->
               error_incorrect_with_constraint lab
           in
           Monomorphic, cst
@@ -115,7 +115,7 @@ let rec check_with_def (cst, ustate) env struc (idl,(c,ctx)) mp reso =
                 try Reduction.conv env' c c'
                 with Reduction.NotConvertible -> error_incorrect_with_constraint lab
               end
-            | Primitive _ ->
+            | Primitive _ | Symbol _ ->
               error_incorrect_with_constraint lab
           in
           Polymorphic ctx, cst

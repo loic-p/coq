@@ -41,7 +41,7 @@ let rec pattern_of_constr t = kind t |> function
 
 let rec safe_arg_pattern_of_constr remvar t = kind t |> function
   | Rel i ->
-      if remvar <> i then CErrors.anomaly Pp.(str "Variable " ++ Constr.debug_print t ++ str" not used at the right place, expected "++ Constr.debug_print (of_kind (Rel remvar)) ++str".");
+      if remvar <> i then CErrors.user_err Pp.(str "Variable " ++ Constr.debug_print t ++ str" not used at the right place, expected "++ Constr.debug_print (of_kind (Rel remvar)) ++str".");
       (pred remvar, APHole)
   | App (f, args) ->
       let remvar, pf = safe_arg_pattern_of_constr remvar f in
@@ -51,7 +51,7 @@ let rec safe_arg_pattern_of_constr remvar t = kind t |> function
   | Construct (c, _) -> remvar, APConstr c
   | Int i -> remvar, APInt i
   | Float f -> remvar, APFloat f
-  | _ -> CErrors.anomaly Pp.(str "Subterm not recognised as arg_pattern" ++ Constr.debug_print t)
+  | _ -> CErrors.user_err Pp.(str "Subterm not recognised as arg_pattern" ++ Constr.debug_print t)
 
 let shift_left n f =
   fun n' a -> let n', a' = f (n + n') a in n' - n, a'
@@ -59,12 +59,12 @@ let shift_left n f =
 let safe_app_pattern_of_constr remvar n t =
   let f, args = decompose_appvect t in
   let nargs = Array.length args in
-  if not (nargs >= n) then CErrors.anomaly Pp.(str "Subterm not recognised as pattern under binders" ++ Constr.debug_print t);
+  if not (nargs >= n) then CErrors.user_err Pp.(str "Subterm not recognised as pattern under binders" ++ Constr.debug_print t);
   let remargs, usedargs = Array.chop (nargs - n) args in
   let () = Array.iter
     (kind %> function
       | Rel i when i <= n -> ()
-      | t -> CErrors.anomaly Pp.(str "Subterm not recognised as pattern under binders" ++ Constr.debug_print (of_kind t)))
+      | t -> CErrors.user_err Pp.(str "Subterm not recognised as pattern under binders" ++ Constr.debug_print (of_kind t)))
     usedargs
   in
   shift_left n safe_arg_pattern_of_constr remvar (mkApp (f, remargs))
@@ -75,9 +75,9 @@ let safe_app_pattern_of_constr' remvar p = safe_app_pattern_of_constr remvar (Ar
 let rec safe_pattern_of_constr env remvar t = kind t |> function
   | Const (c, _) ->
       (match (Environ.lookup_constant c env).const_body with
-      | Def _ | OpaqueDef _ | Primitive _ ->
-          CErrors.anomaly Pp.(str "Constant " ++ Constant.print c ++ str" used in pattern has a body.")
-      | Undef _ -> ());
+      | Def _ | OpaqueDef _ | Primitive _ | Undef _ ->
+          CErrors.user_err Pp.(str "Constant " ++ Constant.print c ++ str" used in pattern is not a symbol.")
+      | Symbol _ -> ());
       remvar, PConst c
   | App (f, args) ->
       let remvar, pf = safe_pattern_of_constr env remvar f in
@@ -91,7 +91,7 @@ let rec safe_pattern_of_constr env remvar t = kind t |> function
   | Proj (p, c) ->
       let remvar, pc = safe_pattern_of_constr env remvar c in
       remvar, PProj (p, pc)
-  | _ -> CErrors.anomaly Pp.(str "Subterm not recognised as pattern" ++ Constr.debug_print t)
+  | _ -> CErrors.user_err Pp.(str "Subterm not recognised as pattern" ++ Constr.debug_print t)
 
 let rec head_constant = function
   | PConst c -> c

@@ -1,7 +1,7 @@
 Inductive rewrite {A : Type} (a: A) (b: A) := rewrite_intro.
 Notation "a ==> b" := (rewrite_intro a b) (at level 80).
 
-Axiom pplus : nat -> nat -> nat.
+Symbol pplus : nat -> nat -> nat.
 Notation "a ++ b" := (pplus a b).
 
 Definition addn0 := fun n => n ++ 0 ==> n.
@@ -18,7 +18,7 @@ Check eq_refl : 5 ++ 10 = 15.
 Check (fun _ _ => eq_refl) : forall n n', S (S n) ++ S n' = S (S (S (n ++ n'))).
 Check (fun _ _ _ => eq_refl) : forall n n' n'', S (S n) ++ S n' ++ S (S n'') = S (S (S (S (S (n ++ n' ++ n''))))).
 
-Axiom raise : forall P: Type, P.
+Symbol raise : forall P: Type, P.
 
 Definition raise_bool := fun P p p' =>
   match raise bool as b return P b with

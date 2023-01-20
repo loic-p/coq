@@ -373,7 +373,7 @@ let side_effects_of_private_constants l =
 let lift_constant c =
   let body = match c.const_body with
   | OpaqueDef _ -> Undef None
-  | Def _ | Undef _ | Primitive _ as body -> body
+  | Def _ | Undef _ | Primitive _ | Symbol _ as body -> body
   in
   { c with const_body = body }
 
@@ -840,7 +840,7 @@ let export_private_constants eff senv =
     let body = Constr.hcons body in
     let opaque = { exp_body = body; exp_handle = h; exp_univs = univs } in
     senv, (kn, { c with const_body = OpaqueDef o }, Some opaque)
-  | Def _ | Undef _ | Primitive _ as body ->
+  | Def _ | Undef _ | Primitive _ | Symbol _ as body ->
     senv, (kn, { c with const_body = body }, None)
   in
   let senv, bodies = List.fold_left_map map senv exported in
@@ -963,7 +963,7 @@ let add_private_constant l uctx decl senv : (Constant.t * private_constants) * s
        and depending of the opaque status of the latter, this proof term will be
        either inlined or reexported. *)
     { cb with const_body = Undef None }
-  | Undef _ | Primitive _ -> assert false
+  | Undef _ | Primitive _ | Symbol _ -> assert false
   in
   let senv = add_constant_aux senv (kn, dcb) in
   let eff =

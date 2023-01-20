@@ -47,11 +47,12 @@ type inline = int option
     transparent body, or an opaque one *)
 
 (* Global declarations (i.e. constants) can be either: *)
-type ('a, 'opaque) constant_def =
+type ('a, 'opaque, 'rules) constant_def =
   | Undef of inline                       (** a global assumption *)
   | Def of 'a                             (** or a transparent global definition *)
   | OpaqueDef of 'opaque                  (** or an opaque global definition *)
   | Primitive of CPrimitives.t (** or a primitive operation *)
+  | Symbol of 'rules                      (** or a symbol *)
 
 type universes =
   | Monomorphic
@@ -109,7 +110,7 @@ type typing_flags = {
 type 'opaque pconstant_body = {
     const_hyps : Constr.named_context; (** younger hyp at top *)
     const_univ_hyps : Univ.Instance.t;
-    const_body : (Constr.t, 'opaque) constant_def;
+    const_body : (Constr.t, 'opaque, unit) constant_def;
     const_type : types;
     const_relevance : Sorts.relevance;
     const_body_code : Vmemitcodes.body_code option;

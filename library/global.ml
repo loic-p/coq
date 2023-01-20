@@ -143,7 +143,7 @@ let force_proof access o = match access.access_proof o with
 let body_of_constant_body access env cb =
   let open Declarations in
   match cb.const_body with
-  | Undef _ | Primitive _ ->
+  | Undef _ | Primitive _ | Symbol _ ->
      None
   | Def c ->
     let u = match cb.const_universes with

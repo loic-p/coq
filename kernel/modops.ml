@@ -577,7 +577,7 @@ let inline_delta_resolver env inl mp mbid mtb delta =
         let constant = lookup_constant con env in
         let l = make_inline delta r in
         match constant.const_body with
-        | Undef _ | OpaqueDef _ | Primitive _ -> l
+        | Undef _ | OpaqueDef _ | Primitive _ | Symbol _ -> l
         | Def constr ->
           let ctx = Declareops.constant_polymorphic_context constant in
           let constr = Univ.{univ_abstracted_value=constr; univ_abstracted_binder=ctx} in

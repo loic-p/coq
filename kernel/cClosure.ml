@@ -296,13 +296,7 @@ type clos_infos = {
   i_relevances : Sorts.relevance Range.t;
   i_cache : infos_cache }
 
-type value_cache_entry =
-  | Def of fconstr
-  | Rules of rewrite_rule list
-  | Primitive of CPrimitives.t
-  | Undef
-
-type clos_tab = value_cache_entry KeyTable.t
+type clos_tab = (fconstr, Empty.t, rewrite_rule list) constant_def KeyTable.t
 
 let info_flags info = info.i_flags
 let info_env info = info.i_cache.i_env
@@ -496,12 +490,12 @@ let assoc_defined = function
 | LocalAssum (_, _) -> raise Not_found
 
 let constant_value_in u = function
-| Declarations.Def b -> injectu b u
-| Declarations.OpaqueDef _ -> raise (NotEvaluableConst Opaque)
-| Declarations.Undef _ -> raise (NotEvaluableConst NoBody)
-| Declarations.Primitive p -> raise (NotEvaluableConst (IsPrimitive (u,p)))
-
-exception FoundRules of rewrite_rule list
+| Def b -> injectu b u
+| OpaqueDef _ -> raise (NotEvaluableConst Opaque)
+| Undef _ -> raise (NotEvaluableConst NoBody)
+| Primitive p -> raise (NotEvaluableConst (IsPrimitive (u,p)))
+| Symbol _ -> assert false
+(*  Should already be dealt with *)
 
 let ref_value_cache info flags tab ref =
   let env = info.i_cache.i_env in
@@ -534,18 +528,18 @@ let ref_value_cache info flags tab ref =
           | ConstKey (cst,u) ->
             let cb = lookup_constant cst env in
             let () = shortcut_irrelevant info (cb.const_relevance) in
-            match Cmap_env.find_opt cst env.symb_pats with Some r -> raise (FoundRules r) | None -> ();
+            match Cmap_env.find_opt cst env.symb_pats with Some r -> raise (NotEvaluableConst (HasRules r)) | None -> ();
             if TransparentState.is_transparent_constant flags cst then constant_value_in u cb.const_body
             else raise Not_found
         in
-        (Def body : value_cache_entry)
+        Def body
       with
       | Irrelevant -> Def mk_irrelevant
       | NotEvaluableConst (IsPrimitive (_u,op)) (* Const *) -> Primitive op
-      | FoundRules r -> Rules r
+      | NotEvaluableConst (HasRules r) -> Symbol r
       | Not_found (* List.assoc *)
       | NotEvaluableConst _ (* Const *)
-        -> Undef
+        -> Undef None
     in
     KeyTable.add tab ref v; v
 
@@ -1476,7 +1470,7 @@ let rec knr info tab m stk =
           else
             (* Similarly to fix, partially applied primitives are not Ntrl! *)
             (m, stk)
-        | Rules r ->
+        | Symbol r ->
             let _, fus = match fl with ConstKey c -> c | RelKey _ | VarKey _ -> assert false in
             begin try
               let rhs, fs, stk = apply_rules info tab m r stk in
@@ -1485,7 +1479,7 @@ let rec knr info tab m stk =
               kni info tab m' stk
             with PatternFailure -> m, stk
             end
-        | Undef -> (set_ntrl m; (m,stk)))
+        | Undef _ | OpaqueDef _ -> (set_ntrl m; (m,stk)))
   | FConstruct(c,_u) ->
      let use_match = red_set info.i_flags fMATCH in
      let use_fix = red_set info.i_flags fFIX in
@@ -1877,7 +1871,7 @@ let unfold_ref_with_args infos tab fl v =
     let c = match [@ocaml.warning "-4"] fl with ConstKey c -> c | _ -> assert false in
     let rargs, a, nargs, v = get_native_args1 op c v in
     Some (a, (Zupdate a::(Zprimitive(op,c,rargs,nargs)::v)))
-  | Rules r ->
+  | Symbol r ->
     let _, fus = match fl with ConstKey c -> c | RelKey _ | VarKey _ -> assert false in
     begin try
       (* not sure about calling reduction here and about dropping the transparent state *)
@@ -1887,4 +1881,4 @@ let unfold_ref_with_args infos tab fl v =
       Some (m', v)
     with PatternFailure -> None
     end
-  | Undef | Primitive _ -> None
+  | Undef _ | OpaqueDef _ | Primitive _ -> None

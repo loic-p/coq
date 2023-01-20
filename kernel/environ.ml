@@ -215,7 +215,7 @@ let mem_constant kn env = Cmap_env.mem kn env.env_globals.Globals.constants
 
 let add_rewrite_rule c r env =
   let add = function
-    | None -> Some [r]
+    | None -> anomaly Pp.(str "Trying to add a rule to non-symbol " ++ Constant.print c ++ str".")
     | Some rs -> Some (r::rs)
   in
   { env with
@@ -581,7 +581,10 @@ let add_constant_key kn cb linkinfo env =
     then Cset_env.add kn env.irr_constants
     else env.irr_constants
   in
-  { env with irr_constants; env_globals = new_globals }
+  let symb_pats =
+    match cb.const_body with Symbol _ -> Cmap_env.add kn [] env.symb_pats | _ -> env.symb_pats
+  in
+  { env with irr_constants; symb_pats; env_globals = new_globals }
 
 let add_constant kn cb env =
   add_constant_key kn cb no_link_info env
@@ -597,6 +600,7 @@ type const_evaluation_result =
   | NoBody
   | Opaque
   | IsPrimitive of Univ.Instance.t * CPrimitives.t
+  | HasRules of rewrite_rule list
 
 exception NotEvaluableConst of const_evaluation_result
 
@@ -607,7 +611,7 @@ let constant_value_and_type env (kn, u) =
   let b' = match cb.const_body with
     | Def l_body -> Some (subst_instance_constr u l_body)
     | OpaqueDef _ -> None
-    | Undef _ | Primitive _ -> None
+    | Undef _ | Primitive _ | Symbol _ -> None
   in
   b', subst_instance_constr u cb.const_type, cst
 
@@ -628,6 +632,10 @@ let constant_value_in env (kn,u) =
     | OpaqueDef _ -> raise (NotEvaluableConst Opaque)
     | Undef _ -> raise (NotEvaluableConst NoBody)
     | Primitive p -> raise (NotEvaluableConst (IsPrimitive (u,p)))
+    | Symbol _ ->
+        match Cmap_env.find_opt kn env.symb_pats with
+        | Some r -> raise (NotEvaluableConst (HasRules r))
+        | None -> assert false
 
 let constant_opt_value_in env cst =
   try Some (constant_value_in env cst)
@@ -639,7 +647,7 @@ let evaluable_constant kn env =
     match cb.const_body with
     | Def _ -> true
     | OpaqueDef _ -> false
-    | Undef _ | Primitive _ -> false
+    | Undef _ | Primitive _ | Symbol _ -> false
 
 let is_primitive env c =
   let cb = lookup_constant c env in
