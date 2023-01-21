@@ -446,6 +446,20 @@ let cbv_subst_of_rel_context_instance_list mkclos sign args env =
  * argument is [].  Because we must put all the applied terms in the
  * stack. *)
 
+exception PatternFailure
+
+type pattern_elimination =
+  | PEApp     of Declarations.rewrite_arg_pattern array
+  | PECase    of inductive * Declarations.rewrite_arg_pattern * Declarations.rewrite_arg_pattern array
+  | PEProj    of Projection.t
+
+let rec eliminations_of_pattern acc = function
+  | Declarations.PConst _ -> acc
+  | Declarations.PApp (f, args) -> eliminations_of_pattern (PEApp args :: acc) f
+  | Declarations.PCase (ind, ret, c, brs) -> eliminations_of_pattern (PECase (ind, ret, brs) :: acc) c
+  | Declarations.PProj (p, c) -> eliminations_of_pattern (PEProj p :: acc) c
+let eliminations_of_pattern = eliminations_of_pattern []
+
 let rec norm_head info env t stack =
   (* no reduction under binders *)
   match kind t with
@@ -542,7 +556,20 @@ and norm_head_ref k info env stack normt t =
           | RelKey _ | VarKey _ -> assert false
         in
         (PRIMITIVE(op,c,[||]),stack)
-      | Declarations.Symbol _ -> assert false
+      | Declarations.Symbol r ->
+        let (_, fus) = match normt with
+          | ConstKey c -> c
+          | RelKey _ | VarKey _ -> assert false
+        in
+        begin try
+          let rhs, fs, stack = cbv_apply_rules info env t r stack in
+          let rhsu = subst_instance_constr fus rhs in
+          let subst = List.fold_right subs_cons fs (subs_id 0) in
+          let rhs' = cbv_stack_term info TOP subst rhsu in
+          strip_appl (shift_value k rhs') stack
+        with PatternFailure ->
+          (VAL(0,make_constr_ref k normt t), stack)
+        end
       | Declarations.OpaqueDef _ | Declarations.Undef _ ->
          debug_cbv (fun () -> Pp.(str "Not unfolding " ++ debug_pr_key normt));
          (VAL(0,make_constr_ref k normt t),stack)
@@ -674,9 +701,88 @@ and cbv_value_cache info ref =
         Declarations.Def v
       with
       | Environ.NotEvaluableConst (Environ.IsPrimitive (_u,op)) -> Declarations.Primitive op
+      | Environ.NotEvaluableConst (Environ.HasRules r) -> Declarations.Symbol r
       | Not_found | Environ.NotEvaluableConst _ -> Declarations.Undef None
     in
     KeyTable.add info.tab ref v; v
+
+
+and cbv_match_arg_pattern info tab p t =
+  let open Declarations in
+  match [@ocaml.warning "-4"] p, mkSTACK (strip_appl t TOP) with
+  | APHole, _ -> [t]
+  | APHoleIgnored, _ -> []
+  | APInd ind, VAL(0, t') ->
+    begin match kind t' with Ind (ind', _) when Ind.CanOrd.equal ind ind' -> [] | _ -> raise PatternFailure end
+  | APConstr constr, CONSTR ((constr', _), [||]) ->
+    if Construct.CanOrd.equal constr constr' then [] else raise PatternFailure
+  | APInt i, VAL(0, t') ->
+    begin match kind t' with Int i' when Uint63.equal i i' -> [] | _ -> raise PatternFailure end
+  | APFloat f, VAL(0, t') ->
+    begin match kind t' with Float f' when Float64.equal f f' -> [] | _ -> raise PatternFailure end
+  | APApp (pf, pargs), STACK (0, f, APP (args, s)) ->
+      let args = Array.of_list args in
+      let np = Array.length pargs in
+      let na = Array.length args in
+      if np == na then
+        let fss = Array.map2 (cbv_match_arg_pattern info tab) pargs args in
+        let fs = cbv_match_arg_pattern info tab pf f in
+        fs @ List.concat (Array.to_list fss)
+      else if np < na then (* more real arguments *)
+        let remargs, usedargs = Array.chop (na - np) args in
+        let fss = Array.map2 (cbv_match_arg_pattern info tab) pargs usedargs in
+        let fs = cbv_match_arg_pattern info tab pf (STACK (0, f, APP (Array.to_list remargs, s))) in
+        fs @ List.concat (Array.to_list fss)
+      else (* more pattern arguments *)
+        let rempargs, usedpargs = Array.chop (np - na) pargs in
+        let fss = Array.map2 (cbv_match_arg_pattern info tab) usedpargs args in
+        let fs = cbv_match_arg_pattern info tab (APApp (pf, rempargs)) f in
+        fs @ List.concat (Array.to_list fss)
+  | _ -> raise PatternFailure
+
+and cbv_apply_rule info env head fs es stk =
+  match [@ocaml.warning "-4"] es, stk with
+  | [], _ -> fs, stk
+  | PEApp pargs :: e, APP (args, s) ->
+      let args = Array.of_list args in
+      let np = Array.length pargs in
+      let na = Array.length args in
+      if np == na then
+        let fss = Array.map2 (cbv_match_arg_pattern info env) pargs args in
+        cbv_apply_rule info env head (fs @ List.concat (Array.to_list fss)) e s
+      else if np < na then (* more real arguments *)
+        let usedargs, remargs = Array.chop np args in
+        let fss = Array.map2 (cbv_match_arg_pattern info env) pargs usedargs in
+        cbv_apply_rule info env head (fs @ List.concat (Array.to_list fss)) e (APP (Array.to_list remargs, s))
+      else (* more pattern arguments *)
+        let usedpargs, rempargs = Array.chop na pargs in
+        let fss = Array.map2 (cbv_match_arg_pattern info env) usedpargs args in
+        cbv_apply_rule info env head (fs @ List.concat (Array.to_list fss)) (PEApp rempargs :: e) s
+  | PECase (pind, pret, pbrs) :: e, CASE (u, pms, p, brs, iv, ci, env, s) ->
+      if not @@ Ind.CanOrd.equal pind ci.ci_ind then raise PatternFailure;
+      let dummy = mkProp in
+      let (_, p, _, _, brs) = Environ.expand_case info.env (ci, u, pms, p, NoInvert, dummy, brs) in
+      let mkclos env c = cbv_stack_term info TOP env c in
+      let fsret = cbv_match_arg_pattern info env pret (mkclos env p) in
+      let fsbrs = Array.map2 (fun a b -> cbv_match_arg_pattern info env a (mkclos env b)) pbrs brs in
+      cbv_apply_rule info env head (fs @ fsret @ List.concat (Array.to_list fsbrs)) e s
+  | PEProj proj :: e, PROJ (proj', s) ->
+      if not @@ Projection.CanOrd.equal proj proj' then raise PatternFailure;
+      cbv_apply_rule info env head fs e s
+  | _, _ -> raise PatternFailure
+
+
+and cbv_apply_rules info env head r stk =
+  match r with
+  | [] -> raise PatternFailure
+  | r :: rs ->
+    try
+      let fs, stk = cbv_apply_rule info env head [] (eliminations_of_pattern r.lhs_pat) stk in
+      r.rhs, List.rev fs, stk
+    with PatternFailure -> cbv_apply_rules info env head rs stk
+
+
+
 
 (* When we are sure t will never produce a redex with its stack, we
  * normalize (even under binders) the applied terms and we build the

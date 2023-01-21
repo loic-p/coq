@@ -558,6 +558,95 @@ let apply_branch env sigma (ind, i) args (ci, u, pms, iv, r, lf) =
   in
   Vars.substl subst (snd br)
 
+
+exception PatternFailure
+
+type pattern_elimination =
+  | PEApp     of Declarations.rewrite_arg_pattern array
+  | PECase    of inductive * Declarations.rewrite_arg_pattern * Declarations.rewrite_arg_pattern array
+  | PEProj    of Projection.t
+
+let rec eliminations_of_pattern acc = function
+  | Declarations.PConst _ -> acc
+  | Declarations.PApp (f, args) -> eliminations_of_pattern (PEApp args :: acc) f
+  | Declarations.PCase (ind, ret, c, brs) -> eliminations_of_pattern (PECase (ind, ret, brs) :: acc) c
+  | Declarations.PProj (p, c) -> eliminations_of_pattern (PEProj p :: acc) c
+let eliminations_of_pattern = eliminations_of_pattern []
+
+
+let rec cbn_match_arg_pattern sigma p t =
+  let open Declarations in
+  match [@ocaml.warning "-4"] p, EConstr.kind sigma t with
+  | APHole, _ -> [t]
+  | APHoleIgnored, _ -> []
+  | APInd ind, Ind (ind', _) ->
+    if Ind.CanOrd.equal ind ind' then [] else raise PatternFailure
+  | APConstr constr, Construct (constr', _) ->
+    if Construct.CanOrd.equal constr constr' then [] else raise PatternFailure
+  | APInt i, Int i' ->
+    if Uint63.equal i i' then [] else raise PatternFailure
+  | APFloat f, Float f' ->
+    if Float64.equal f f' then [] else raise PatternFailure
+  | APApp (pf, pargs), App (f, args) ->
+      let np = Array.length pargs in
+      let na = Array.length args in
+      if np == na then
+        let fss = Array.map2 (cbn_match_arg_pattern sigma) pargs args in
+        let fs = cbn_match_arg_pattern sigma pf f in
+        fs @ List.concat (Array.to_list fss)
+      else if np < na then (* more real arguments *)
+        let remargs, usedargs = Array.chop (na - np) args in
+        let fss = Array.map2 (cbn_match_arg_pattern sigma) pargs usedargs in
+        let fs = cbn_match_arg_pattern sigma pf (EConstr.of_kind (App (f, remargs))) in
+        fs @ List.concat (Array.to_list fss)
+      else (* more pattern arguments *)
+        let rempargs, usedpargs = Array.chop (np - na) pargs in
+        let fss = Array.map2 (cbn_match_arg_pattern sigma) usedpargs args in
+        let fs = cbn_match_arg_pattern sigma (APApp (pf, rempargs)) f in
+        fs @ List.concat (Array.to_list fss)
+  | _ -> raise PatternFailure
+
+let rec extract_n_stack args n s =
+  if n = 0 then List.rev args, s else
+  match Stack.decomp s with
+  | Some (arg, rest) -> extract_n_stack (arg :: args) (n-1) rest
+  | None -> raise PatternFailure
+
+let rec cbn_apply_rule env sigma fs es stk =
+  match [@ocaml.warning "-4"] es, stk with
+  | [], _ -> fs, stk
+  | PEApp pargs :: e, s ->
+      let np = Array.length pargs in
+      let pargs = Array.to_list pargs in
+      let args, s = extract_n_stack [] np s in
+      let fss = List.map2 (cbn_match_arg_pattern sigma) pargs args in
+      cbn_apply_rule env sigma (fs @ List.concat fss) e s
+  | PECase (pind, pret, pbrs) :: e, Stack.Case ((ci, u, pms, p, iv, brs), cst_l) :: s ->
+      if not @@ Ind.CanOrd.equal pind ci.ci_ind then raise PatternFailure;
+      let dummy = mkProp in
+      let (_, p, _, _, brs) = EConstr.expand_case env sigma (ci, u, pms, p, NoInvert, dummy, brs) in
+      let fsret = cbn_match_arg_pattern sigma pret p in
+      let fsbrs = Array.map2 (cbn_match_arg_pattern sigma) pbrs brs in
+      cbn_apply_rule env sigma (fs @ fsret @ List.concat (Array.to_list fsbrs)) e s
+  | PEProj proj :: e, Stack.Proj (proj', cst_l') :: s ->
+      if not @@ Projection.CanOrd.equal proj proj' then raise PatternFailure;
+      cbn_apply_rule env sigma fs e s
+  | _, _ -> raise PatternFailure
+
+
+let rec cbn_apply_rules info env r stk =
+  let open Declarations in
+  match r with
+  | [] -> raise PatternFailure
+  | r :: rs ->
+    try
+      let fs, stk = cbn_apply_rule info env [] (eliminations_of_pattern r.lhs_pat) stk in
+      EConstr.of_constr r.rhs, List.rev fs, stk
+    with PatternFailure -> cbn_apply_rules info env rs stk
+
+
+
+
 let whd_state_gen ?csts flags env sigma =
   let open Context.Named.Declaration in
   let open ReductionBehaviour in
@@ -662,6 +751,15 @@ let whd_state_gen ?csts flags env sigma =
           (* Should not fail thanks to [check_native_args] *)
           let (before,a,after) = Option.get o in
           whrec Cst_stack.empty (a,Stack.Primitive(p,const,before,kargs,cst_l)::after)
+       | exception NotEvaluableConst (HasRules r) ->
+          begin try
+            let rhs, fs, stack = cbn_apply_rules env sigma r stack in
+            let rhsu = subst_instance_constr (EInstance.kind sigma u) rhs in
+            let rhs' = substl fs rhsu in
+            whrec Cst_stack.empty (rhs', stack)
+          with PatternFailure ->
+            fold ()
+          end
        | exception NotEvaluableConst _ -> fold ()
       else fold ()
     | Proj (p, c) when CClosure.RedFlags.red_projection flags p ->

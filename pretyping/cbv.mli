@@ -56,6 +56,10 @@ val cbv_stack_term : cbv_infos ->
 val cbv_norm_term : cbv_infos -> cbv_value subs -> constr -> constr
 val norm_head : cbv_infos ->
   cbv_value subs -> constr -> cbv_stack -> cbv_value * cbv_stack
+val cbv_match_arg_pattern : cbv_infos -> cbv_value subs -> Declarations.rewrite_arg_pattern -> cbv_value -> cbv_value list
+type pattern_elimination = PEApp of Declarations.rewrite_arg_pattern array | PECase of inductive * Declarations.rewrite_arg_pattern * Declarations.rewrite_arg_pattern array | PEProj of Projection.t
+val cbv_apply_rule : cbv_infos -> cbv_value subs -> types -> cbv_value list -> pattern_elimination list -> cbv_stack -> cbv_value list * cbv_stack
+val cbv_apply_rules : cbv_infos -> cbv_value subs -> types -> Declarations.rewrite_rule list -> cbv_stack -> types * cbv_value list * cbv_stack
 val apply_stack : cbv_infos -> constr -> cbv_stack -> constr
 val cbv_norm_value : cbv_infos -> cbv_value -> constr
 
