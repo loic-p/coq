@@ -18,8 +18,8 @@ Rewrite Rule add0n.
 Rewrite Rule addSn.
 
 Check eq_refl : 5 ++ 10 = 15.
-Check (fun _ _ => eq_refl) : forall n n', S (S n) ++ S n' = S (S (S (n ++ n'))).
-Check (fun _ _ _ => eq_refl) : forall n n' n'', S (S n) ++ S n' ++ S (S n'') = S (S (S (S (S (n ++ n' ++ n''))))).
+Check (fun _ _ => eq_refl) : forall n n', 2 + n ++ 3 + n' = 5 + (n ++ n').
+Check (fun _ _ _ => eq_refl) : forall n n' n'', 2 + n ++ 1 + n' ++ 2 + n'' = 5 + (n ++ n' ++ n'').
 
 Symbol raise : forall P: Type, P.
 

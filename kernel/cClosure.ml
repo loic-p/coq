@@ -1587,7 +1587,7 @@ and case_inversion info tab ci u params indices v =
     then Some v else None
 
 and match_arg_pattern info tab p t =
-  match [@ocaml.warning "-4"] p, (fapp_stack (knh info t [])).term with
+  match [@ocaml.warning "-4"] p, t.term with
   | APHole, _ -> [t]
   | APHoleIgnored, _ -> []
   | APInd ind, FInd (ind', _) ->
@@ -1602,18 +1602,18 @@ and match_arg_pattern info tab p t =
       let np = Array.length pargs in
       let na = Array.length args in
       if np == na then
-        let fss = Array.map2 (match_arg_pattern info tab) pargs args in
-        let fs = match_arg_pattern info tab pf f in
+        let fss = Array.map2 (hard_match_arg_pattern info tab) pargs args in
+        let fs = hard_match_arg_pattern info tab pf f in
         fs @ List.concat (Array.to_list fss)
       else if np < na then (* more real arguments *)
         let remargs, usedargs = Array.chop (na - np) args in
-        let fss = Array.map2 (match_arg_pattern info tab) pargs usedargs in
-        let fs = match_arg_pattern info tab pf {mark = f.mark; term=FApp(f, remargs)} in
+        let fss = Array.map2 (hard_match_arg_pattern info tab) pargs usedargs in
+        let fs = hard_match_arg_pattern info tab pf {mark = f.mark; term=FApp(f, remargs)} in
         fs @ List.concat (Array.to_list fss)
       else (* more pattern arguments *)
         let rempargs, usedpargs = Array.chop (np - na) pargs in
-        let fss = Array.map2 (match_arg_pattern info tab) usedpargs args in
-        let fs = match_arg_pattern info tab (APApp (pf, rempargs)) f in
+        let fss = Array.map2 (hard_match_arg_pattern info tab) usedpargs args in
+        let fs = hard_match_arg_pattern info tab (APApp (pf, rempargs)) f in
         fs @ List.concat (Array.to_list fss)
   | _ -> raise PatternFailure
 
