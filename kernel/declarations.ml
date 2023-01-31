@@ -287,16 +287,21 @@ type rewrite_arg_pattern =
   | APHole
   | APHoleIgnored
   | APApp     of rewrite_arg_pattern * rewrite_arg_pattern array
-  | APInd     of inductive
-  | APConstr  of constructor
+  | APInd     of inductive * bool array
+  | APConstr  of constructor * bool array
   | APInt     of Uint63.t
   | APFloat   of Float64.t
 
 type rewrite_pattern =
   | PApp      of rewrite_pattern * rewrite_arg_pattern array
-  | PConst    of Constant.t  (* Symbol *)
-  | PCase     of inductive * rewrite_arg_pattern * rewrite_pattern * rewrite_arg_pattern array
+  | PConst    of Constant.t * bool array  (* Symbol *)
+  | PCase     of inductive * bool array * rewrite_arg_pattern * rewrite_pattern * rewrite_arg_pattern array
   | PProj     of Projection.t * rewrite_pattern
+
+type pattern_elimination =
+  | PEApp     of rewrite_arg_pattern array
+  | PECase    of inductive * bool array * rewrite_arg_pattern * rewrite_arg_pattern array
+  | PEProj    of Projection.t
 
 type rewrite_rule = {
   lhs_pat : rewrite_pattern;
