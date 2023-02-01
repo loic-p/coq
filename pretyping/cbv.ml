@@ -708,13 +708,35 @@ and cbv_value_cache info ref =
 
 and cbv_match_arg_pattern info tab p t =
   let open Declarations in
+  match p with
+  | APHole -> [t], []
+  | APHoleIgnored -> [], []
+  | APRigid p -> cbv_match_rigid_arg_pattern info tab p t
+
+and match_sort (ps, pu) s =
+  let open Sorts in
+  match [@ocaml.warning "-4"] ps, s with
+  | InProp, Prop -> [], []
+  | InSProp, SProp -> [], []
+  | InSet, Set -> [], []
+  | InType, Type u ->
+      assert (Array.length pu = 1);
+      if not pu.(0) then [], []
+      else if not (Univ.Universe.is_level u) then assert false
+      else [], [Option.get (Univ.Universe.level u)]
+  | InQSort, _ -> assert false
+  | (InProp | InSProp | InSet | InType), _ -> raise PatternFailure
+
+and cbv_match_rigid_arg_pattern info tab p t =
   match [@ocaml.warning "-4"] p, mkSTACK (strip_appl t TOP) with
-  | APHole, _ -> [t], []
-  | APHoleIgnored, _ -> [], []
   | APInd (ind, pu), VAL(0, t') ->
     begin match kind t' with Ind (ind', u) when Ind.CanOrd.equal ind ind' -> [], match_universes pu u | _ -> raise PatternFailure end
   | APConstr (constr, pu), CONSTR ((constr', u), [||]) ->
     if Construct.CanOrd.equal constr constr' then [], match_universes pu u else raise PatternFailure
+  | APSort ps, VAL(0, t') ->
+    begin match kind t' with Sort s -> match_sort ps s | _ -> raise PatternFailure end
+  | APSymbol (c, pu), VAL(0, t') ->
+    begin match kind t' with Const (c', u) when Constant.CanOrd.equal c c' -> [], match_universes pu u | _ -> raise PatternFailure end
   | APInt i, VAL(0, t') ->
     begin match kind t' with Int i' when Uint63.equal i i' -> [], [] | _ -> raise PatternFailure end
   | APFloat f, VAL(0, t') ->
@@ -725,19 +747,19 @@ and cbv_match_arg_pattern info tab p t =
       let na = Array.length args in
       if np == na then
         let fss, fuss = Array.split @@ Array.map2 (cbv_match_arg_pattern info tab) pargs args in
-        let fs, fus = cbv_match_arg_pattern info tab pf f in
+        let fs, fus = cbv_match_rigid_arg_pattern info tab pf f in
         fs @ List.concat (Array.to_list fss), fus @ List.concat (Array.to_list fuss)
       else if np < na then (* more real arguments *)
         let remargs, usedargs = Array.chop (na - np) args in
         let fss, fuss = Array.split @@ Array.map2 (cbv_match_arg_pattern info tab) pargs usedargs in
-        let fs, fus = cbv_match_arg_pattern info tab pf (STACK (0, f, APP (Array.to_list remargs, s))) in
+        let fs, fus = cbv_match_rigid_arg_pattern info tab pf (STACK (0, f, APP (Array.to_list remargs, s))) in
         fs @ List.concat (Array.to_list fss), fus @ List.concat (Array.to_list fuss)
       else (* more pattern arguments *)
         let rempargs, usedpargs = Array.chop (np - na) pargs in
         let fss, fuss = Array.split @@ Array.map2 (cbv_match_arg_pattern info tab) usedpargs args in
-        let fs, fus = cbv_match_arg_pattern info tab (APApp (pf, rempargs)) f in
+        let fs, fus = cbv_match_rigid_arg_pattern info tab (APApp (pf, rempargs)) f in
         fs @ List.concat (Array.to_list fss), fus @ List.concat (Array.to_list fuss)
-  | _ -> raise PatternFailure
+  | (APInd _ | APConstr _ | APInt _ | APFloat _ | APApp _ | APSort _ | APSymbol _), _ -> raise PatternFailure
 
 and cbv_apply_rule info env head fsfus es stk =
   match [@ocaml.warning "-4"] es, stk with

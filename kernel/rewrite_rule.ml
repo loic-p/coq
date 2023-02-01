@@ -17,9 +17,28 @@ let mask_of_instance =
   Univ.Instance.to_array %>
   Array.map (Univ.Level.var_index %> Option.has_some)
 
+let sort_pattern_of_sort =
+  let open Sorts in
+  function
+  | Type u ->
+    let b = match Univ.Universe.level u with Some lvl -> Option.has_some (Univ.Level.var_index lvl) | None ->
+      if not @@ Univ.Level.(Set.for_all (var_index %> Option.has_some)) @@ Univ.Universe.levels u then
+        CErrors.user_err Pp.(str "Unsupported algebraic level in pattern.")
+      else false
+    in
+    InType, [| b |]
+  | SProp -> InSProp, [||]
+  | Prop -> InProp, [||]
+  | Set -> InSet, [||]
+  | QSort _ -> CErrors.user_err Pp.(str "Unsupported qsort level in pattern.")
+
 let rec arg_pattern_of_constr t = kind t |> function
   | Rel _ -> APHole
-  | App (f, args) -> APApp (arg_pattern_of_constr f, Array.map arg_pattern_of_constr args)
+  | _ -> APRigid (rigid_arg_pattern_of_constr t)
+and rigid_arg_pattern_of_constr t = kind t |> function
+  | App (f, args) -> APApp (rigid_arg_pattern_of_constr f, Array.map arg_pattern_of_constr args)
+  | Const (c, u) -> APSymbol (c, mask_of_instance u)
+  | Sort s -> APSort (sort_pattern_of_sort s)
   | Ind (ind, u) -> APInd (ind, mask_of_instance u)
   | Construct (c, u) -> APConstr (c, mask_of_instance u)
   | Int i -> APInt i
@@ -66,7 +85,7 @@ let update_shft_invtbl shft (state, stateu) i =
         ++ str" not available from toplevel.");
   update_invtbl (i-shft) curvar invtbl, stateu
 
-let update_invtblu lvl curvaru tbl =
+let update_invtblu1 lvl curvaru tbl =
   succ curvaru, tbl |> Int.Map.update lvl @@ function
     | None -> Some curvaru
     | Some k as c when k = curvaru -> c
@@ -82,20 +101,52 @@ let update_invtblu (state, stateu) u =
   let u = Univ.Instance.to_array u in
   let stateu, mask = Array.fold_left_map (fun (curvaru, invtblu) lvl ->
       match Univ.Level.var_index lvl with
-      | Some lvl -> update_invtblu lvl curvaru invtblu, true
+      | Some lvl -> update_invtblu1 lvl curvaru invtblu, true
       | None -> (curvaru, invtblu), false
     ) stateu u
   in
   (state, stateu), mask
 
-let rec safe_arg_pattern_of_constr shft state t = kind t |> function
+let safe_sort_pattern_of_sort (statev, stateu as state) =
+  let open Sorts in
+  function
+  | Type u ->
+    let stateu, mask1 = match Univ.Universe.level u with
+    | None ->
+      if not @@ Univ.Level.(Set.for_all (var_index %> Option.has_some)) @@ Univ.Universe.levels u then
+        CErrors.user_err Pp.(str "Unsupported algebraic level in pattern.");
+      stateu, false
+    | Some lvl ->
+      match Univ.Level.var_index lvl with
+      | None -> stateu, false
+      | Some lvl ->
+          let curvaru, invtblu = stateu in
+          update_invtblu1 lvl curvaru invtblu, true
+    in
+    (statev, stateu), (InType, [|mask1|])
+  | SProp -> state, (InSProp, [||])
+  | Prop -> state, (InProp, [||])
+  | Set -> state, (InSet, [||])
+  | QSort _ -> CErrors.user_err Pp.(str "Unsupported qsort level in pattern.")
+
+let rec safe_arg_pattern_of_constr env shft state t = kind t |> function
   | Rel i ->
       let state = update_shft_invtbl shft state i in
       state, APHole
+  | _ ->
+      let state, p = safe_rigid_arg_pattern_of_constr env shft state t in
+      state, APRigid p
+and safe_rigid_arg_pattern_of_constr env shft state t = kind t |> function
   | App (f, args) ->
-      let state, pf = safe_arg_pattern_of_constr shft state f in
-      let state, pargs = Array.fold_left_map (safe_arg_pattern_of_constr shft) state args in
+      let state, pf = safe_rigid_arg_pattern_of_constr env shft state f in
+      let state, pargs = Array.fold_left_map (safe_arg_pattern_of_constr env shft) state args in
       state, APApp (pf, pargs)
+  | Const (c, u) when Environ.is_symbol env c ->
+      let state, mask = update_invtblu state u in
+      state, APSymbol (c, mask)
+  | Sort s ->
+      let state, ps = safe_sort_pattern_of_sort state s in
+      state, APSort ps
   | Ind (ind, u) ->
       let state, mask = update_invtblu state u in
       state, APInd (ind, mask)
@@ -104,22 +155,22 @@ let rec safe_arg_pattern_of_constr shft state t = kind t |> function
       state, APConstr (c, mask)
   | Int i -> state, APInt i
   | Float f -> state, APFloat f
-  | _ -> CErrors.user_err Pp.(str "Subterm not recognised as arg_pattern" ++ Constr.debug_print t)
+  | _ -> CErrors.user_err Pp.(str "Subterm not recognised as arg_pattern: " ++ Constr.debug_print t)
 
-let safe_app_pattern_of_constr shft ((curvar, invtbl), stateu) n t =
+let safe_app_pattern_of_constr env shft ((curvar, invtbl), stateu) n t =
   let f, args = decompose_appvect t in
   let nargs = Array.length args in
-  if not (nargs >= n) then CErrors.user_err Pp.(str "Subterm not recognised as pattern under binders" ++ Constr.debug_print t);
+  if not (nargs >= n) then CErrors.user_err Pp.(str "Subterm not recognised as pattern under binders: " ++ Constr.debug_print t);
   let remargs, usedargs = Array.chop (nargs - n) args in
   let () = Array.iter
     (kind %> function
       | Rel i when i <= n -> ()
-      | t -> CErrors.user_err Pp.(str "Subterm not recognised as pattern under binders" ++ Constr.debug_print (of_kind t)))
+      | t -> CErrors.user_err Pp.(str "Subterm not recognised as pattern under binders: " ++ Constr.debug_print (of_kind t)))
     usedargs
   in
-  safe_arg_pattern_of_constr (n + shft) ((curvar, invtbl), stateu) (mkApp (f, remargs))
+  safe_arg_pattern_of_constr env (n + shft) ((curvar, invtbl), stateu) (mkApp (f, remargs))
 
-let safe_app_pattern_of_constr' shft state p = safe_app_pattern_of_constr shft state (Array.length (fst p)) (snd p)
+let safe_app_pattern_of_constr' env shft state p = safe_app_pattern_of_constr env shft state (Array.length (fst p)) (snd p)
 
 
 let rec safe_pattern_of_constr env shft state t = kind t |> function
@@ -132,18 +183,18 @@ let rec safe_pattern_of_constr env shft state t = kind t |> function
       state, PConst (c, mask)
   | App (f, args) ->
       let state, pf = safe_pattern_of_constr env shft state f in
-      let state, pargs = Array.fold_left_map (safe_arg_pattern_of_constr shft) state args in
+      let state, pargs = Array.fold_left_map (safe_arg_pattern_of_constr env shft) state args in
       state, PApp (pf, pargs)
   | Case (ci, u, _, ret, _, c, brs) ->
       let state, mask = update_invtblu state u in
       let state, pc = safe_pattern_of_constr env shft state c in
-      let state, pret = safe_app_pattern_of_constr' shft state ret in
-      let state, pbrs = Array.fold_left_map (safe_app_pattern_of_constr' shft) state brs in
+      let state, pret = safe_app_pattern_of_constr' env shft state ret in
+      let state, pbrs = Array.fold_left_map (safe_app_pattern_of_constr' env shft) state brs in
       state, PCase (ci.ci_ind, mask, pret, pc, pbrs)
   | Proj (p, c) ->
       let state, pc = safe_pattern_of_constr env shft state c in
       state, PProj (p, pc)
-  | _ -> CErrors.user_err Pp.(str "Subterm not recognised as pattern" ++ Constr.debug_print t)
+  | _ -> CErrors.user_err Pp.(str "Subterm not recognised as pattern: " ++ Constr.debug_print t)
 
 let rec head_constant = function
   | PConst (c, _) -> c

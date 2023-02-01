@@ -57,6 +57,7 @@ val cbv_norm_term : cbv_infos -> cbv_value subs -> constr -> constr
 val norm_head : cbv_infos ->
   cbv_value subs -> constr -> cbv_stack -> cbv_value * cbv_stack
 val cbv_match_arg_pattern : cbv_infos -> cbv_value subs -> Declarations.rewrite_arg_pattern -> cbv_value -> cbv_value list * Univ.Level.t list
+val cbv_match_rigid_arg_pattern : cbv_infos -> cbv_value subs -> Declarations.rigid_arg_pattern -> cbv_value -> cbv_value list * Univ.Level.t list
 val cbv_apply_rule : cbv_infos -> cbv_value subs -> types -> cbv_value list * Univ.Level.t list -> Declarations.pattern_elimination list -> cbv_stack -> (cbv_value list * Univ.Level.t list) * cbv_stack
 val cbv_apply_rules : cbv_infos -> cbv_value subs -> types -> Univ.Instance.t -> Declarations.rewrite_rule list -> cbv_stack -> types * cbv_value list * Univ.Level.t list * cbv_stack
 val apply_stack : cbv_infos -> constr -> cbv_stack -> constr

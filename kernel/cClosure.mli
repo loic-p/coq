@@ -251,7 +251,8 @@ val set_conv : (clos_infos -> clos_tab -> fconstr -> fconstr -> bool) -> unit
   i This is for lazy debug *)
 
 val match_arg_pattern : clos_infos -> clos_tab -> Declarations.rewrite_arg_pattern -> fconstr -> fconstr list * Univ.Level.t list
-val hard_match_arg_pattern : clos_infos -> clos_tab -> Declarations.rewrite_arg_pattern -> fconstr -> fconstr list * Univ.Level.t list
+val match_rigid_arg_pattern : clos_infos -> clos_tab -> Declarations.rigid_arg_pattern -> fconstr -> fconstr list * Univ.Level.t list
+val match_rigid_arg_pattern_twice : clos_infos -> clos_tab -> Declarations.rigid_arg_pattern -> fconstr -> fconstr list * Univ.Level.t list
 val apply_rule : clos_infos -> clos_tab -> fconstr -> fconstr list * Univ.Level.t list -> Declarations.pattern_elimination list -> stack -> (fconstr list * Univ.Level.t list) * stack_member list
 val apply_rules : clos_infos -> clos_tab -> fconstr -> Univ.Instance.t -> Declarations.rewrite_rule list -> stack -> constr * fconstr list * Univ.Level.t list * stack_member list
 

@@ -286,7 +286,11 @@ type mind_specif = mutual_inductive_body * one_inductive_body
 type rewrite_arg_pattern =
   | APHole
   | APHoleIgnored
-  | APApp     of rewrite_arg_pattern * rewrite_arg_pattern array
+  | APRigid   of rigid_arg_pattern
+and rigid_arg_pattern =
+  | APApp     of rigid_arg_pattern * rewrite_arg_pattern array
+  | APSort    of (Sorts.family * bool array)
+  | APSymbol  of Constant.t * bool array
   | APInd     of inductive * bool array
   | APConstr  of constructor * bool array
   | APInt     of Uint63.t

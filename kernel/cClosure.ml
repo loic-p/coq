@@ -1585,13 +1585,36 @@ and case_inversion info tab ci u params indices v =
     then Some v else None
 
 and match_arg_pattern info tab p t =
+  match p with
+  | APHole -> [t], []
+  | APHoleIgnored -> [], []
+  | APRigid p -> match_rigid_arg_pattern_twice info tab p t
+
+and match_sort (ps, pu) s =
+  let open Sorts in
+  match [@ocaml.warning "-4"] ps, s with
+  | InProp, Prop -> [], []
+  | InSProp, SProp -> [], []
+  | InSet, Set -> [], []
+  | InType, Type u ->
+      assert (Array.length pu = 1);
+      if not pu.(0) then [], []
+      else if not (Univ.Universe.is_level u) then assert false
+      else [], [Option.get (Univ.Universe.level u)]
+  | InQSort, _ -> assert false
+  | (InProp | InSProp | InSet | InType), _ -> raise PatternFailure
+
+
+and match_rigid_arg_pattern info tab p t =
   match [@ocaml.warning "-4"] p, t.term with
-  | APHole, _ -> [t], []
-  | APHoleIgnored, _ -> [], []
   | APInd (ind, pu), FInd (ind', u) ->
       if Ind.CanOrd.equal ind ind' then [], match_universes pu u else raise PatternFailure
   | APConstr (constr, pu), FConstruct (constr', u) ->
-    if Construct.CanOrd.equal constr constr' then [], match_universes pu u else raise PatternFailure
+      if Construct.CanOrd.equal constr constr' then [], match_universes pu u else raise PatternFailure
+  | APSort ps, FAtom t ->
+      begin match kind t with Sort s -> match_sort ps s | _ -> raise PatternFailure end
+  | APSymbol (c, pu), FFlex (ConstKey (c', u)) ->
+      if Constant.CanOrd.equal c c' then [], match_universes pu u else raise PatternFailure
   | APInt i, FInt i' ->
       if Uint63.equal i i' then [], [] else raise PatternFailure
   | APFloat f, FFloat f' ->
@@ -1600,27 +1623,27 @@ and match_arg_pattern info tab p t =
       let np = Array.length pargs in
       let na = Array.length args in
       if np == na then
-        let fss, fuss = Array.split @@ Array.map2 (hard_match_arg_pattern info tab) pargs args in
-        let fs, fus = hard_match_arg_pattern info tab pf f in
+        let fss, fuss = Array.split @@ Array.map2 (match_arg_pattern info tab) pargs args in
+        let fs, fus = match_rigid_arg_pattern info tab pf f in
         fs @ List.concat (Array.to_list fss), fus @ List.concat (Array.to_list fuss)
       else if np < na then (* more real arguments *)
         let remargs, usedargs = Array.chop (na - np) args in
-        let fss, fuss = Array.split @@ Array.map2 (hard_match_arg_pattern info tab) pargs usedargs in
-        let fs, fus = hard_match_arg_pattern info tab pf {mark = f.mark; term=FApp(f, remargs)} in
+        let fss, fuss = Array.split @@ Array.map2 (match_arg_pattern info tab) pargs usedargs in
+        let fs, fus = match_rigid_arg_pattern info tab pf {mark = f.mark; term=FApp(f, remargs)} in
         fs @ List.concat (Array.to_list fss), fus @ List.concat (Array.to_list fuss)
       else (* more pattern arguments *)
         let rempargs, usedpargs = Array.chop (np - na) pargs in
-        let fss, fuss = Array.split @@ Array.map2 (hard_match_arg_pattern info tab) usedpargs args in
-        let fs, fus = hard_match_arg_pattern info tab (APApp (pf, rempargs)) f in
+        let fss, fuss = Array.split @@ Array.map2 (match_arg_pattern info tab) usedpargs args in
+        let fs, fus = match_rigid_arg_pattern info tab (APApp (pf, rempargs)) f in
         fs @ List.concat (Array.to_list fss), fus @ List.concat (Array.to_list fuss)
-  | _ -> raise PatternFailure
+  | (APInd _ | APConstr _ | APInt _ | APFloat _ | APApp _ | APSort _ | APSymbol _), _ -> raise PatternFailure
 
-and hard_match_arg_pattern info tab p t =
+and match_rigid_arg_pattern_twice info tab p t =
   let h, stk = knh info t [] in
   try
-    match_arg_pattern info tab p (zip h stk)
+    match_rigid_arg_pattern info tab p (zip h stk)
   with PatternFailure ->
-    match_arg_pattern info tab p (fapp_stack (kni info tab h stk))
+    match_rigid_arg_pattern info tab p (fapp_stack (kni info tab h stk))
 
 
 and apply_rule info tab head fsfus es stk =
@@ -1635,15 +1658,15 @@ and apply_rule info tab head fsfus es stk =
       let np = Array.length pargs in
       let na = Array.length args in
       if np == na then
-        let fss, fuss = Array.split @@ Array.map2 (hard_match_arg_pattern info tab) pargs args in
+        let fss, fuss = Array.split @@ Array.map2 (match_arg_pattern info tab) pargs args in
         apply_rule info tab head (fs @ List.concat (Array.to_list fss), fus @ List.concat (Array.to_list fuss)) e s
       else if np < na then (* more real arguments *)
         let usedargs, remargs = Array.chop np args in
-        let fss, fuss = Array.split @@ Array.map2 (hard_match_arg_pattern info tab) pargs usedargs in
+        let fss, fuss = Array.split @@ Array.map2 (match_arg_pattern info tab) pargs usedargs in
         apply_rule info tab head (fs @ List.concat (Array.to_list fss), fus @ List.concat (Array.to_list fuss)) e (Zapp remargs :: s)
       else (* more pattern arguments *)
         let usedpargs, rempargs = Array.chop na pargs in
-        let fss, fuss = Array.split @@ Array.map2 (hard_match_arg_pattern info tab) usedpargs args in
+        let fss, fuss = Array.split @@ Array.map2 (match_arg_pattern info tab) usedpargs args in
         apply_rule info tab head (fs @ List.concat (Array.to_list fss), fus @ List.concat (Array.to_list fuss)) (PEApp rempargs :: e) s
   | PECase (pind, pu, pret, pbrs) :: e, ZcaseT (ci, u, pms, p, brs, e') :: s ->
       if not @@ Ind.CanOrd.equal pind ci.ci_ind then raise PatternFailure;
@@ -1651,8 +1674,8 @@ and apply_rule info tab head fsfus es stk =
       let (_, p, _, _, brs) = Environ.expand_case info.i_cache.i_env (ci, u, pms, p, NoInvert, dummy, brs) in
       let fs, fus = fsfus in
       let fuus = match_universes pu u in
-      let fsret, fusret = hard_match_arg_pattern info tab pret (mk_clos e' p) in
-      let fsbrs, fusbrs = Array.split @@ Array.map2 (fun a b -> hard_match_arg_pattern info tab a (mk_clos e' b)) pbrs brs in
+      let fsret, fusret = match_arg_pattern info tab pret (mk_clos e' p) in
+      let fsbrs, fusbrs = Array.split @@ Array.map2 (fun a b -> match_arg_pattern info tab a (mk_clos e' b)) pbrs brs in
       apply_rule info tab head (fs @ fsret @ List.concat (Array.to_list fsbrs), fus @ fuus @ fusret @ List.concat (Array.to_list fusbrs)) e s
   | PEProj proj :: e, Zproj proj' :: s ->
       if not @@ Projection.Repr.CanOrd.equal (Projection.repr proj) proj' then raise PatternFailure;
