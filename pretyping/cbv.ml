@@ -449,7 +449,7 @@ let cbv_subst_of_rel_context_instance_list mkclos sign args env =
 exception PatternFailure
 
 let rec eliminations_of_pattern acc = function
-  | Declarations.PConst (_, u) -> acc, u
+  | Declarations.PHead (_, u) -> acc, u
   | Declarations.PApp (f, args) -> eliminations_of_pattern (Declarations.PEApp args :: acc) f
   | Declarations.PCase (ind, u, ret, c, brs) -> eliminations_of_pattern (Declarations.PECase (ind, u, ret, brs) :: acc) c
   | Declarations.PProj (p, c) -> eliminations_of_pattern (Declarations.PEProj p :: acc) c
@@ -729,17 +729,17 @@ and match_sort (ps, pu) s =
 
 and cbv_match_rigid_arg_pattern info tab p t =
   match [@ocaml.warning "-4"] p, mkSTACK (strip_appl t TOP) with
-  | APInd (ind, pu), VAL(0, t') ->
+  | APHead PHInd (ind, pu), VAL(0, t') ->
     begin match kind t' with Ind (ind', u) when Ind.CanOrd.equal ind ind' -> [], match_universes pu u | _ -> raise PatternFailure end
-  | APConstr (constr, pu), CONSTR ((constr', u), [||]) ->
+  | APHead PHConstr (constr, pu), CONSTR ((constr', u), [||]) ->
     if Construct.CanOrd.equal constr constr' then [], match_universes pu u else raise PatternFailure
-  | APSort ps, VAL(0, t') ->
+  | APHead PHSort ps, VAL(0, t') ->
     begin match kind t' with Sort s -> match_sort ps s | _ -> raise PatternFailure end
-  | APSymbol (c, pu), VAL(0, t') ->
+  | APHead PHSymbol (c, pu), VAL(0, t') ->
     begin match kind t' with Const (c', u) when Constant.CanOrd.equal c c' -> [], match_universes pu u | _ -> raise PatternFailure end
-  | APInt i, VAL(0, t') ->
+  | APHead PHInt i, VAL(0, t') ->
     begin match kind t' with Int i' when Uint63.equal i i' -> [], [] | _ -> raise PatternFailure end
-  | APFloat f, VAL(0, t') ->
+  | APHead PHFloat f, VAL(0, t') ->
     begin match kind t' with Float f' when Float64.equal f f' -> [], [] | _ -> raise PatternFailure end
   | APApp (pf, pargs), STACK (0, f, APP (args, s)) ->
       let args = Array.of_list args in
@@ -759,7 +759,7 @@ and cbv_match_rigid_arg_pattern info tab p t =
         let fss, fuss = Array.split @@ Array.map2 (cbv_match_arg_pattern info tab) usedpargs args in
         let fs, fus = cbv_match_rigid_arg_pattern info tab (APApp (pf, rempargs)) f in
         fs @ List.concat (Array.to_list fss), fus @ List.concat (Array.to_list fuss)
-  | (APInd _ | APConstr _ | APInt _ | APFloat _ | APApp _ | APSort _ | APSymbol _), _ -> raise PatternFailure
+  | (APHead PHInd _ | APHead PHConstr _ | APHead PHInt _ | APHead PHFloat _ | APApp _ | APHead PHSort _ | APHead PHSymbol _), _ -> raise PatternFailure
 
 and cbv_apply_rule info env head fsfus es stk =
   match [@ocaml.warning "-4"] es, stk with

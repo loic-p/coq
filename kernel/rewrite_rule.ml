@@ -32,18 +32,21 @@ let sort_pattern_of_sort =
   | Set -> InSet, [||]
   | QSort _ -> CErrors.user_err Pp.(str "Unsupported qsort level in pattern.")
 
+let head_pattern_of_constr t = kind t |> function
+  | Const (c, u) -> PHSymbol (c, mask_of_instance u)
+  | Sort s -> PHSort (sort_pattern_of_sort s)
+  | Ind (ind, u) -> PHInd (ind, mask_of_instance u)
+  | Construct (c, u) -> PHConstr (c, mask_of_instance u)
+  | Int i -> PHInt i
+  | Float f -> PHFloat f
+  | _ -> assert false
+
 let rec arg_pattern_of_constr t = kind t |> function
   | Rel _ -> APHole
   | _ -> APRigid (rigid_arg_pattern_of_constr t)
 and rigid_arg_pattern_of_constr t = kind t |> function
   | App (f, args) -> APApp (rigid_arg_pattern_of_constr f, Array.map arg_pattern_of_constr args)
-  | Const (c, u) -> APSymbol (c, mask_of_instance u)
-  | Sort s -> APSort (sort_pattern_of_sort s)
-  | Ind (ind, u) -> APInd (ind, mask_of_instance u)
-  | Construct (c, u) -> APConstr (c, mask_of_instance u)
-  | Int i -> APInt i
-  | Float f -> APFloat f
-  | _ -> assert false
+  | _ -> APHead (head_pattern_of_constr t)
 
 let app_pattern_of_constr n t =
   let f, args = decompose_appvect t in
@@ -55,7 +58,7 @@ let app_pattern_of_constr n t =
 let app_pattern_of_constr' p = app_pattern_of_constr (Array.length (fst p)) (snd p)
 
 let rec pattern_of_constr t = kind t |> function
-  | Const (c, u) -> PConst (c, mask_of_instance u)
+  | Const (c, u) -> PHead (c, mask_of_instance u)
   | App (f, args) -> PApp (pattern_of_constr f, Array.map arg_pattern_of_constr args)
   | Case (ci, u, _, p, _, c, brs) ->
       PCase (ci.ci_ind, mask_of_instance u, app_pattern_of_constr' p, pattern_of_constr c, Array.map app_pattern_of_constr' brs)
@@ -129,6 +132,24 @@ let safe_sort_pattern_of_sort (statev, stateu as state) =
   | Set -> state, (InSet, [||])
   | QSort _ -> CErrors.user_err Pp.(str "Unsupported qsort level in pattern.")
 
+let safe_head_pattern_of_constr env state t = kind t |> function
+  | Const (c, u) when Environ.is_symbol env c ->
+      let state, mask = update_invtblu state u in
+      state, PHSymbol (c, mask)
+  | Sort s ->
+      let state, ps = safe_sort_pattern_of_sort state s in
+      state, PHSort ps
+  | Ind (ind, u) ->
+      let state, mask = update_invtblu state u in
+      state, PHInd (ind, mask)
+  | Construct (c, u) ->
+      let state, mask = update_invtblu state u in
+      state, PHConstr (c, mask)
+  | Int i -> state, PHInt i
+  | Float f -> state, PHFloat f
+  | _ -> CErrors.user_err Pp.(str "Subterm not recognised as head_pattern: " ++ Constr.debug_print t)
+
+
 let rec safe_arg_pattern_of_constr env shft state t = kind t |> function
   | Rel i ->
       let state = update_shft_invtbl shft state i in
@@ -141,21 +162,9 @@ and safe_rigid_arg_pattern_of_constr env shft state t = kind t |> function
       let state, pf = safe_rigid_arg_pattern_of_constr env shft state f in
       let state, pargs = Array.fold_left_map (safe_arg_pattern_of_constr env shft) state args in
       state, APApp (pf, pargs)
-  | Const (c, u) when Environ.is_symbol env c ->
-      let state, mask = update_invtblu state u in
-      state, APSymbol (c, mask)
-  | Sort s ->
-      let state, ps = safe_sort_pattern_of_sort state s in
-      state, APSort ps
-  | Ind (ind, u) ->
-      let state, mask = update_invtblu state u in
-      state, APInd (ind, mask)
-  | Construct (c, u) ->
-      let state, mask = update_invtblu state u in
-      state, APConstr (c, mask)
-  | Int i -> state, APInt i
-  | Float f -> state, APFloat f
-  | _ -> CErrors.user_err Pp.(str "Subterm not recognised as arg_pattern: " ++ Constr.debug_print t)
+  | _ ->
+    let state, p = safe_head_pattern_of_constr env state t in
+    state, APHead p
 
 let safe_app_pattern_of_constr env shft ((curvar, invtbl), stateu) n t =
   let f, args = decompose_appvect t in
@@ -180,7 +189,7 @@ let rec safe_pattern_of_constr env shft state t = kind t |> function
           CErrors.user_err Pp.(str "Constant " ++ Constant.print c ++ str" used in pattern is not a symbol.")
       | Symbol _ -> ());
       let state, mask = update_invtblu state u in
-      state, PConst (c, mask)
+      state, PHead (c, mask)
   | App (f, args) ->
       let state, pf = safe_pattern_of_constr env shft state f in
       let state, pargs = Array.fold_left_map (safe_arg_pattern_of_constr env shft) state args in
@@ -197,7 +206,7 @@ let rec safe_pattern_of_constr env shft state t = kind t |> function
   | _ -> CErrors.user_err Pp.(str "Subterm not recognised as pattern: " ++ Constr.debug_print t)
 
 let rec head_constant = function
-  | PConst (c, _) -> c
+  | PHead (c, _) -> c
   | PApp (h, _) -> head_constant h
   | PCase (_, _, _, c, _) -> head_constant c
   | PProj (_, c) -> head_constant c

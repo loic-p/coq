@@ -677,7 +677,7 @@ let apply_branch env sigma (ind, i) args (ci, u, pms, iv, r, lf) =
 exception PatternFailure
 
 let rec eliminations_of_pattern acc = function
-  | Declarations.PConst (_, u) -> acc, u
+  | Declarations.PHead (_, u) -> acc, u
   | Declarations.PApp (f, args) -> eliminations_of_pattern (Declarations.PEApp args :: acc) f
   | Declarations.PCase (ind, u, ret, c, brs) -> eliminations_of_pattern (Declarations.PECase (ind, u, ret, brs) :: acc) c
   | Declarations.PProj (p, c) -> eliminations_of_pattern (Declarations.PEProj p :: acc) c
@@ -710,16 +710,16 @@ and match_sort (ps, pu) s =
 
 and simpl_match_rigid_arg_pattern sigma p t =
   match [@ocaml.warning "-4"] p, EConstr.kind sigma t with
-  | APInd (ind, pu), Ind (ind', u) ->
+  | APHead PHInd (ind, pu), Ind (ind', u) ->
     if Ind.CanOrd.equal ind ind' then [], match_euniverses sigma pu u else raise PatternFailure
-  | APConstr (constr, pu), Construct (constr', u) ->
+  | APHead PHConstr (constr, pu), Construct (constr', u) ->
     if Construct.CanOrd.equal constr constr' then [], match_euniverses sigma pu u else raise PatternFailure
-  | APSort ps, Sort s -> match_sort ps (ESorts.kind sigma s)
-  | APSymbol (c, pu), Const (c', u) ->
+  | APHead PHSort ps, Sort s -> match_sort ps (ESorts.kind sigma s)
+  | APHead PHSymbol (c, pu), Const (c', u) ->
     if Constant.CanOrd.equal c c' then [], match_euniverses sigma pu u else raise PatternFailure
-  | APInt i, Int i' ->
+  | APHead PHInt i, Int i' ->
     if Uint63.equal i i' then [], [] else raise PatternFailure
-  | APFloat f, Float f' ->
+  | APHead PHFloat f, Float f' ->
     if Float64.equal f f' then [], [] else raise PatternFailure
   | APApp (pf, pargs), App (f, args) ->
       let np = Array.length pargs in

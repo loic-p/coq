@@ -1440,14 +1440,127 @@ let set_conv f = conv := f
 exception PatternFailure
 
 let rec eliminations_of_pattern acc = function
-  | PConst (_, u) -> acc, u
+  | PHead (_, u) -> acc, u
   | PApp (f, args) -> eliminations_of_pattern (PEApp args :: acc) f
   | PCase (ind, u, ret, c, brs) -> eliminations_of_pattern (PECase (ind, u, ret, brs) :: acc) c
   | PProj (p, c) -> eliminations_of_pattern (PEProj p :: acc) c
 let eliminations_of_pattern = eliminations_of_pattern []
 
+let rec eliminations_of_rigid_pattern acc = function
+  | APHead h -> h, acc
+  | APApp (f, args) -> eliminations_of_rigid_pattern (PEApp args :: acc) f
+let eliminations_of_rigid_pattern = eliminations_of_rigid_pattern []
+
+
+type 'constr partial_subst = {
+  subst: 'constr list;
+  usubst: Univ.Level.t list;
+  rhs: constr;
+}
+
+type 'constr subst_status = Dead | Live of 'constr partial_subst
+
+type 'a status =
+  | Check of 'a
+  | Ignore
+
+module Status = struct
+  let map f = function Check a -> Check (f a) | Ignore as p -> p
+
+  let split = function Check (a, b) -> Check a, Check b | Ignore as p -> p, p
+  let split4 = function Check (a, b, c, d) -> Check a, Check b, Check c, Check d | Ignore as p -> p, p, p, p
+  let split_array n = function
+  | Check a when Array.length a <> n -> invalid_arg "Status.split_array"
+  | Check a -> Array.init n (fun i -> Check (Array.unsafe_get a i))
+  | Ignore as p -> Array.make n p
+
+  let fold_left f a = function Check b -> f a b | Ignore -> a
+end
+
+type ('a, 'b) next =
+  | Continue of 'a
+  | Return of 'b
+
+type ('constr, 'stack, 'ret) state =
+  | LocStart of { elims: pattern_elimination list status array; head: 'constr; stack: 'stack; next: (('constr, 'stack, 'ret) state, ('constr * 'stack -> 'ret) * 'ret) next }
+  | LocArg of { patterns: rewrite_arg_pattern status array; arg: 'constr; next: ('constr, 'stack, 'ret) state }
+
+type ('constr, 'stack, 'ret) state_next = (('constr, 'stack, 'ret) state, ('constr * 'stack -> 'ret) * 'ret) next
+
+let extract_or_kill filter a status =
+  let n = Array.length a in
+  assert (n = Array.length status);
+  let a', status' = Array.make n Ignore, Array.copy status in
+  for i = 0 to n-1 do
+    match Array.unsafe_get a i with
+    | Ignore -> () (* Array.unsafe_set a' i Ignore *)
+    | Check a -> match filter a with
+      | None -> Array.unsafe_set status' i Dead; (* Array.unsafe_set a' i Ignore *)
+      | Some p' ->
+          Array.unsafe_set a' i (Check p')
+  done;
+  a', status'
+
+let merge f a b =
+  match a, b with
+  | Live a, Check b -> Live (f a b)
+  | Dead, _ -> Dead
+  | Live _, Ignore -> a
+
+let transpose a =
+  let n = Array.length a in
+  if n = 0 then [||] else
+  let n' = Array.length (Array.unsafe_get a 0) in
+  Array.init n' (fun i -> Array.init n (fun j -> a.(j).(i)))
+
+let split4 arr =
+  let n = Array.length arr in
+  if n = 0 then [||], [||], [||], [||] else
+  let (a, b, c, d) = Array.unsafe_get arr 0 in
+  let aa = Array.make n a
+  and bs = Array.make n b
+  and cs = Array.make n c
+  and ds = Array.make n d
+  in
+  for i = 1 to n - 1 do
+    let (a, b, c, d) = Array.unsafe_get arr i in
+    Array.unsafe_set aa i a;
+    Array.unsafe_set bs i b;
+    Array.unsafe_set cs i c;
+    Array.unsafe_set ds i d;
+  done;
+  aa, bs, cs, ds
+
+
+let find2_map (type a) pred arr1 arr2 =
+  let exception Found of a in
+  let n = Array.length arr1 in
+  assert (Array.length arr2 = n);
+  try
+    for i=0 to n - 1 do
+      match pred (Array.unsafe_get arr1 i) (Array.unsafe_get arr2 i) with
+      | Some r -> raise (Found r)
+      | None -> ()
+    done;
+    None
+  with Found i -> Some i
+
 let match_universes pu u =
   List.filter_with (Array.to_list pu) (Array.to_list (Univ.Instance.to_array u))
+
+let match_sort (ps, pu) s =
+  let open Sorts in
+  match [@ocaml.warning "-4"] ps, s with
+  | InProp, Prop -> Some []
+  | InSProp, SProp -> Some []
+  | InSet, Set -> Some []
+  | InType, Type u ->
+      assert (Array.length pu = 1);
+      if not pu.(0) then Some []
+      else if not (Univ.Universe.is_level u) then assert false
+      else Some [Option.get (Univ.Universe.level u)]
+  | InQSort, _ -> assert false
+  | (InProp | InSProp | InSet | InType), _ -> None
 
 (* Computes a weak head normal form from the result of knh. *)
 let rec knr info tab m stk =
@@ -1469,14 +1582,14 @@ let rec knr info tab m stk =
             (m, stk)
         | Symbol r ->
             let _, u = match fl with ConstKey c -> c | RelKey _ | VarKey _ -> assert false in
-            begin try
-              let rhs, fs, fus, stk = apply_rules info tab m u r stk in
-              let subst = List.fold_right subs_cons fs (subs_id 0) in
-              let usubst = Univ.Instance.of_array (Array.of_list fus) in
-              let m' = mk_clos (subst, usubst) rhs in
-              kni info tab m' stk
-            with PatternFailure -> m, stk
-            end
+            let states, elims = Array.split @@ Array.map
+              (fun r ->
+                let es, pu = eliminations_of_pattern r.lhs_pat in
+                Live { subst = []; usubst = match_universes pu u; rhs = r.Declarations.rhs }, Check es
+              ) (Array.of_list r)
+            in
+            let loc = LocStart { elims; head = m; stack = stk; next = Return ((fun (m, stk) -> kni info tab m stk), (m, stk)) } in
+            apply_rules info tab states loc
         | Undef _ | OpaqueDef _ -> (set_ntrl m; (m,stk)))
   | FConstruct(c,_u) ->
      let use_match = red_set info.i_flags fMATCH in
@@ -1584,114 +1697,174 @@ and case_inversion info tab ci u params indices v =
     if Array.for_all_i check_index 0 indices
     then Some v else None
 
-and match_arg_pattern info tab p t =
-  match p with
-  | APHole -> [t], []
-  | APHoleIgnored -> [], []
-  | APRigid p -> match_rigid_arg_pattern_twice info tab p t
-
-and match_sort (ps, pu) s =
-  let open Sorts in
-  match [@ocaml.warning "-4"] ps, s with
-  | InProp, Prop -> [], []
-  | InSProp, SProp -> [], []
-  | InSet, Set -> [], []
-  | InType, Type u ->
-      assert (Array.length pu = 1);
-      if not pu.(0) then [], []
-      else if not (Univ.Universe.is_level u) then assert false
-      else [], [Option.get (Univ.Universe.level u)]
-  | InQSort, _ -> assert false
-  | (InProp | InSProp | InSet | InType), _ -> raise PatternFailure
+and apply_rules : 'a. clos_infos -> clos_tab -> _ -> (fconstr, stack, 'a) state -> 'a = fun info tab states -> function [@ocaml.warning "-4"]
+  | LocStart { elims; head; stack; next = Return (k, _) as next } ->
+    begin match find2_map (fun state elim -> match [@ocaml.warning "-4"] state, elim with Live s, Check [] -> Some s | _ -> None) states elims with
+    | Some { subst; usubst; rhs } ->
+        let subst = List.fold_right subs_cons subst (subs_id 0) in
+        let usubst = Univ.Instance.of_array (Array.of_list usubst) in
+        let m' = mk_clos (subst, usubst) rhs in
+        k (m', stack)
+    | None -> apply_elim info tab next states elims head stack
+    end
+  | LocArg { patterns; arg; next } ->
+      match_arg_pattern info tab next states patterns arg
+  | LocStart { elims; head; stack; next } -> apply_elim info tab next states elims head stack
 
 
-and match_rigid_arg_pattern info tab p t =
-  match [@ocaml.warning "-4"] p, t.term with
-  | APInd (ind, pu), FInd (ind', u) ->
-      if Ind.CanOrd.equal ind ind' then [], match_universes pu u else raise PatternFailure
-  | APConstr (constr, pu), FConstruct (constr', u) ->
-      if Construct.CanOrd.equal constr constr' then [], match_universes pu u else raise PatternFailure
-  | APSort ps, FAtom t ->
-      begin match kind t with Sort s -> match_sort ps s | _ -> raise PatternFailure end
-  | APSymbol (c, pu), FFlex (ConstKey (c', u)) ->
-      if Constant.CanOrd.equal c c' then [], match_universes pu u else raise PatternFailure
-  | APInt i, FInt i' ->
-      if Uint63.equal i i' then [], [] else raise PatternFailure
-  | APFloat f, FFloat f' ->
-      if Float64.equal f f' then [], [] else raise PatternFailure
-  | APApp (pf, pargs), FApp (f, args) ->
-      let np = Array.length pargs in
+and apply_elim info tab (next: _ state_next) states elims head stk =
+  match stk with
+  | Zapp args :: s ->
+      let pargselims, states = extract_or_kill (function [@ocaml.warning "-4"] PEApp pargs :: es -> Some (pargs, es) | _ -> None) elims states in
       let na = Array.length args in
-      if np == na then
-        let fss, fuss = Array.split @@ Array.map2 (match_arg_pattern info tab) pargs args in
-        let fs, fus = match_rigid_arg_pattern info tab pf f in
-        fs @ List.concat (Array.to_list fss), fus @ List.concat (Array.to_list fuss)
-      else if np < na then (* more real arguments *)
-        let remargs, usedargs = Array.chop (na - np) args in
-        let fss, fuss = Array.split @@ Array.map2 (match_arg_pattern info tab) pargs usedargs in
-        let fs, fus = match_rigid_arg_pattern info tab pf {mark = f.mark; term=FApp(f, remargs)} in
-        fs @ List.concat (Array.to_list fss), fus @ List.concat (Array.to_list fuss)
-      else (* more pattern arguments *)
-        let rempargs, usedpargs = Array.chop (np - na) pargs in
-        let fss, fuss = Array.split @@ Array.map2 (match_arg_pattern info tab) usedpargs args in
-        let fs, fus = match_rigid_arg_pattern info tab (APApp (pf, rempargs)) f in
-        fs @ List.concat (Array.to_list fss), fus @ List.concat (Array.to_list fuss)
-  | (APInd _ | APConstr _ | APInt _ | APFloat _ | APApp _ | APSort _ | APSymbol _), _ -> raise PatternFailure
-
-and match_rigid_arg_pattern_twice info tab p t =
-  let h, stk = knh info t [] in
-  try
-    match_rigid_arg_pattern info tab p (zip h stk)
-  with PatternFailure ->
-    match_rigid_arg_pattern info tab p (fapp_stack (kni info tab h stk))
-
-
-and apply_rule info tab head fsfus es stk =
-  match [@ocaml.warning "-4"] es, stk with
-  | [], _ -> fsfus, stk
-  | _, Zshift k :: s -> apply_rule info tab (lift_fconstr k head) fsfus es s
-  | _, Zupdate m :: s ->
+      let np = Array.fold_left (Status.fold_left (fun a (pargs, _) -> min a (Array.length pargs))) na pargselims in
+      let pargs, elims = pargselims |> Array.map (Status.map (fun (pargs, elims) ->
+          let npp = Array.length pargs in
+          if npp == np then (pargs, elims) else
+          let fst, lst = Array.chop np pargs in
+          fst, PEApp lst :: elims
+        ) %> Status.split)
+        |> Array.split
+      in
+      let args, rest = Array.chop np args in
+      let head = {mark=neutr head.mark; term=FApp(head, args)} in
+      let stack = if Array.length rest > 0 then Zapp rest :: s else s in
+      let loc = LocStart { elims; head; stack; next } in
+      let loc = Array.fold_right2 (fun patterns arg next -> LocArg { patterns; arg; next }) (transpose (Array.map (Status.split_array np) pargs)) args loc in
+      apply_rules info tab states loc
+  | Zshift k :: s -> apply_elim info tab next states elims (lift_fconstr k head) s
+  | Zupdate m :: s ->
       let () = update m head.mark head.term in
-      apply_rule info tab head fsfus es s
-  | PEApp pargs :: e, Zapp args :: s ->
-      let fs, fus = fsfus in
-      let np = Array.length pargs in
-      let na = Array.length args in
-      if np == na then
-        let fss, fuss = Array.split @@ Array.map2 (match_arg_pattern info tab) pargs args in
-        apply_rule info tab head (fs @ List.concat (Array.to_list fss), fus @ List.concat (Array.to_list fuss)) e s
-      else if np < na then (* more real arguments *)
-        let usedargs, remargs = Array.chop np args in
-        let fss, fuss = Array.split @@ Array.map2 (match_arg_pattern info tab) pargs usedargs in
-        apply_rule info tab head (fs @ List.concat (Array.to_list fss), fus @ List.concat (Array.to_list fuss)) e (Zapp remargs :: s)
-      else (* more pattern arguments *)
-        let usedpargs, rempargs = Array.chop na pargs in
-        let fss, fuss = Array.split @@ Array.map2 (match_arg_pattern info tab) usedpargs args in
-        apply_rule info tab head (fs @ List.concat (Array.to_list fss), fus @ List.concat (Array.to_list fuss)) (PEApp rempargs :: e) s
-  | PECase (pind, pu, pret, pbrs) :: e, ZcaseT (ci, u, pms, p, brs, e') :: s ->
-      if not @@ Ind.CanOrd.equal pind ci.ci_ind then raise PatternFailure;
+      apply_elim info tab next states elims head s
+  | ZcaseT (ci, u, pms, p, brs, e) :: s ->
+      let t = FCaseT(ci, u, pms, p, head, brs, e) in
+      let mark = neutr head.mark in
+      let head = {mark; term=t} in
       let dummy = mkProp in
       let (_, p, _, _, brs) = Environ.expand_case info.i_cache.i_env (ci, u, pms, p, NoInvert, dummy, brs) in
-      let fs, fus = fsfus in
-      let fuus = match_universes pu u in
-      let fsret, fusret = match_arg_pattern info tab pret (mk_clos e' p) in
-      let fsbrs, fusbrs = Array.split @@ Array.map2 (fun a b -> match_arg_pattern info tab a (mk_clos e' b)) pbrs brs in
-      apply_rule info tab head (fs @ fsret @ List.concat (Array.to_list fsbrs), fus @ fuus @ fusret @ List.concat (Array.to_list fusbrs)) e s
-  | PEProj proj :: e, Zproj proj' :: s ->
-      if not @@ Projection.Repr.CanOrd.equal (Projection.repr proj) proj' then raise PatternFailure;
-      apply_rule info tab head fsfus e s
-  | _, _ -> raise PatternFailure
+      let fuuspretspbrsspelims, states = extract_or_kill (function [@ocaml.warning "-4"]
+      | PECase (pind, pu, pret, pbrs) :: es ->
+        if not @@ Ind.CanOrd.equal pind ci.ci_ind then None else
+          let fuus = match_universes pu u in
+          Some (fuus, pret, pbrs, es)
+          | _ -> None)
+          elims states
+      in
+      let fuus, prets, pbrss, elims = split4 (Array.map Status.split4 fuuspretspbrsspelims) in
+      let states = Array.map2 (merge (fun ({ usubst; _ } as state) fuus -> { state with usubst = usubst @ fuus })) states fuus in
+      let loc = LocStart { elims; head; stack=s; next } in
+      let ret = mk_clos e p in
+      let brs = Array.map (mk_clos e) brs in
+      let loc = Array.fold_right2 (fun patterns arg next -> LocArg { patterns; arg; next }) (transpose (Array.map (Status.split_array (Array.length brs)) pbrss)) brs loc in
+      let loc = LocArg { patterns = prets; arg = ret; next = loc } in
+      apply_rules info tab states loc
+  | Zproj proj' :: s ->
+      let mark = (neutr head.mark) in
+      let head = {mark; term=FProj(Projection.make proj' true, head)} in
+      let elims, states = extract_or_kill (function [@ocaml.warning "-4"]
+      | PEProj proj :: es ->
+        if not @@ Projection.Repr.CanOrd.equal (Projection.repr proj) proj' then None else
+        Some es
+      | _ -> None) elims states
+      in
+      let loc = LocStart { elims; head; stack=s; next } in
+      apply_rules info tab states loc
+  | Zfix _ :: _ | Zprimitive _ :: _ -> raise PatternFailure
+  | [] ->
+    let _, states = extract_or_kill (function [@ocaml.warning "-4"]
+    | [] -> Some ()
+    | _ -> None) elims states
+    in
+    match next with
+    | Continue next -> apply_rules info tab states next
+    | Return (_, k) -> k
 
 
-and apply_rules info tab head u r stk =
-  match r with
-  | [] -> raise PatternFailure
-  | r :: rs ->
-    try
-      let elims, pu = eliminations_of_pattern r.lhs_pat in
-      let (fs, fus), stk = apply_rule info tab head ([], []) elims stk in
-      r.rhs, fs, match_universes pu u @ fus, stk
-    with PatternFailure -> apply_rules info tab head u rs stk
+and match_arg_pattern info tab next states patterns t =
+  let match_deeper = ref false in
+  let states, patterns = Array.split @@ Array.map2
+    (function Dead -> fun _ -> Dead, Ignore | (Live ({ subst; _ } as state) as sstate) -> function
+      | Ignore -> sstate, Ignore
+      | Check APHole -> Live { state with subst = subst @ [t] }, Ignore
+      | Check APHoleIgnored -> sstate, Ignore
+      | Check APRigid p -> match_deeper := true; sstate, Check (eliminations_of_rigid_pattern p)
+    ) states patterns in
+  if !match_deeper then
+    match_rigid_arg_pattern info tab next states patterns (kni info tab t [])
+  else
+    apply_rules info tab states next
+
+and match_rigid_arg_pattern info tab next states patterns (t, stk) =
+  match [@ocaml.warning "-4"] t.term with
+  | FInd (ind', u) ->
+    let fuuselims, states = extract_or_kill (function [@ocaml.warning "-4"]
+    | PHInd (ind, pu), elims ->
+      if not @@ Ind.CanOrd.equal ind ind' then None else
+      let fus = match_universes pu u in
+      Some (fus, elims)
+    | _ -> None) patterns states
+    in
+    let fuus, elims = Array.split (Array.map Status.split fuuselims) in
+    let states = Array.map2 (merge (fun ({ usubst; _ } as state) fuus -> { state with usubst = usubst @ fuus })) states fuus in
+    let loc = LocStart { elims; head=t; stack=stk; next=Continue next } in
+    apply_rules info tab states loc
+  | FConstruct (constr', u) ->
+    let fuuselims, states = extract_or_kill (function [@ocaml.warning "-4"]
+    | PHConstr (constr, pu), elims ->
+      if not @@ Construct.CanOrd.equal constr constr' then None else
+      let fus = match_universes pu u in
+      Some (fus, elims)
+    | _ -> None) patterns states
+    in
+    let fuus, elims = Array.split (Array.map Status.split fuuselims) in
+    let states = Array.map2 (merge (fun ({ usubst; _ } as state) fuus -> { state with usubst = usubst @ fuus })) states fuus in
+    let loc = LocStart { elims; head=t; stack=stk; next=Continue next } in
+    apply_rules info tab states loc
+  | FAtom t' -> begin match [@ocaml.warning "-4"] kind t' with Sort s ->
+      let fuuselims, states = extract_or_kill (function [@ocaml.warning "-4"]
+      | PHSort ps, elims ->
+        begin match match_sort ps s with Some fus -> Some (fus, elims) | None -> None end
+      | _ -> None) patterns states
+      in
+      let fuus, elims = Array.split (Array.map Status.split fuuselims) in
+      let states = Array.map2 (merge (fun ({ usubst; _ } as state) fuus -> { state with usubst = usubst @ fuus })) states fuus in
+      let loc = LocStart { elims; head=t; stack=stk; next=Continue next } in
+    apply_rules info tab states loc
+    | _ -> raise PatternFailure end
+  | FFlex (ConstKey (c', u)) ->
+    let fuuselims, states = extract_or_kill (function [@ocaml.warning "-4"]
+    | PHSymbol (c, pu), elims ->
+      if not @@ Constant.CanOrd.equal c c' then None else
+      let fus = match_universes pu u in
+      Some (fus, elims)
+    | _ -> None) patterns states
+    in
+    let fuus, elims = Array.split (Array.map Status.split fuuselims) in
+    let states = Array.map2 (merge (fun ({ usubst; _ } as state) fuus -> { state with usubst = usubst @ fuus })) states fuus in
+    let loc = LocStart { elims; head=t; stack=stk; next=Continue next } in
+    apply_rules info tab states loc
+  | FInt i' ->
+    let elims, states = extract_or_kill (function [@ocaml.warning "-4"]
+    | PHInt i, elims ->
+      if not @@ Uint63.equal i i' then None else
+      Some elims
+    | _ -> None) patterns states
+    in
+    let loc = LocStart { elims; head=t; stack=stk; next=Continue next } in
+    apply_rules info tab states loc
+  | FFloat f' ->
+    let elims, states = extract_or_kill (function [@ocaml.warning "-4"]
+    | PHFloat f, elims ->
+      if not @@ Float64.equal f f' then None else
+      Some elims
+    | _ -> None) patterns states
+    in
+    let loc = LocStart { elims; head=t; stack=stk; next=Continue next } in
+    apply_rules info tab states loc
+  | _ ->
+    let elims, states = extract_or_kill (fun _ -> None) patterns states in
+    let loc = LocStart { elims; head=t; stack=stk; next=Continue next } in
+    apply_rules info tab states loc
 
 
 let kh info tab v stk = fapp_stack(kni info tab v stk)
@@ -1900,11 +2073,14 @@ let unfold_ref_with_args infos tab fl v =
     let _, u = match fl with ConstKey c -> c | RelKey _ | VarKey _ -> assert false in
     begin try
       (* not sure about calling reduction here and about dropping the transparent state *)
-      let rhs, fs, fus, v = apply_rules (infos_with_reds infos all) tab {mark = Red; term = FFlex fl } u r v in
-      let subst = List.fold_right subs_cons fs (subs_id 0) in
-      let usubst = Univ.Instance.of_array (Array.append (Univ.Instance.to_array u) (Array.of_list fus)) in
-      let m' = mk_clos (subst, usubst) rhs in
-      Some (m', v)
-    with PatternFailure -> None
+      let states, elims = Array.split @@ Array.map
+        (fun r ->
+          let es, pu = eliminations_of_pattern r.lhs_pat in
+          Live { subst = []; usubst = match_universes pu u; rhs = r.Declarations.rhs }, Check es
+        ) (Array.of_list r)
+      in
+      let loc = LocStart { elims; head = {mark = Red; term = FFlex fl }; stack = v; next = Return ((fun x -> Some x), None) } in
+      apply_rules (infos_with_reds infos all) tab states loc
+    with PatternFailure -> raise PatternFailure
     end
   | Undef _ | OpaqueDef _ | Primitive _ -> None

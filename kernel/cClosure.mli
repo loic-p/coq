@@ -250,11 +250,33 @@ val set_conv : (clos_infos -> clos_tab -> fconstr -> fconstr -> bool) -> unit
 (***********************************************************************
   i This is for lazy debug *)
 
-val match_arg_pattern : clos_infos -> clos_tab -> Declarations.rewrite_arg_pattern -> fconstr -> fconstr list * Univ.Level.t list
-val match_rigid_arg_pattern : clos_infos -> clos_tab -> Declarations.rigid_arg_pattern -> fconstr -> fconstr list * Univ.Level.t list
-val match_rigid_arg_pattern_twice : clos_infos -> clos_tab -> Declarations.rigid_arg_pattern -> fconstr -> fconstr list * Univ.Level.t list
-val apply_rule : clos_infos -> clos_tab -> fconstr -> fconstr list * Univ.Level.t list -> Declarations.pattern_elimination list -> stack -> (fconstr list * Univ.Level.t list) * stack_member list
-val apply_rules : clos_infos -> clos_tab -> fconstr -> Univ.Instance.t -> Declarations.rewrite_rule list -> stack -> constr * fconstr list * Univ.Level.t list * stack_member list
+open Declarations
+type 'constr partial_subst = {
+  subst: 'constr list;
+  usubst: Univ.Level.t list;
+  rhs: constr;
+}
+
+type 'constr subst_status = Dead | Live of 'constr partial_subst
+
+type 'a status =
+  | Check of 'a
+  | Ignore
+
+type ('a, 'b) next =
+  | Continue of 'a
+  | Return of 'b
+
+type ('constr, 'stack, 'ret) state =
+  | LocStart of { elims: pattern_elimination list status array; head: 'constr; stack: 'stack; next: (('constr, 'stack, 'ret) state, ('constr * 'stack -> 'ret) * 'ret) next }
+  | LocArg of { patterns: rewrite_arg_pattern status array; arg: 'constr; next: ('constr, 'stack, 'ret) state }
+
+type ('constr, 'stack, 'ret) state_next = (('constr, 'stack, 'ret) state, ('constr * 'stack -> 'ret) * 'ret) next
+
+val apply_rules : clos_infos -> clos_tab -> fconstr subst_status array -> (fconstr, stack, 'a) state -> 'a
+val apply_elim  : clos_infos -> clos_tab -> (fconstr, stack, 'a) state_next -> fconstr subst_status array -> pattern_elimination list status array -> fconstr -> stack -> 'a
+val match_arg_pattern : clos_infos -> clos_tab -> (fconstr, stack, 'a) state -> fconstr subst_status array -> rewrite_arg_pattern status array -> fconstr -> 'a
+val match_rigid_arg_pattern : clos_infos -> clos_tab -> (fconstr, stack, 'a) state -> fconstr subst_status array -> (head_pattern * pattern_elimination list) status array -> fconstr * stack -> 'a
 
 val lift_fconstr      : int -> fconstr -> fconstr
 val lift_fconstr_vect : int -> fconstr array -> fconstr array

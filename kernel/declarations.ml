@@ -283,22 +283,26 @@ type mind_specif = mutual_inductive_body * one_inductive_body
 
 (** {6 Rewrite rules } *)
 
+type head_pattern =
+  | PHSort    of (Sorts.family * bool array)
+  | PHSymbol  of Constant.t * bool array
+  | PHInd     of inductive * bool array
+  | PHConstr  of constructor * bool array
+  | PHInt     of Uint63.t
+  | PHFloat   of Float64.t
+
 type rewrite_arg_pattern =
   | APHole
   | APHoleIgnored
   | APRigid   of rigid_arg_pattern
 and rigid_arg_pattern =
   | APApp     of rigid_arg_pattern * rewrite_arg_pattern array
-  | APSort    of (Sorts.family * bool array)
-  | APSymbol  of Constant.t * bool array
-  | APInd     of inductive * bool array
-  | APConstr  of constructor * bool array
-  | APInt     of Uint63.t
-  | APFloat   of Float64.t
+  | APHead    of head_pattern
+
 
 type rewrite_pattern =
   | PApp      of rewrite_pattern * rewrite_arg_pattern array
-  | PConst    of Constant.t * bool array  (* Symbol *)
+  | PHead     of Constant.t * bool array
   | PCase     of inductive * bool array * rewrite_arg_pattern * rewrite_pattern * rewrite_arg_pattern array
   | PProj     of Projection.t * rewrite_pattern
 
