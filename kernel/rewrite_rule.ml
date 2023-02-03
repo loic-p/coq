@@ -224,7 +224,7 @@ let rule_of_constant env c =
     CErrors.user_err
       Pp.(str "Cannot declare as rewrite rule: doesn't look like a proof of equality.")
   in
-  let nvars = Context.Rel.nhyps ctx in
+  let nvars = Context.Rel.length ctx in
   let nvarus = Univ.AbstractContext.size @@ Declareops.constant_polymorphic_context cb in
   let ((seen_vars, invtbl), (_, invtblu)), lhs_pat =
     safe_pattern_of_constr env 0 ((1, Int.Map.empty), (0, Int.Map.empty)) lhs
