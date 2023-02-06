@@ -1437,8 +1437,6 @@ let conv : (clos_infos -> clos_tab -> fconstr -> fconstr -> bool) ref
 let set_conv f = conv := f
 
 
-exception PatternFailure
-
 let rec eliminations_of_pattern acc = function
   | PHead (_, u) -> acc, u
   | PApp (f, args) -> eliminations_of_pattern (PEApp args :: acc) f
@@ -1481,11 +1479,14 @@ type ('a, 'b) next =
   | Continue of 'a
   | Return of 'b
 
-type ('constr, 'stack, 'ret) state =
-  | LocStart of { elims: pattern_elimination list status array; head: 'constr; stack: 'stack; next: (('constr, 'stack, 'ret) state, ('constr * 'stack -> 'ret) * 'ret) next }
-  | LocArg of { patterns: rewrite_arg_pattern status array; arg: 'constr; next: ('constr, 'stack, 'ret) state }
+type ('constr, 'stack) state =
+  | LocStart of { elims: pattern_elimination list status array; head: 'constr; stack: 'stack; next: (('constr, 'stack) state, 'constr * 'stack) next }
+  | LocArg of { patterns: rewrite_arg_pattern status array; arg: 'constr; next: ('constr, 'stack) state }
 
-type ('constr, 'stack, 'ret) state_next = (('constr, 'stack, 'ret) state, ('constr * 'stack -> 'ret) * 'ret) next
+type ('constr, 'stack) state_next = (('constr, 'stack) state, 'constr * 'stack) next
+
+type ('constr, 'stack) resume_state =
+  | Resume of { states: 'constr subst_status array; patterns: (head_pattern * pattern_elimination list) status array; next: ('constr, 'stack) state }
 
 let extract_or_kill filter a status =
   let n = Array.length a in
@@ -1563,23 +1564,23 @@ let match_sort (ps, pu) s =
   | (InProp | InSProp | InSet | InType), _ -> None
 
 (* Computes a weak head normal form from the result of knh. *)
-let rec knr info tab m stk =
+let rec knr info tab ~pat_state m stk =
   match m.term with
   | FLambda(n,tys,f,e) when red_set info.i_flags fBETA ->
       (match get_args n tys f e stk with
-          Inl e', s -> knit info tab e' f s
-        | Inr lam, s -> (lam,s))
+          Inl e', s -> knit info tab ~pat_state e' f s
+        | Inr lam, s -> knr_ret info tab ~pat_state (lam,s))
   | FFlex fl when red_set info.i_flags fDELTA ->
       (match ref_value_cache info (RedFlags.red_transparent info.i_flags) tab fl with
-        | Def v -> kni info tab v stk
+        | Def v -> kni info tab ~pat_state v stk
         | Primitive op ->
           if check_native_args op stk then
             let c = match fl with ConstKey c -> c | RelKey _ | VarKey _ -> assert false in
             let rargs, a, nargs, stk = get_native_args1 op c stk in
-            kni info tab a (Zprimitive(op,c,rargs,nargs)::stk)
+            kni info tab ~pat_state a (Zprimitive(op,c,rargs,nargs)::stk)
           else
             (* Similarly to fix, partially applied primitives are not Ntrl! *)
-            (m, stk)
+            knr_ret info tab ~pat_state (m, stk)
         | Symbol r ->
             let _, u = match fl with ConstKey c -> c | RelKey _ | VarKey _ -> assert false in
             let states, elims = Array.split @@ Array.map
@@ -1588,9 +1589,9 @@ let rec knr info tab m stk =
                 Live { subst = []; usubst = match_universes pu u; rhs = r.Declarations.rhs }, Check es
               ) (Array.of_list r)
             in
-            let loc = LocStart { elims; head = m; stack = stk; next = Return ((fun (m, stk) -> kni info tab m stk), (m, stk)) } in
-            apply_rules info tab states loc
-        | Undef _ | OpaqueDef _ -> (set_ntrl m; (m,stk)))
+            let loc = LocStart { elims; head = m; stack = stk; next = Return (m, stk) } in
+            apply_rules info tab ~pat_state states loc
+        | Undef _ | OpaqueDef _ -> (set_ntrl m; knr_ret info tab ~pat_state (m,stk)))
   | FConstruct(c,_u) ->
      let use_match = red_set info.i_flags fMATCH in
      let use_fix = red_set info.i_flags fFIX in
@@ -1599,34 +1600,38 @@ let rec knr info tab m stk =
         | (depth, args, ZcaseT(ci,u,pms,_,br,e)::s) when use_match ->
             assert (ci.ci_npar>=0);
             let (br, e) = get_branch info depth ci u pms c br e args in
-            knit info tab e br s
+            knit info tab ~pat_state e br s
         | (_, cargs, Zfix(fx,par)::s) when use_fix ->
             let rarg = fapp_stack(m,cargs) in
             let stk' = par @ append_stack [|rarg|] s in
             let (fxe,fxbd) = contract_fix_vect fx.term in
-            knit info tab fxe fxbd stk'
+            knit info tab ~pat_state fxe fxbd stk'
         | (depth, args, Zproj p::s) when use_match ->
             let rargs = drop_parameters depth (Projection.Repr.npars p) args in
             let rarg = project_nth_arg (Projection.Repr.arg p) rargs in
-            kni info tab rarg s
+            kni info tab ~pat_state rarg s
         | (_,args,s) ->
-          if is_irrelevant_constructor info c then (mk_irrelevant, skip_irrelevant_stack info stk) else (m,args@s))
+          if is_irrelevant_constructor info c then
+            knr_ret info tab ~pat_state (mk_irrelevant, skip_irrelevant_stack info stk)
+          else
+            knr_ret info tab ~pat_state (m,args@s))
      else if is_irrelevant_constructor info c then
-      (mk_irrelevant, skip_irrelevant_stack info stk)
+      knr_ret info tab ~pat_state (mk_irrelevant, skip_irrelevant_stack info stk)
      else
-      (m, stk)
+      knr_ret info tab ~pat_state (m, stk)
   | FCoFix ((i, (lna, _, _)), _) ->
     if is_irrelevant info (lna.(i)).binder_relevance then
-      (mk_irrelevant, skip_irrelevant_stack info stk)
+      knr_ret info tab ~pat_state (mk_irrelevant, skip_irrelevant_stack info stk)
     else if red_set info.i_flags fCOFIX then
       (match strip_update_shift_app m stk with
         | (_, args, (((ZcaseT _|Zproj _)::_) as stk')) ->
             let (fxe,fxbd) = contract_fix_vect m.term in
-            knit info tab fxe fxbd (args@stk')
-        | (_,args, ((Zapp _ | Zfix _ | Zshift _ | Zupdate _ | Zprimitive _) :: _ | [] as s)) -> (m,args@s))
-    else (m, stk)
+            knit info tab ~pat_state fxe fxbd (args@stk')
+        | (_,args, ((Zapp _ | Zfix _ | Zshift _ | Zupdate _ | Zprimitive _) :: _ | [] as s)) ->
+            knr_ret info tab ~pat_state (m,args@s))
+    else knr_ret info tab ~pat_state (m, stk)
   | FLetIn (_,v,_,bd,e) when red_set info.i_flags fZETA ->
-      knit info tab (on_fst (subs_cons v) e) bd stk
+      knit info tab ~pat_state (on_fst (subs_cons v) e) bd stk
   | FInt _ | FFloat _ | FArray _ ->
     (match [@ocaml.warning "-4"] strip_update_shift_app m stk with
      | (_, _, Zprimitive(op,(_,u as c),rargs,nargs)::s) ->
@@ -1635,40 +1640,46 @@ let rec knr info tab m stk =
          | [] ->
            let args = Array.of_list (List.rev rargs) in
            begin match FredNative.red_prim (info_env info) () op u args with
-            | Some m -> kni info tab m s
+            | Some m -> kni info tab ~pat_state m s
             | None -> assert false
            end
          | (kd,a)::nargs ->
            assert (kd = CPrimitives.Kwhnf);
-           kni info tab a (Zprimitive(op,c,rargs,nargs)::s)
+           kni info tab ~pat_state a (Zprimitive(op,c,rargs,nargs)::s)
              end
-     | (_, _, s) -> (m, s))
+     | (_, _, s) -> knr_ret info tab ~pat_state (m, s))
   | FCaseInvert (ci, u, pms, _p,iv,_c,v,env) when red_set info.i_flags fMATCH ->
     let pms = mk_clos_vect env pms in
     let u = usubst_instance env u in
     begin match case_inversion info tab ci u pms iv v with
-      | Some c -> knit info tab env c stk
-      | None -> (m, stk)
+      | Some c -> knit info tab ~pat_state env c stk
+      | None -> knr_ret info tab ~pat_state (m, stk)
     end
   | FIrrelevant ->
     let stk = skip_irrelevant_stack info stk in
-    (m, stk)
+    knr_ret info tab ~pat_state (m, stk)
   | FProd _ | FAtom _ | FInd _ (* relevant statically *)
   | FCaseInvert _ | FProj _ | FFix _ | FEvar _ (* relevant because of knh(t) *)
   | FLambda _ | FFlex _ | FRel _ (* irrelevance handled by conversion *)
   | FLetIn _ (* only happens in reduction mode *) ->
-    (m, stk)
+    knr_ret info tab ~pat_state (m, stk)
   | FLOCKED | FCLOS _ | FApp _ | FCaseT _ | FLIFT _ ->
     (* ruled out by knh(t) *)
     assert false
 
+and knr_ret info tab ~pat_state (m, stk) =
+  match pat_state with
+  | (Resume { states; patterns; next }) :: pat_state ->
+      match_rigid_arg_pattern info tab ~pat_state next states patterns m stk
+  | [] -> (m, stk)
+
 (* Computes the weak head normal form of a term *)
-and kni info tab m stk =
+and kni info tab ?(pat_state=[]) m stk =
   let (hm,s) = knh info m stk in
-  knr info tab hm s
-and knit info tab e t stk =
+  knr info tab ~pat_state hm s
+and knit info tab ?(pat_state=[]) e t stk =
   let (ht,s) = knht info e t stk in
-  knr info tab ht s
+  knr info tab ~pat_state ht s
 
 and case_inversion info tab ci u params indices v =
   let open Declarations in
@@ -1697,22 +1708,22 @@ and case_inversion info tab ci u params indices v =
     if Array.for_all_i check_index 0 indices
     then Some v else None
 
-and apply_rules : 'a. clos_infos -> clos_tab -> _ -> (fconstr, stack, 'a) state -> 'a = fun info tab states -> function [@ocaml.warning "-4"]
-  | LocStart { elims; head; stack; next = Return (k, _) as next } ->
+and apply_rules info tab ?(pat_state=[]) states = function [@ocaml.warning "-4"]
+  | LocStart { elims; head; stack; next = Return _ as next } ->
     begin match find2_map (fun state elim -> match [@ocaml.warning "-4"] state, elim with Live s, Check [] -> Some s | _ -> None) states elims with
     | Some { subst; usubst; rhs } ->
         let subst = List.fold_right subs_cons subst (subs_id 0) in
         let usubst = Univ.Instance.of_array (Array.of_list usubst) in
         let m' = mk_clos (subst, usubst) rhs in
-        k (m', stack)
-    | None -> apply_elim info tab next states elims head stack
+        kni info tab ~pat_state m' stack
+    | None -> apply_elim info tab ~pat_state next states elims head stack
     end
   | LocArg { patterns; arg; next } ->
-      match_arg_pattern info tab next states patterns arg
-  | LocStart { elims; head; stack; next } -> apply_elim info tab next states elims head stack
+      match_arg_pattern info tab ~pat_state next states patterns arg
+  | LocStart { elims; head; stack; next } -> apply_elim info tab ~pat_state next states elims head stack
 
 
-and apply_elim info tab (next: _ state_next) states elims head stk =
+and apply_elim info tab ~pat_state (next: _ state_next) states elims head stk =
   match stk with
   | Zapp args :: s ->
       let pargselims, states = extract_or_kill (function [@ocaml.warning "-4"] PEApp pargs :: es -> Some (pargs, es) | _ -> None) elims states in
@@ -1731,11 +1742,11 @@ and apply_elim info tab (next: _ state_next) states elims head stk =
       let stack = if Array.length rest > 0 then Zapp rest :: s else s in
       let loc = LocStart { elims; head; stack; next } in
       let loc = Array.fold_right2 (fun patterns arg next -> LocArg { patterns; arg; next }) (transpose (Array.map (Status.split_array np) pargs)) args loc in
-      apply_rules info tab states loc
-  | Zshift k :: s -> apply_elim info tab next states elims (lift_fconstr k head) s
+      apply_rules info tab ~pat_state states loc
+  | Zshift k :: s -> apply_elim info tab ~pat_state next states elims (lift_fconstr k head) s
   | Zupdate m :: s ->
       let () = update m head.mark head.term in
-      apply_elim info tab next states elims head s
+      apply_elim info tab ~pat_state next states elims head s
   | ZcaseT (ci, u, pms, p, brs, e) :: s ->
       let t = FCaseT(ci, u, pms, p, head, brs, e) in
       let mark = neutr head.mark in
@@ -1757,7 +1768,7 @@ and apply_elim info tab (next: _ state_next) states elims head stk =
       let brs = Array.map (mk_clos e) brs in
       let loc = Array.fold_right2 (fun patterns arg next -> LocArg { patterns; arg; next }) (transpose (Array.map (Status.split_array (Array.length brs)) pbrss)) brs loc in
       let loc = LocArg { patterns = prets; arg = ret; next = loc } in
-      apply_rules info tab states loc
+      apply_rules info tab ~pat_state states loc
   | Zproj proj' :: s ->
       let mark = (neutr head.mark) in
       let head = {mark; term=FProj(Projection.make proj' true, head)} in
@@ -1768,19 +1779,24 @@ and apply_elim info tab (next: _ state_next) states elims head stk =
       | _ -> None) elims states
       in
       let loc = LocStart { elims; head; stack=s; next } in
-      apply_rules info tab states loc
-  | Zfix _ :: _ | Zprimitive _ :: _ -> raise PatternFailure
+      apply_rules info tab ~pat_state states loc
+  | Zfix _ :: _ | Zprimitive _ :: _ ->
+    let _, states = extract_or_kill (fun _ -> None) elims states in
+    begin match next with
+    | Continue next -> apply_rules info tab ~pat_state states next
+    | Return k -> k
+    end
   | [] ->
     let _, states = extract_or_kill (function [@ocaml.warning "-4"]
     | [] -> Some ()
     | _ -> None) elims states
     in
     match next with
-    | Continue next -> apply_rules info tab states next
-    | Return (_, k) -> k
+    | Continue next -> apply_rules info tab ~pat_state states next
+    | Return k -> k
 
 
-and match_arg_pattern info tab next states patterns t =
+and match_arg_pattern info tab ~pat_state next states patterns t =
   let match_deeper = ref false in
   let states, patterns = Array.split @@ Array.map2
     (function Dead -> fun _ -> Dead, Ignore | (Live ({ subst; _ } as state) as sstate) -> function
@@ -1790,11 +1806,12 @@ and match_arg_pattern info tab next states patterns t =
       | Check APRigid p -> match_deeper := true; sstate, Check (eliminations_of_rigid_pattern p)
     ) states patterns in
   if !match_deeper then
-    match_rigid_arg_pattern info tab next states patterns (kni info tab t [])
+    let pat_state = Resume { states; patterns; next } :: pat_state in
+    kni info tab ~pat_state t []
   else
-    apply_rules info tab states next
+    apply_rules info tab ~pat_state states next
 
-and match_rigid_arg_pattern info tab next states patterns (t, stk) =
+and match_rigid_arg_pattern info tab ~pat_state next states patterns t stk =
   match [@ocaml.warning "-4"] t.term with
   | FInd (ind', u) ->
     let fuuselims, states = extract_or_kill (function [@ocaml.warning "-4"]
@@ -1807,7 +1824,7 @@ and match_rigid_arg_pattern info tab next states patterns (t, stk) =
     let fuus, elims = Array.split (Array.map Status.split fuuselims) in
     let states = Array.map2 (merge (fun ({ usubst; _ } as state) fuus -> { state with usubst = usubst @ fuus })) states fuus in
     let loc = LocStart { elims; head=t; stack=stk; next=Continue next } in
-    apply_rules info tab states loc
+    apply_rules info tab ~pat_state states loc
   | FConstruct (constr', u) ->
     let fuuselims, states = extract_or_kill (function [@ocaml.warning "-4"]
     | PHConstr (constr, pu), elims ->
@@ -1819,7 +1836,7 @@ and match_rigid_arg_pattern info tab next states patterns (t, stk) =
     let fuus, elims = Array.split (Array.map Status.split fuuselims) in
     let states = Array.map2 (merge (fun ({ usubst; _ } as state) fuus -> { state with usubst = usubst @ fuus })) states fuus in
     let loc = LocStart { elims; head=t; stack=stk; next=Continue next } in
-    apply_rules info tab states loc
+    apply_rules info tab ~pat_state states loc
   | FAtom t' -> begin match [@ocaml.warning "-4"] kind t' with Sort s ->
       let fuuselims, states = extract_or_kill (function [@ocaml.warning "-4"]
       | PHSort ps, elims ->
@@ -1829,8 +1846,12 @@ and match_rigid_arg_pattern info tab next states patterns (t, stk) =
       let fuus, elims = Array.split (Array.map Status.split fuuselims) in
       let states = Array.map2 (merge (fun ({ usubst; _ } as state) fuus -> { state with usubst = usubst @ fuus })) states fuus in
       let loc = LocStart { elims; head=t; stack=stk; next=Continue next } in
-    apply_rules info tab states loc
-    | _ -> raise PatternFailure end
+    apply_rules info tab ~pat_state states loc
+    | _ ->
+      let elims, states = extract_or_kill (fun _ -> None) patterns states in
+      let loc = LocStart { elims; head=t; stack=stk; next=Continue next } in
+      apply_rules info tab ~pat_state states loc
+    end
   | FFlex (ConstKey (c', u)) ->
     let fuuselims, states = extract_or_kill (function [@ocaml.warning "-4"]
     | PHSymbol (c, pu), elims ->
@@ -1842,7 +1863,7 @@ and match_rigid_arg_pattern info tab next states patterns (t, stk) =
     let fuus, elims = Array.split (Array.map Status.split fuuselims) in
     let states = Array.map2 (merge (fun ({ usubst; _ } as state) fuus -> { state with usubst = usubst @ fuus })) states fuus in
     let loc = LocStart { elims; head=t; stack=stk; next=Continue next } in
-    apply_rules info tab states loc
+    apply_rules info tab ~pat_state states loc
   | FInt i' ->
     let elims, states = extract_or_kill (function [@ocaml.warning "-4"]
     | PHInt i, elims ->
@@ -1851,7 +1872,7 @@ and match_rigid_arg_pattern info tab next states patterns (t, stk) =
     | _ -> None) patterns states
     in
     let loc = LocStart { elims; head=t; stack=stk; next=Continue next } in
-    apply_rules info tab states loc
+    apply_rules info tab ~pat_state states loc
   | FFloat f' ->
     let elims, states = extract_or_kill (function [@ocaml.warning "-4"]
     | PHFloat f, elims ->
@@ -1860,11 +1881,11 @@ and match_rigid_arg_pattern info tab next states patterns (t, stk) =
     | _ -> None) patterns states
     in
     let loc = LocStart { elims; head=t; stack=stk; next=Continue next } in
-    apply_rules info tab states loc
+    apply_rules info tab ~pat_state states loc
   | _ ->
     let elims, states = extract_or_kill (fun _ -> None) patterns states in
     let loc = LocStart { elims; head=t; stack=stk; next=Continue next } in
-    apply_rules info tab states loc
+    apply_rules info tab ~pat_state states loc
 
 
 let kh info tab v stk = fapp_stack(kni info tab v stk)
@@ -2071,16 +2092,15 @@ let unfold_ref_with_args infos tab fl v =
     Some (a, (Zupdate a::(Zprimitive(op,c,rargs,nargs)::v)))
   | Symbol r ->
     let _, u = match fl with ConstKey c -> c | RelKey _ | VarKey _ -> assert false in
-    begin try
-      (* not sure about calling reduction here and about dropping the transparent state *)
-      let states, elims = Array.split @@ Array.map
-        (fun r ->
-          let es, pu = eliminations_of_pattern r.lhs_pat in
-          Live { subst = []; usubst = match_universes pu u; rhs = r.Declarations.rhs }, Check es
-        ) (Array.of_list r)
-      in
-      let loc = LocStart { elims; head = {mark = Red; term = FFlex fl }; stack = v; next = Return ((fun x -> Some x), None) } in
-      apply_rules (infos_with_reds infos all) tab states loc
-    with PatternFailure -> raise PatternFailure
-    end
+    (* not sure about calling reduction here and about dropping the transparent state *)
+    let states, elims = Array.split @@ Array.map
+      (fun r ->
+        let es, pu = eliminations_of_pattern r.lhs_pat in
+        Live { subst = []; usubst = match_universes pu u; rhs = r.Declarations.rhs }, Check es
+      ) (Array.of_list r)
+    in
+    let head = {mark = Red; term = FFlex fl } in
+    let loc = LocStart { elims; head; stack = v; next = Return (head, v) } in
+    let (head', v') = apply_rules (infos_with_reds infos all) tab states loc in
+    if head' == head && v' == v then None else Some (head', v')
   | Undef _ | OpaqueDef _ | Primitive _ -> None
