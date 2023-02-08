@@ -307,9 +307,16 @@ type rewrite_pattern =
   | PProj     of Projection.t * rewrite_pattern
 
 type pattern_elimination =
-  | PEApp     of rewrite_arg_pattern array
-  | PECase    of inductive * bool array * rewrite_arg_pattern * rewrite_arg_pattern array
+  | PEApp     of pattern_argument array
+  | PECase    of inductive * bool array * pattern_argument * pattern_argument array
   | PEProj    of Projection.t
+
+and head_elimination = head_pattern * pattern_elimination list
+
+and pattern_argument =
+  | EHole
+  | EHoleIgnored
+  | ERigid of head_elimination
 
 type rewrite_rule = {
   lhs_pat : rewrite_pattern;

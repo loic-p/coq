@@ -1436,18 +1436,21 @@ let conv : (clos_infos -> clos_tab -> fconstr -> fconstr -> bool) ref
   = ref (fun _ _ _ _ -> (assert false : bool))
 let set_conv f = conv := f
 
+let rec eliminations_of_rigid_pattern acc = function
+  | APHead h -> h, acc
+  | APApp (f, args) -> eliminations_of_rigid_pattern (PEApp (Array.map pattern_arg_of_arg_pattern args) :: acc) f
+and pattern_arg_of_arg_pattern = function
+  | APHole -> EHole
+  | APHoleIgnored -> EHoleIgnored
+  | APRigid p -> ERigid (eliminations_of_rigid_pattern [] p)
 
 let rec eliminations_of_pattern acc = function
   | PHead (_, u) -> acc, u
-  | PApp (f, args) -> eliminations_of_pattern (PEApp args :: acc) f
-  | PCase (ind, u, ret, c, brs) -> eliminations_of_pattern (PECase (ind, u, ret, brs) :: acc) c
+  | PApp (f, args) -> eliminations_of_pattern (PEApp (Array.map pattern_arg_of_arg_pattern args) :: acc) f
+  | PCase (ind, u, ret, c, brs) ->
+      eliminations_of_pattern (PECase (ind, u, pattern_arg_of_arg_pattern ret, Array.map pattern_arg_of_arg_pattern brs) :: acc) c
   | PProj (p, c) -> eliminations_of_pattern (PEProj p :: acc) c
 let eliminations_of_pattern = eliminations_of_pattern []
-
-let rec eliminations_of_rigid_pattern acc = function
-  | APHead h -> h, acc
-  | APApp (f, args) -> eliminations_of_rigid_pattern (PEApp args :: acc) f
-let eliminations_of_rigid_pattern = eliminations_of_rigid_pattern []
 
 
 type 'constr partial_subst = {
@@ -1485,13 +1488,13 @@ type (_, _) escape =
 
 type ('constr, 'stack) state =
   | LocStart of { elims: pattern_elimination list status array; head: 'constr; stack: 'stack; next: ('constr, 'stack) state_next }
-  | LocArg of { patterns: rewrite_arg_pattern status array; arg: 'constr; next: ('constr, 'stack) state }
+  | LocArg of { patterns: pattern_argument status array; arg: 'constr; next: ('constr, 'stack) state }
 
 and ('constr, 'stack) state_next = (('constr, 'stack) state, 'constr * 'stack) next
 
 
 type ('constr, 'stack) resume_state =
-  | Resume of { states: 'constr subst_status array; patterns: (head_pattern * pattern_elimination list) status array; next: ('constr, 'stack) state }
+  | Resume of { states: 'constr subst_status array; patterns: head_elimination status array; next: ('constr, 'stack) state }
 
 type ('constr, 'stack, _) depth =
   | Nil: ('constr * 'stack, 'ret) escape -> ('constr, 'stack, 'ret) depth
@@ -1828,9 +1831,9 @@ and match_arg info tab ~pat_state next states patterns t =
   let states, patterns = Array.split @@ Array.map2
     (function Dead -> fun _ -> Dead, Ignore | (Live ({ subst; _ } as state) as sstate) -> function
       | Ignore -> sstate, Ignore
-      | Check APHole -> Live { state with subst = subst @ [t] }, Ignore
-      | Check APHoleIgnored -> sstate, Ignore
-      | Check APRigid p -> match_deeper := true; sstate, Check (eliminations_of_rigid_pattern p)
+      | Check EHole -> Live { state with subst = subst @ [t] }, Ignore
+      | Check EHoleIgnored -> sstate, Ignore
+      | Check ERigid p -> match_deeper := true; sstate, Check p
     ) states patterns in
   if !match_deeper then
     let pat_state = Cons (Resume { states; patterns; next }, pat_state) in

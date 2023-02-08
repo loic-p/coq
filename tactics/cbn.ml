@@ -561,23 +561,42 @@ let apply_branch env sigma (ind, i) args (ci, u, pms, iv, r, lf) =
 
 exception PatternFailure
 
-let rec eliminations_of_pattern acc = function
-  | Declarations.PHead (_, u) -> acc, u
-  | Declarations.PApp (f, args) -> eliminations_of_pattern (Declarations.PEApp args :: acc) f
-  | Declarations.PCase (ind, u, ret, c, brs) -> eliminations_of_pattern (Declarations.PECase (ind, u, ret, brs) :: acc) c
-  | Declarations.PProj (p, c) -> eliminations_of_pattern (Declarations.PEProj p :: acc) c
+let rec eliminations_of_rigid_pattern acc =
+  let open Declarations in
+  function
+  | APHead h -> h, acc
+  | APApp (f, args) -> eliminations_of_rigid_pattern (PEApp (Array.map pattern_arg_of_arg_pattern args) :: acc) f
+and pattern_arg_of_arg_pattern = function
+  | APHole -> EHole
+  | APHoleIgnored -> EHoleIgnored
+  | APRigid p -> ERigid (eliminations_of_rigid_pattern [] p)
+
+let rec eliminations_of_pattern acc =
+  let open Declarations in
+  function
+  | PHead (_, u) -> acc, u
+  | PApp (f, args) -> eliminations_of_pattern (PEApp (Array.map pattern_arg_of_arg_pattern args) :: acc) f
+  | PCase (ind, u, ret, c, brs) ->
+      eliminations_of_pattern (PECase (ind, u, pattern_arg_of_arg_pattern ret, Array.map pattern_arg_of_arg_pattern brs) :: acc) c
+  | PProj (p, c) -> eliminations_of_pattern (PEProj p :: acc) c
 let eliminations_of_pattern = eliminations_of_pattern []
 
 let match_universes pu u =
   List.filter_with (Array.to_list pu) (Array.to_list (Univ.Instance.to_array u))
 let match_euniverses sigma pu u = match_universes pu (EInstance.kind sigma u)
 
-let rec cbn_match_arg_pattern sigma p t =
+let rec cbn_match_arg_pattern whrec env sigma p t =
   let open Declarations in
   match p with
-  | APHole -> [t], []
-  | APHoleIgnored -> [], []
-  | APRigid p -> cbn_match_rigid_arg_pattern sigma p t
+  | EHole -> [t], []
+  | EHoleIgnored -> [], []
+  | ERigid (ph, es) ->
+      let (t, stk), _ = whrec Cst_stack.empty (t, Stack.empty) in
+      let fsfus = cbn_match_rigid_arg_pattern sigma ph t in
+      let fsfus, stk = cbn_apply_rule whrec env sigma fsfus es stk in
+      match stk with
+      | [] -> fsfus
+      | _ :: _ -> raise PatternFailure
 
 and match_sort (ps, pu) s =
   let open Sorts in
@@ -595,43 +614,26 @@ and match_sort (ps, pu) s =
 
 and cbn_match_rigid_arg_pattern sigma p t =
   match [@ocaml.warning "-4"] p, EConstr.kind sigma t with
-  | APHead PHInd (ind, pu), Ind (ind', u) ->
+  | PHInd (ind, pu), Ind (ind', u) ->
     if Ind.CanOrd.equal ind ind' then [], match_euniverses sigma pu u else raise PatternFailure
-  | APHead PHConstr (constr, pu), Construct (constr', u) ->
+  | PHConstr (constr, pu), Construct (constr', u) ->
     if Construct.CanOrd.equal constr constr' then [], match_euniverses sigma pu u else raise PatternFailure
-  | APHead PHSort ps, Sort s -> match_sort ps (ESorts.kind sigma s)
-  | APHead PHSymbol (c, pu), Const (c', u) ->
+  | PHSort ps, Sort s -> match_sort ps (ESorts.kind sigma s)
+  | PHSymbol (c, pu), Const (c', u) ->
     if Constant.CanOrd.equal c c' then [], match_euniverses sigma pu u else raise PatternFailure
-  | APHead PHInt i, Int i' ->
+  | PHInt i, Int i' ->
     if Uint63.equal i i' then [], [] else raise PatternFailure
-  | APHead PHFloat f, Float f' ->
+  | PHFloat f, Float f' ->
     if Float64.equal f f' then [], [] else raise PatternFailure
-  | APApp (pf, pargs), App (f, args) ->
-      let np = Array.length pargs in
-      let na = Array.length args in
-      if np == na then
-        let fss, fuss = Array.split @@ Array.map2 (cbn_match_arg_pattern sigma) pargs args in
-        let fs, fus = cbn_match_rigid_arg_pattern sigma pf f in
-        fs @ List.concat (Array.to_list fss), fus @ List.concat (Array.to_list fuss)
-      else if np < na then (* more real arguments *)
-        let remargs, usedargs = Array.chop (na - np) args in
-        let fss, fuss = Array.split @@ Array.map2 (cbn_match_arg_pattern sigma) pargs usedargs in
-        let fs, fus = cbn_match_rigid_arg_pattern sigma pf (EConstr.of_kind (App (f, remargs))) in
-        fs @ List.concat (Array.to_list fss), fus @ List.concat (Array.to_list fuss)
-      else (* more pattern arguments *)
-        let rempargs, usedpargs = Array.chop (np - na) pargs in
-        let fss, fuss = Array.split @@ Array.map2 (cbn_match_arg_pattern sigma) usedpargs args in
-        let fs, fus = cbn_match_rigid_arg_pattern sigma (APApp (pf, rempargs)) f in
-        fs @ List.concat (Array.to_list fss), fus @ List.concat (Array.to_list fuss)
-  | (APHead PHInd _ | APHead PHConstr _ | APHead PHInt _ | APHead PHFloat _ | APApp _ | APHead PHSort _ | APHead PHSymbol _), _ -> raise PatternFailure
+  | (PHInd _ | PHConstr _ | PHInt _ | PHFloat _ | PHSort _ | PHSymbol _), _ -> raise PatternFailure
 
-let rec extract_n_stack args n s =
+and extract_n_stack args n s =
   if n = 0 then List.rev args, s else
   match Stack.decomp s with
   | Some (arg, rest) -> extract_n_stack (arg :: args) (n-1) rest
   | None -> raise PatternFailure
 
-let rec cbn_apply_rule env sigma fsfus es stk =
+and cbn_apply_rule whrec env sigma fsfus es stk =
   match [@ocaml.warning "-4"] es, stk with
   | [], _ -> fsfus, stk
   | Declarations.PEApp pargs :: e, s ->
@@ -639,33 +641,33 @@ let rec cbn_apply_rule env sigma fsfus es stk =
       let pargs = Array.to_list pargs in
       let args, s = extract_n_stack [] np s in
       let fs, fus = fsfus in
-      let fss, fuss = List.split @@ List.map2 (cbn_match_arg_pattern sigma) pargs args in
-      cbn_apply_rule env sigma (fs @ List.concat fss, fus @ List.concat fuss) e s
+      let fss, fuss = List.split @@ List.map2 (cbn_match_arg_pattern whrec env sigma) pargs args in
+      cbn_apply_rule whrec env sigma (fs @ List.concat fss, fus @ List.concat fuss) e s
   | Declarations.PECase (pind, pu, pret, pbrs) :: e, Stack.Case ((ci, u, pms, p, iv, brs), cst_l) :: s ->
       if not @@ Ind.CanOrd.equal pind ci.ci_ind then raise PatternFailure;
       let dummy = mkProp in
       let fs, fus = fsfus in
       let fuus = match_euniverses sigma pu u in
       let (_, p, _, _, brs) = EConstr.expand_case env sigma (ci, u, pms, p, NoInvert, dummy, brs) in
-      let fsret, fusret = cbn_match_arg_pattern sigma pret p in
-      let fsbrs, fusbrs = Array.split @@ Array.map2 (cbn_match_arg_pattern sigma) pbrs brs in
-      cbn_apply_rule env sigma (fs @ fsret @ List.concat (Array.to_list fsbrs), fus @ fuus @ fusret @ List.concat (Array.to_list fusbrs)) e s
+      let fsret, fusret = cbn_match_arg_pattern whrec env sigma pret p in
+      let fsbrs, fusbrs = Array.split @@ Array.map2 (cbn_match_arg_pattern whrec env sigma) pbrs brs in
+      cbn_apply_rule whrec env sigma (fs @ fsret @ List.concat (Array.to_list fsbrs), fus @ fuus @ fusret @ List.concat (Array.to_list fusbrs)) e s
   | Declarations.PEProj proj :: e, Stack.Proj (proj', cst_l') :: s ->
       if not @@ Projection.CanOrd.equal proj proj' then raise PatternFailure;
-      cbn_apply_rule env sigma fsfus e s
+      cbn_apply_rule whrec env sigma fsfus e s
   | _, _ -> raise PatternFailure
 
 
-let rec cbn_apply_rules env sigma u r stk =
+let rec cbn_apply_rules whrec env sigma u r stk =
   let open Declarations in
   match r with
   | [] -> raise PatternFailure
   | r :: rs ->
     try
       let elims, pu = eliminations_of_pattern r.lhs_pat in
-      let (fs, fus), stk = cbn_apply_rule env sigma ([], []) elims stk in
+      let (fs, fus), stk = cbn_apply_rule whrec env sigma ([], []) elims stk in
       EConstr.of_constr r.rhs, fs, match_euniverses sigma pu u @ fus, stk
-    with PatternFailure -> cbn_apply_rules env sigma u rs stk
+    with PatternFailure -> cbn_apply_rules whrec env sigma u rs stk
 
 
 
@@ -776,7 +778,7 @@ let whd_state_gen ?csts flags env sigma =
           whrec Cst_stack.empty (a,Stack.Primitive(p,const,before,kargs,cst_l)::after)
        | exception NotEvaluableConst (HasRules r) ->
           begin try
-            let rhs, fs, fus, stack = cbn_apply_rules env sigma u r stack in
+            let rhs, fs, fus, stack = cbn_apply_rules whrec env sigma u r stack in
             let usubst = Univ.Instance.of_array (Array.of_list fus) in
             let rhsu = subst_instance_constr usubst rhs in
             let rhs' = substl fs rhsu in

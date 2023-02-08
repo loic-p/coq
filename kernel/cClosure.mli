@@ -273,13 +273,13 @@ type (_, _) escape =
 
 type ('constr, 'stack) state =
   | LocStart of { elims: pattern_elimination list status array; head: 'constr; stack: 'stack; next: ('constr, 'stack) state_next }
-  | LocArg of { patterns: rewrite_arg_pattern status array; arg: 'constr; next: ('constr, 'stack) state }
+  | LocArg of { patterns: pattern_argument status array; arg: 'constr; next: ('constr, 'stack) state }
 
 and ('constr, 'stack) state_next = (('constr, 'stack) state, 'constr * 'stack) next
 
 
 type ('constr, 'stack) resume_state =
-  | Resume of { states: 'constr subst_status array; patterns: (head_pattern * pattern_elimination list) status array; next: ('constr, 'stack) state }
+  | Resume of { states: 'constr subst_status array; patterns: head_elimination status array; next: ('constr, 'stack) state }
 
 type ('constr, 'stack, _) depth =
   | Nil: ('constr * 'stack, 'ret) escape -> ('constr, 'stack, 'ret) depth
@@ -287,8 +287,8 @@ type ('constr, 'stack, _) depth =
 
 val match_main : clos_infos -> clos_tab -> pat_state:(fconstr, stack, 'a) depth -> fconstr subst_status array -> (fconstr, stack) state -> 'a
 val match_elim : clos_infos -> clos_tab -> pat_state:(fconstr, stack, 'a) depth -> (fconstr, stack) state_next -> fconstr subst_status array -> pattern_elimination list status array -> fconstr -> stack -> 'a
-val match_arg  : clos_infos -> clos_tab -> pat_state:(fconstr, stack, 'a) depth -> (fconstr, stack) state      -> fconstr subst_status array -> rewrite_arg_pattern status array -> fconstr -> 'a
-val match_head : clos_infos -> clos_tab -> pat_state:(fconstr, stack, 'a) depth -> (fconstr, stack) state      -> fconstr subst_status array -> (head_pattern * pattern_elimination list) status array -> fconstr -> stack -> 'a
+val match_arg  : clos_infos -> clos_tab -> pat_state:(fconstr, stack, 'a) depth -> (fconstr, stack) state      -> fconstr subst_status array -> pattern_argument status array -> fconstr -> 'a
+val match_head : clos_infos -> clos_tab -> pat_state:(fconstr, stack, 'a) depth -> (fconstr, stack) state      -> fconstr subst_status array -> head_elimination status array -> fconstr -> stack -> 'a
 
 val lift_fconstr      : int -> fconstr -> fconstr
 val lift_fconstr_vect : int -> fconstr array -> fconstr array

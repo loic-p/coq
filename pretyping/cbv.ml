@@ -448,11 +448,24 @@ let cbv_subst_of_rel_context_instance_list mkclos sign args env =
 
 exception PatternFailure
 
-let rec eliminations_of_pattern acc = function
-  | Declarations.PHead (_, u) -> acc, u
-  | Declarations.PApp (f, args) -> eliminations_of_pattern (Declarations.PEApp args :: acc) f
-  | Declarations.PCase (ind, u, ret, c, brs) -> eliminations_of_pattern (Declarations.PECase (ind, u, ret, brs) :: acc) c
-  | Declarations.PProj (p, c) -> eliminations_of_pattern (Declarations.PEProj p :: acc) c
+let rec eliminations_of_rigid_pattern acc =
+  let open Declarations in
+  function
+  | APHead h -> h, acc
+  | APApp (f, args) -> eliminations_of_rigid_pattern (PEApp (Array.map pattern_arg_of_arg_pattern args) :: acc) f
+and pattern_arg_of_arg_pattern = function
+  | APHole -> EHole
+  | APHoleIgnored -> EHoleIgnored
+  | APRigid p -> ERigid (eliminations_of_rigid_pattern [] p)
+
+let rec eliminations_of_pattern acc =
+  let open Declarations in
+  function
+  | PHead (_, u) -> acc, u
+  | PApp (f, args) -> eliminations_of_pattern (PEApp (Array.map pattern_arg_of_arg_pattern args) :: acc) f
+  | PCase (ind, u, ret, c, brs) ->
+      eliminations_of_pattern (PECase (ind, u, pattern_arg_of_arg_pattern ret, Array.map pattern_arg_of_arg_pattern brs) :: acc) c
+  | PProj (p, c) -> eliminations_of_pattern (PEProj p :: acc) c
 let eliminations_of_pattern = eliminations_of_pattern []
 
 let match_universes pu u =
@@ -560,7 +573,7 @@ and norm_head_ref k info env stack normt t =
           | RelKey _ | VarKey _ -> assert false
         in
         begin try
-          let rhs, fs, fus, stack = cbv_apply_rules info env t u r stack in
+          let rhs, fs, fus, stack = cbv_apply_rules info env u r stack in
           let usubst = Univ.Instance.of_array (Array.of_list fus) in
           let rhsu = subst_instance_constr usubst rhs in
           let subst = List.fold_right subs_cons fs (subs_id 0) in
@@ -706,12 +719,18 @@ and cbv_value_cache info ref =
     KeyTable.add info.tab ref v; v
 
 
-and cbv_match_arg_pattern info tab p t =
+and cbv_match_arg_pattern info env p t =
   let open Declarations in
   match p with
-  | APHole -> [t], []
-  | APHoleIgnored -> [], []
-  | APRigid p -> cbv_match_rigid_arg_pattern info tab p t
+  | EHole -> [t], []
+  | EHoleIgnored -> [], []
+  | ERigid (ph, es) ->
+      let t, stk = strip_appl t TOP in
+      let fsfus = cbv_match_rigid_arg_pattern info env ph t in
+      let fsfus, stk = cbv_apply_rule info env fsfus es stk in
+      match stk with
+      | TOP -> fsfus
+      | APP _| CASE _ | PROJ _ -> raise PatternFailure
 
 and match_sort (ps, pu) s =
   let open Sorts in
@@ -728,40 +747,24 @@ and match_sort (ps, pu) s =
   | (InProp | InSProp | InSet | InType), _ -> raise PatternFailure
 
 and cbv_match_rigid_arg_pattern info tab p t =
-  match [@ocaml.warning "-4"] p, mkSTACK (strip_appl t TOP) with
-  | APHead PHInd (ind, pu), VAL(0, t') ->
+  let open Declarations in
+  match [@ocaml.warning "-4"] p, t with
+  | PHInd (ind, pu), VAL(0, t') ->
     begin match kind t' with Ind (ind', u) when Ind.CanOrd.equal ind ind' -> [], match_universes pu u | _ -> raise PatternFailure end
-  | APHead PHConstr (constr, pu), CONSTR ((constr', u), [||]) ->
+  | PHConstr (constr, pu), CONSTR ((constr', u), [||]) ->
     if Construct.CanOrd.equal constr constr' then [], match_universes pu u else raise PatternFailure
-  | APHead PHSort ps, VAL(0, t') ->
+  | PHSort ps, VAL(0, t') ->
     begin match kind t' with Sort s -> match_sort ps s | _ -> raise PatternFailure end
-  | APHead PHSymbol (c, pu), VAL(0, t') ->
+  | PHSymbol (c, pu), VAL(0, t') ->
     begin match kind t' with Const (c', u) when Constant.CanOrd.equal c c' -> [], match_universes pu u | _ -> raise PatternFailure end
-  | APHead PHInt i, VAL(0, t') ->
+  | PHInt i, VAL(0, t') ->
     begin match kind t' with Int i' when Uint63.equal i i' -> [], [] | _ -> raise PatternFailure end
-  | APHead PHFloat f, VAL(0, t') ->
+  | PHFloat f, VAL(0, t') ->
     begin match kind t' with Float f' when Float64.equal f f' -> [], [] | _ -> raise PatternFailure end
-  | APApp (pf, pargs), STACK (0, f, APP (args, s)) ->
-      let args = Array.of_list args in
-      let np = Array.length pargs in
-      let na = Array.length args in
-      if np == na then
-        let fss, fuss = Array.split @@ Array.map2 (cbv_match_arg_pattern info tab) pargs args in
-        let fs, fus = cbv_match_rigid_arg_pattern info tab pf f in
-        fs @ List.concat (Array.to_list fss), fus @ List.concat (Array.to_list fuss)
-      else if np < na then (* more real arguments *)
-        let remargs, usedargs = Array.chop (na - np) args in
-        let fss, fuss = Array.split @@ Array.map2 (cbv_match_arg_pattern info tab) pargs usedargs in
-        let fs, fus = cbv_match_rigid_arg_pattern info tab pf (STACK (0, f, APP (Array.to_list remargs, s))) in
-        fs @ List.concat (Array.to_list fss), fus @ List.concat (Array.to_list fuss)
-      else (* more pattern arguments *)
-        let rempargs, usedpargs = Array.chop (np - na) pargs in
-        let fss, fuss = Array.split @@ Array.map2 (cbv_match_arg_pattern info tab) usedpargs args in
-        let fs, fus = cbv_match_rigid_arg_pattern info tab (APApp (pf, rempargs)) f in
-        fs @ List.concat (Array.to_list fss), fus @ List.concat (Array.to_list fuss)
-  | (APHead PHInd _ | APHead PHConstr _ | APHead PHInt _ | APHead PHFloat _ | APApp _ | APHead PHSort _ | APHead PHSymbol _), _ -> raise PatternFailure
+  | (PHInd _ | PHConstr _ | PHInt _ | PHFloat _ | PHSort _ | PHSymbol _), _ -> raise PatternFailure
 
-and cbv_apply_rule info env head fsfus es stk =
+
+and cbv_apply_rule info env fsfus es stk =
   match [@ocaml.warning "-4"] es, stk with
   | [], _ -> fsfus, stk
   | Declarations.PEApp pargs :: e, APP (args, s) ->
@@ -771,15 +774,15 @@ and cbv_apply_rule info env head fsfus es stk =
       let na = Array.length args in
       if np == na then
         let fss, fuss = Array.split @@ Array.map2 (cbv_match_arg_pattern info env) pargs args in
-        cbv_apply_rule info env head (fs @ List.concat (Array.to_list fss), fus @ List.concat (Array.to_list fuss)) e s
+        cbv_apply_rule info env (fs @ List.concat (Array.to_list fss), fus @ List.concat (Array.to_list fuss)) e s
       else if np < na then (* more real arguments *)
         let usedargs, remargs = Array.chop np args in
         let fss, fuss = Array.split @@ Array.map2 (cbv_match_arg_pattern info env) pargs usedargs in
-        cbv_apply_rule info env head (fs @ List.concat (Array.to_list fss), fus @ List.concat (Array.to_list fuss)) e (APP (Array.to_list remargs, s))
+        cbv_apply_rule info env (fs @ List.concat (Array.to_list fss), fus @ List.concat (Array.to_list fuss)) e (APP (Array.to_list remargs, s))
       else (* more pattern arguments *)
         let usedpargs, rempargs = Array.chop na pargs in
         let fss, fuss = Array.split @@ Array.map2 (cbv_match_arg_pattern info env) usedpargs args in
-        cbv_apply_rule info env head (fs @ List.concat (Array.to_list fss), fus @ List.concat (Array.to_list fuss)) (PEApp rempargs :: e) s
+        cbv_apply_rule info env (fs @ List.concat (Array.to_list fss), fus @ List.concat (Array.to_list fuss)) (PEApp rempargs :: e) s
   | Declarations.PECase (pind, pu, pret, pbrs) :: e, CASE (u, pms, p, brs, iv, ci, env, s) ->
       if not @@ Ind.CanOrd.equal pind ci.ci_ind then raise PatternFailure;
       let fs, fus = fsfus in
@@ -789,22 +792,22 @@ and cbv_apply_rule info env head fsfus es stk =
       let mkclos env c = cbv_stack_term info TOP env c in
       let fsret, fusret = cbv_match_arg_pattern info env pret (mkclos env p) in
       let fsbrs, fusbrs = Array.split @@ Array.map2 (fun a b -> cbv_match_arg_pattern info env a (mkclos env b)) pbrs brs in
-      cbv_apply_rule info env head (fs @ fsret @ List.concat (Array.to_list fsbrs), fus @ fuus @ fusret @ List.concat (Array.to_list fusbrs)) e s
+      cbv_apply_rule info env (fs @ fsret @ List.concat (Array.to_list fsbrs), fus @ fuus @ fusret @ List.concat (Array.to_list fusbrs)) e s
   | Declarations.PEProj proj :: e, PROJ (proj', s) ->
       if not @@ Projection.CanOrd.equal proj proj' then raise PatternFailure;
-      cbv_apply_rule info env head fsfus e s
+      cbv_apply_rule info env fsfus e s
   | _, _ -> raise PatternFailure
 
 
-and cbv_apply_rules info env head u r stk =
+and cbv_apply_rules info env u r stk =
   match r with
   | [] -> raise PatternFailure
   | r :: rs ->
     try
       let elims, pu = eliminations_of_pattern r.lhs_pat in
-      let (fs, fus), stk = cbv_apply_rule info env head ([], []) elims stk in
+      let (fs, fus), stk = cbv_apply_rule info env ([], []) elims stk in
       r.rhs, fs, match_universes pu u @ fus, stk
-    with PatternFailure -> cbv_apply_rules info env head u rs stk
+    with PatternFailure -> cbv_apply_rules info env u rs stk
 
 
 
