@@ -1527,60 +1527,6 @@ let merge f a b =
   | Dead, _ -> Dead
   | Live _, Ignore -> a
 
-let transpose a =
-  let n = Array.length a in
-  if n = 0 then [||] else
-  let n' = Array.length (Array.unsafe_get a 0) in
-  Array.init n' (fun i -> Array.init n (fun j -> a.(j).(i)))
-
-let split3 arr =
-  let n = Array.length arr in
-  if n = 0 then [||], [||], [||] else
-  let (a, b, c) = Array.unsafe_get arr 0 in
-  let aa = Array.make n a
-  and bs = Array.make n b
-  and cs = Array.make n c
-  in
-  for i = 1 to n - 1 do
-    let (a, b, c) = Array.unsafe_get arr i in
-    Array.unsafe_set aa i a;
-    Array.unsafe_set bs i b;
-    Array.unsafe_set cs i c;
-  done;
-  aa, bs, cs
-
-let split4 arr =
-  let n = Array.length arr in
-  if n = 0 then [||], [||], [||], [||] else
-  let (a, b, c, d) = Array.unsafe_get arr 0 in
-  let aa = Array.make n a
-  and bs = Array.make n b
-  and cs = Array.make n c
-  and ds = Array.make n d
-  in
-  for i = 1 to n - 1 do
-    let (a, b, c, d) = Array.unsafe_get arr i in
-    Array.unsafe_set aa i a;
-    Array.unsafe_set bs i b;
-    Array.unsafe_set cs i c;
-    Array.unsafe_set ds i d;
-  done;
-  aa, bs, cs, ds
-
-
-let find2_map (type a) pred arr1 arr2 =
-  let exception Found of a in
-  let n = Array.length arr1 in
-  assert (Array.length arr2 = n);
-  try
-    for i=0 to n - 1 do
-      match pred (Array.unsafe_get arr1 i) (Array.unsafe_get arr2 i) with
-      | Some r -> raise (Found r)
-      | None -> ()
-    done;
-    None
-  with Found i -> Some i
-
 let match_universes pu u =
   List.filter_with (Array.to_list pu) (Array.to_list (Univ.Instance.to_array u))
 
@@ -1750,7 +1696,7 @@ and match_main info tab ~pat_state states loc =
   if Array.for_all (function Dead -> true | Live _ -> false) states then match_kill info tab ~pat_state loc else
   match [@ocaml.warning "-4"] loc with
   | LocStart { elims; head; stack; next = Return _ as next } ->
-    begin match find2_map (fun state elim -> match [@ocaml.warning "-4"] state, elim with Live s, Check [] -> Some s | _ -> None) states elims with
+    begin match Array.find2_map (fun state elim -> match [@ocaml.warning "-4"] state, elim with Live s, Check [] -> Some s | _ -> None) states elims with
     | Some { subst; usubst; rhs } ->
         let subst = List.fold_right subs_cons subst (subs_id 0) in
         let usubst = Univ.Instance.of_array (Array.of_list usubst) in
@@ -1800,7 +1746,7 @@ and match_elim info tab ~pat_state next states elims head stk =
       let head = {mark=neutr head.mark; term=FApp(head, args)} in
       let stack = if Array.length rest > 0 then Zapp rest :: s else s in
       let loc = LocStart { elims; head; stack; next } in
-      let loc = Array.fold_right2 (fun patterns arg next -> LocArg { patterns; arg; next }) (transpose (Array.map (Status.split_array np) pargs)) args loc in
+      let loc = Array.fold_right2 (fun patterns arg next -> LocArg { patterns; arg; next }) (Array.transpose (Array.map (Status.split_array np) pargs)) args loc in
       match_main info tab ~pat_state states loc
   | Zshift k :: s -> match_elim info tab ~pat_state next states elims (lift_fconstr k head) s
   | Zupdate m :: s ->
@@ -1820,12 +1766,12 @@ and match_elim info tab ~pat_state next states elims head stk =
           | _ -> None)
           elims states
       in
-      let fuus, prets, pbrss, elims = split4 (Array.map Status.split4 fuuspretspbrsspelims) in
+      let fuus, prets, pbrss, elims = Array.split4 (Array.map Status.split4 fuuspretspbrsspelims) in
       let states = Array.map2 (merge (fun ({ usubst; _ } as state) fuus -> { state with usubst = usubst @ fuus })) states fuus in
       let loc = LocStart { elims; head; stack=s; next } in
       let ret = mk_clos e p in
       let brs = Array.map (mk_clos e) brs in
-      let loc = Array.fold_right2 (fun patterns arg next -> LocArg { patterns; arg; next }) (transpose (Array.map (Status.split_array (Array.length brs)) pbrss)) brs loc in
+      let loc = Array.fold_right2 (fun patterns arg next -> LocArg { patterns; arg; next }) (Array.transpose (Array.map (Status.split_array (Array.length brs)) pbrss)) brs loc in
       let loc = LocArg { patterns = prets; arg = ret; next = loc } in
       match_main info tab ~pat_state states loc
   | Zproj proj' :: s ->
@@ -1937,7 +1883,7 @@ and match_head : 'a. _ -> _ -> pat_state:(fconstr, stack, 'a) depth -> _ -> _ ->
     match_main info tab ~pat_state states loc
   | FProd (n, ty, body, e) ->
     let ntys, body = Term.decompose_prod body in
-    let tys = Array.of_list (ty :: List.map (snd %> (mk_clos e)) ntys) in
+    let tys = Array.of_list (ty :: List.rev_map (snd %> (mk_clos e)) ntys) in
     let na = Array.length tys in
     let tysbodyelims, states = extract_or_kill (function [@ocaml.warning "-4"]
     | PHProd (p1, p2), elims ->
@@ -1945,24 +1891,24 @@ and match_head : 'a. _ -> _ -> pat_state:(fconstr, stack, 'a) depth -> _ -> _ ->
       Some (p1, p2, elims)
     | _ -> None) patterns states
     in
-    let ptys, pbody, elims = tysbodyelims |> Array.map Status.split3 |> split3 in
-    let funbody = { term = FLambda(na, List.rev ((n, term_of_fconstr ty) :: ntys), body, e); mark = t.mark } in
+    let ptys, pbody, elims = tysbodyelims |> Array.map Status.split3 |> Array.split3 in
+    let funbody = { term = FLambda(na, (n, term_of_fconstr ty) :: List.rev ntys, body, e); mark = t.mark } in
     let loc = LocStart { elims; head=t; stack=stk; next=Continue next } in
     let loc = LocArg { patterns = pbody; arg = funbody; next = loc } in
-    let loc = Array.fold_right2 (fun patterns arg next -> LocArg { patterns; arg; next }) (transpose (Array.map (Status.split_array na) ptys)) tys loc in
+    let loc = Array.fold_right2 (fun patterns arg next -> LocArg { patterns; arg; next }) (Array.transpose (Array.map (Status.split_array na) ptys)) tys loc in
     match_main info tab ~pat_state states loc
   | FLambda (na, ntys, _, e) ->
-    let tys = Array.of_list (List.rev_map (snd %> (mk_clos e)) ntys) in
+    let tys = Array.map_of_list (snd %> (mk_clos e)) ntys in
     let tysbodyelims, states = extract_or_kill (function [@ocaml.warning "-4"]
     | PHLambda (p1, p2), elims ->
       if Array.length p1 <> na then None else
       Some (p1, p2, elims)
     | _ -> None) patterns states
     in
-    let ptys, pbody, elims = tysbodyelims |> Array.map Status.split3 |> split3 in
+    let ptys, pbody, elims = tysbodyelims |> Array.map Status.split3 |> Array.split3 in
     let loc = LocStart { elims; head=t; stack=stk; next=Continue next } in
     let loc = LocArg { patterns = pbody; arg = t; next = loc } in
-    let loc = Array.fold_right2 (fun patterns arg next -> LocArg { patterns; arg; next }) (transpose (Array.map (Status.split_array na) ptys)) tys loc in
+    let loc = Array.fold_right2 (fun patterns arg next -> LocArg { patterns; arg; next }) (Array.transpose (Array.map (Status.split_array na) ptys)) tys loc in
     match_main info tab ~pat_state states loc
   | _ ->
     let _, states = extract_or_kill (fun _ -> None) patterns states in

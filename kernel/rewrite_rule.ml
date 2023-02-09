@@ -41,12 +41,12 @@ let rec head_pattern_of_constr t = kind t |> function
   | Float f -> PHFloat f
   | Lambda _ ->
       let (ntys, b) = Term.decompose_lambda t in
-      let ptys = Array.map_of_list (snd %> arg_pattern_of_constr) ntys in
+      let ptys = Array.of_list (List.rev_map (snd %> arg_pattern_of_constr) ntys) in
       let pbod = app_pattern_of_constr (Array.length ptys) b in
       PHLambda (ptys, pbod)
   | Prod _ ->
       let (ntys, b) = Term.decompose_prod t in
-      let ptys = Array.map_of_list (snd %> arg_pattern_of_constr) ntys in
+      let ptys = Array.of_list (List.rev_map (snd %> arg_pattern_of_constr) ntys) in
       let pbod = app_pattern_of_constr (Array.length ptys) b in
       PHProd (ptys, pbod)
   | _ -> assert false
@@ -81,12 +81,12 @@ let update_invtbl i curvar tbl =
   succ curvar, tbl |> Int.Map.update i @@ function
   | None -> Some curvar
   | Some k as c when k = curvar -> c
-  | Some _ ->
+  | Some k ->
       CErrors.user_err
         Pp.(str "Variable "
           ++ Constr.debug_print (of_kind (Rel i))
-          ++ str" not used at the right place, expected "
-          ++ Constr.debug_print (of_kind (Rel curvar))
+          ++ str" already taken for hole " ++ int k
+          ++ str" but used here for hole " ++ int curvar
           ++ str".")
 
 let update_shft_invtbl shft (state, stateu) i =
@@ -102,12 +102,12 @@ let update_invtblu1 lvl curvaru tbl =
   succ curvaru, tbl |> Int.Map.update lvl @@ function
     | None -> Some curvaru
     | Some k as c when k = curvaru -> c
-    | Some _ ->
+    | Some k ->
         CErrors.user_err
           Pp.(str "Universe variable "
             ++ Univ.Level.(pr (var lvl))
-            ++ str" not used at the right place, expected "
-            ++ Univ.Level.(pr (var curvaru))
+            ++ str" already taken for hole " ++ int k
+            ++ str" but used here for hole " ++ int curvaru
             ++ str".")
 
 let update_invtblu (state, stateu) u =
@@ -159,14 +159,14 @@ let rec safe_head_pattern_of_constr env shft state t = kind t |> function
   | Float f -> state, PHFloat f
   | Lambda _ ->
       let (ntys, b) = Term.decompose_lambda t in
-      let tys = Array.map_of_list snd ntys in
-      let state, ptys = Array.fold_left_map (safe_arg_pattern_of_constr env shft) state tys in
+      let tys = Array.of_list (List.rev_map snd ntys) in
+      let state, ptys = Array.fold_left_map_i (fun i state ty -> safe_arg_pattern_of_constr env (shft+i) state ty) state tys in
       let state, pbod = safe_app_pattern_of_constr env shft state (Array.length tys) b in
       state, PHLambda (ptys, pbod)
   | Prod _ ->
       let (ntys, b) = Term.decompose_prod t in
-      let tys = Array.map_of_list snd ntys in
-      let state, ptys = Array.fold_left_map (safe_arg_pattern_of_constr env shft) state tys in
+      let tys = Array.of_list (List.rev_map snd ntys) in
+      let state, ptys = Array.fold_left_map_i (fun i state ty -> safe_arg_pattern_of_constr env (shft+i) state ty) state tys in
       let state, pbod = safe_app_pattern_of_constr env shft state (Array.length tys) b in
       state, PHProd (ptys, pbod)
   | _ -> CErrors.user_err Pp.(str "Subterm not recognised as head_pattern: " ++ Constr.debug_print t)
@@ -265,7 +265,7 @@ let rule_of_constant env c =
   if not (seen_vars = nvars) then
     CErrors.user_err
       Pp.(str "Not all pattern variables appear in the pattern.");
-    Vars.universes_of_constr rhs |> Univ.Level.Set.iter (fun lvl -> lvl |> Univ.Level.var_index |> Option.iter (fun lvli ->
+  Vars.universes_of_constr rhs |> Univ.Level.Set.iter (fun lvl -> lvl |> Univ.Level.var_index |> Option.iter (fun lvli ->
     if not (Int.Map.mem lvli invtblu) then
       CErrors.user_err
         Pp.(str "Universe level variable" ++ Univ.Level.pr lvl ++ str " appears in rhs but does not appear in the pattern.")
