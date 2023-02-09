@@ -676,10 +676,17 @@ let apply_branch env sigma (ind, i) args (ci, u, pms, iv, r, lf) =
 
 exception PatternFailure
 
-let rec eliminations_of_rigid_pattern acc =
+let rec epattern_head_of_pattern_head =
   let open Declarations in
   function
-  | APHead h -> h, acc
+  | PHLambda (p1, p2) -> PHLambda (Array.map pattern_arg_of_arg_pattern p1, pattern_arg_of_arg_pattern p2)
+  | PHProd (p1, p2) -> PHProd (Array.map pattern_arg_of_arg_pattern p1, pattern_arg_of_arg_pattern p2)
+  | PHSort _ | PHSymbol _ | PHInd _ | PHConstr _ | PHInt _ | PHFloat _ as p -> p
+
+and eliminations_of_rigid_pattern acc =
+  let open Declarations in
+  function
+  | APHead h -> epattern_head_of_pattern_head h, acc
   | APApp (f, args) -> eliminations_of_rigid_pattern (PEApp (Array.map pattern_arg_of_arg_pattern args) :: acc) f
 and pattern_arg_of_arg_pattern = function
   | APHole -> EHole
@@ -707,7 +714,7 @@ let rec simpl_match_arg_pattern whrec env sigma p t =
   | EHoleIgnored -> [], []
   | ERigid (ph, es) ->
       let t, stk = whrec (t, Stack.empty) in
-      let fsfus = simpl_match_rigid_arg_pattern sigma ph t in
+      let fsfus = simpl_match_rigid_arg_pattern whrec env sigma ph t in
       let fsfus, stk = simpl_apply_rule whrec env sigma fsfus es stk in
       if Stack.is_empty stk then fsfus else raise PatternFailure
 
@@ -725,7 +732,7 @@ and match_sort (ps, pu) s =
   | InQSort, _ -> assert false
   | (InProp | InSProp | InSet | InType), _ -> raise PatternFailure
 
-and simpl_match_rigid_arg_pattern sigma p t =
+and simpl_match_rigid_arg_pattern whrec env sigma p t =
   match [@ocaml.warning "-4"] p, EConstr.kind sigma t with
   | PHInd (ind, pu), Ind (ind', u) ->
     if Ind.CanOrd.equal ind ind' then [], match_euniverses sigma pu u else raise PatternFailure
@@ -738,6 +745,22 @@ and simpl_match_rigid_arg_pattern sigma p t =
     if Uint63.equal i i' then [], [] else raise PatternFailure
   | PHFloat f, Float f' ->
     if Float64.equal f f' then [], [] else raise PatternFailure
+  | PHLambda (ptys, pbod), _ ->
+    let ntys, body = EConstr.decompose_lambda sigma t in
+    let tys = Array.map_of_list snd ntys in
+    if Array.length ptys <> Array.length tys then raise PatternFailure;
+    let fss, fuss = Array.split @@ Array.map2 (simpl_match_arg_pattern whrec env sigma) ptys tys in
+    let fs, fus = simpl_match_arg_pattern whrec env sigma pbod t in
+    (List.concat (Array.to_list fss) @ fs, List.concat (Array.to_list fuss) @ fus)
+  | PHProd (ptys, pbod), _ ->
+    let ntys, body = EConstr.decompose_prod sigma t in
+    let tys = Array.map_of_list snd ntys in
+    let na = Array.length tys in
+    if Array.length ptys <> na then raise PatternFailure;
+    let fss, fuss = Array.split @@ Array.map2 (simpl_match_arg_pattern whrec env sigma) ptys tys in
+    let funbody = EConstr.it_mkProd body ntys in
+    let fs, fus = simpl_match_arg_pattern whrec env sigma pbod funbody in
+    (List.concat (Array.to_list fss) @ fs, List.concat (Array.to_list fuss) @ fus)
   | (PHInd _ | PHConstr _ | PHSort _ | PHSymbol _ | PHInt _ | PHFloat _), _ -> raise PatternFailure
 
 and extract_n_stack args n s =

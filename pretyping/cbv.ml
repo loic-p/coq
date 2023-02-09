@@ -448,10 +448,17 @@ let cbv_subst_of_rel_context_instance_list mkclos sign args env =
 
 exception PatternFailure
 
-let rec eliminations_of_rigid_pattern acc =
+let rec epattern_head_of_pattern_head =
   let open Declarations in
   function
-  | APHead h -> h, acc
+  | PHLambda (p1, p2) -> PHLambda (Array.map pattern_arg_of_arg_pattern p1, pattern_arg_of_arg_pattern p2)
+  | PHProd (p1, p2) -> PHProd (Array.map pattern_arg_of_arg_pattern p1, pattern_arg_of_arg_pattern p2)
+  | PHSort _ | PHSymbol _ | PHInd _ | PHConstr _ | PHInt _ | PHFloat _ as p -> p
+
+and eliminations_of_rigid_pattern acc =
+  let open Declarations in
+  function
+  | APHead h -> epattern_head_of_pattern_head h, acc
   | APApp (f, args) -> eliminations_of_rigid_pattern (PEApp (Array.map pattern_arg_of_arg_pattern args) :: acc) f
 and pattern_arg_of_arg_pattern = function
   | APHole -> EHole
@@ -761,7 +768,22 @@ and cbv_match_rigid_arg_pattern info tab p t =
     begin match kind t' with Int i' when Uint63.equal i i' -> [], [] | _ -> raise PatternFailure end
   | PHFloat f, VAL(0, t') ->
     begin match kind t' with Float f' when Float64.equal f f' -> [], [] | _ -> raise PatternFailure end
-  | (PHInd _ | PHConstr _ | PHInt _ | PHFloat _ | PHSort _ | PHSymbol _), _ -> raise PatternFailure
+  | PHLambda (ptys, pbod), LAM (nlam, ntys, _, env) ->
+    let tys = Array.of_list (List.rev_map (snd %> (cbv_stack_term info TOP env)) ntys) in
+    if Array.length ptys <> Array.length tys then raise PatternFailure;
+    let fss, fuss = Array.split @@ Array.map2 (cbv_match_arg_pattern info env) ptys tys in
+    let fs, fus = cbv_match_arg_pattern info env pbod t in
+    (List.concat (Array.to_list fss) @ fs, List.concat (Array.to_list fuss) @ fus)
+  | PHProd (ptys, pbod), CBN (t', env) ->
+    let ntys, body = Term.decompose_prod t' in
+    let tys = Array.map_of_list (snd %> (cbv_stack_term info TOP env)) ntys in
+    let na = Array.length tys in
+    if Array.length ptys <> na then raise PatternFailure;
+    let fss, fuss = Array.split @@ Array.map2 (cbv_match_arg_pattern info env) ptys tys in
+    let funbody = LAM (na, ntys, body, env) in
+    let fs, fus = cbv_match_arg_pattern info env pbod funbody in
+    (List.concat (Array.to_list fss) @ fs, List.concat (Array.to_list fuss) @ fus)
+  | (PHInd _ | PHConstr _ | PHInt _ | PHFloat _ | PHSort _ | PHSymbol _ | PHLambda _ | PHProd _), _ -> raise PatternFailure
 
 
 and cbv_apply_rule info env fsfus es stk =

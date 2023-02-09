@@ -1436,8 +1436,13 @@ let conv : (clos_infos -> clos_tab -> fconstr -> fconstr -> bool) ref
   = ref (fun _ _ _ _ -> (assert false : bool))
 let set_conv f = conv := f
 
-let rec eliminations_of_rigid_pattern acc = function
-  | APHead h -> h, acc
+let rec epattern_head_of_pattern_head = function
+  | PHLambda (p1, p2) -> PHLambda (Array.map pattern_arg_of_arg_pattern p1, pattern_arg_of_arg_pattern p2)
+  | PHProd (p1, p2) -> PHProd (Array.map pattern_arg_of_arg_pattern p1, pattern_arg_of_arg_pattern p2)
+  | PHSort _ | PHSymbol _ | PHInd _ | PHConstr _ | PHInt _ | PHFloat _ as p -> p
+
+and eliminations_of_rigid_pattern acc = function
+  | APHead h -> epattern_head_of_pattern_head h, acc
   | APApp (f, args) -> eliminations_of_rigid_pattern (PEApp (Array.map pattern_arg_of_arg_pattern args) :: acc) f
 and pattern_arg_of_arg_pattern = function
   | APHole -> EHole
@@ -1469,6 +1474,7 @@ module Status = struct
   let map f = function Check a -> Check (f a) | Ignore as p -> p
 
   let split = function Check (a, b) -> Check a, Check b | Ignore as p -> p, p
+  let split3 = function Check (a, b, c) -> Check a, Check b, Check c | Ignore as p -> p, p, p
   let split4 = function Check (a, b, c, d) -> Check a, Check b, Check c, Check d | Ignore as p -> p, p, p, p
   let split_array n = function
   | Check a when Array.length a <> n -> invalid_arg "Status.split_array"
@@ -1526,6 +1532,22 @@ let transpose a =
   if n = 0 then [||] else
   let n' = Array.length (Array.unsafe_get a 0) in
   Array.init n' (fun i -> Array.init n (fun j -> a.(j).(i)))
+
+let split3 arr =
+  let n = Array.length arr in
+  if n = 0 then [||], [||], [||] else
+  let (a, b, c) = Array.unsafe_get arr 0 in
+  let aa = Array.make n a
+  and bs = Array.make n b
+  and cs = Array.make n c
+  in
+  for i = 1 to n - 1 do
+    let (a, b, c) = Array.unsafe_get arr i in
+    Array.unsafe_set aa i a;
+    Array.unsafe_set bs i b;
+    Array.unsafe_set cs i c;
+  done;
+  aa, bs, cs
 
 let split4 arr =
   let n = Array.length arr in
@@ -1912,6 +1934,35 @@ and match_head : 'a. _ -> _ -> pat_state:(fconstr, stack, 'a) depth -> _ -> _ ->
     | _ -> None) patterns states
     in
     let loc = LocStart { elims; head=t; stack=stk; next=Continue next } in
+    match_main info tab ~pat_state states loc
+  | FProd (n, ty, body, e) ->
+    let ntys, body = Term.decompose_prod body in
+    let tys = Array.of_list (ty :: List.map (snd %> (mk_clos e)) ntys) in
+    let na = Array.length tys in
+    let tysbodyelims, states = extract_or_kill (function [@ocaml.warning "-4"]
+    | PHProd (p1, p2), elims ->
+      if Array.length p1 <> na then None else
+      Some (p1, p2, elims)
+    | _ -> None) patterns states
+    in
+    let ptys, pbody, elims = tysbodyelims |> Array.map Status.split3 |> split3 in
+    let funbody = { term = FLambda(na, List.rev ((n, term_of_fconstr ty) :: ntys), body, e); mark = t.mark } in
+    let loc = LocStart { elims; head=t; stack=stk; next=Continue next } in
+    let loc = LocArg { patterns = pbody; arg = funbody; next = loc } in
+    let loc = Array.fold_right2 (fun patterns arg next -> LocArg { patterns; arg; next }) (transpose (Array.map (Status.split_array na) ptys)) tys loc in
+    match_main info tab ~pat_state states loc
+  | FLambda (na, ntys, _, e) ->
+    let tys = Array.of_list (List.rev_map (snd %> (mk_clos e)) ntys) in
+    let tysbodyelims, states = extract_or_kill (function [@ocaml.warning "-4"]
+    | PHLambda (p1, p2), elims ->
+      if Array.length p1 <> na then None else
+      Some (p1, p2, elims)
+    | _ -> None) patterns states
+    in
+    let ptys, pbody, elims = tysbodyelims |> Array.map Status.split3 |> split3 in
+    let loc = LocStart { elims; head=t; stack=stk; next=Continue next } in
+    let loc = LocArg { patterns = pbody; arg = t; next = loc } in
+    let loc = Array.fold_right2 (fun patterns arg next -> LocArg { patterns; arg; next }) (transpose (Array.map (Status.split_array na) ptys)) tys loc in
     match_main info tab ~pat_state states loc
   | _ ->
     let _, states = extract_or_kill (fun _ -> None) patterns states in

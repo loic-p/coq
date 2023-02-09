@@ -283,13 +283,15 @@ type mind_specif = mutual_inductive_body * one_inductive_body
 
 (** {6 Rewrite rules } *)
 
-type head_pattern =
+type 'arg head_pattern =
   | PHSort    of (Sorts.family * bool array)
   | PHSymbol  of Constant.t * bool array
   | PHInd     of inductive * bool array
   | PHConstr  of constructor * bool array
   | PHInt     of Uint63.t
   | PHFloat   of Float64.t
+  | PHLambda  of 'arg array * 'arg
+  | PHProd    of 'arg array * 'arg
 
 type rewrite_arg_pattern =
   | APHole
@@ -297,7 +299,7 @@ type rewrite_arg_pattern =
   | APRigid   of rigid_arg_pattern
 and rigid_arg_pattern =
   | APApp     of rigid_arg_pattern * rewrite_arg_pattern array
-  | APHead    of head_pattern
+  | APHead    of rewrite_arg_pattern head_pattern
 
 
 type rewrite_pattern =
@@ -311,7 +313,7 @@ type pattern_elimination =
   | PECase    of inductive * bool array * pattern_argument * pattern_argument array
   | PEProj    of Projection.t
 
-and head_elimination = head_pattern * pattern_elimination list
+and head_elimination = pattern_argument head_pattern * pattern_elimination list
 
 and pattern_argument =
   | EHole

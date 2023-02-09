@@ -32,23 +32,33 @@ let sort_pattern_of_sort =
   | Set -> InSet, [||]
   | QSort _ -> CErrors.user_err Pp.(str "Unsupported qsort level in pattern.")
 
-let head_pattern_of_constr t = kind t |> function
+let rec head_pattern_of_constr t = kind t |> function
   | Const (c, u) -> PHSymbol (c, mask_of_instance u)
   | Sort s -> PHSort (sort_pattern_of_sort s)
   | Ind (ind, u) -> PHInd (ind, mask_of_instance u)
   | Construct (c, u) -> PHConstr (c, mask_of_instance u)
   | Int i -> PHInt i
   | Float f -> PHFloat f
+  | Lambda _ ->
+      let (ntys, b) = Term.decompose_lambda t in
+      let ptys = Array.map_of_list (snd %> arg_pattern_of_constr) ntys in
+      let pbod = app_pattern_of_constr (Array.length ptys) b in
+      PHLambda (ptys, pbod)
+  | Prod _ ->
+      let (ntys, b) = Term.decompose_prod t in
+      let ptys = Array.map_of_list (snd %> arg_pattern_of_constr) ntys in
+      let pbod = app_pattern_of_constr (Array.length ptys) b in
+      PHProd (ptys, pbod)
   | _ -> assert false
 
-let rec arg_pattern_of_constr t = kind t |> function
+and arg_pattern_of_constr t = kind t |> function
   | Rel _ -> APHole
   | _ -> APRigid (rigid_arg_pattern_of_constr t)
 and rigid_arg_pattern_of_constr t = kind t |> function
   | App (f, args) -> APApp (rigid_arg_pattern_of_constr f, Array.map arg_pattern_of_constr args)
   | _ -> APHead (head_pattern_of_constr t)
 
-let app_pattern_of_constr n t =
+and app_pattern_of_constr n t =
   let f, args = decompose_appvect t in
   let nargs = Array.length args in
   assert (nargs >= n);
@@ -132,7 +142,7 @@ let safe_sort_pattern_of_sort (statev, stateu as state) =
   | Set -> state, (InSet, [||])
   | QSort _ -> CErrors.user_err Pp.(str "Unsupported qsort level in pattern.")
 
-let safe_head_pattern_of_constr env state t = kind t |> function
+let rec safe_head_pattern_of_constr env shft state t = kind t |> function
   | Const (c, u) when Environ.is_symbol env c ->
       let state, mask = update_invtblu state u in
       state, PHSymbol (c, mask)
@@ -147,10 +157,22 @@ let safe_head_pattern_of_constr env state t = kind t |> function
       state, PHConstr (c, mask)
   | Int i -> state, PHInt i
   | Float f -> state, PHFloat f
+  | Lambda _ ->
+      let (ntys, b) = Term.decompose_lambda t in
+      let tys = Array.map_of_list snd ntys in
+      let state, ptys = Array.fold_left_map (safe_arg_pattern_of_constr env shft) state tys in
+      let state, pbod = safe_app_pattern_of_constr env shft state (Array.length tys) b in
+      state, PHLambda (ptys, pbod)
+  | Prod _ ->
+      let (ntys, b) = Term.decompose_prod t in
+      let tys = Array.map_of_list snd ntys in
+      let state, ptys = Array.fold_left_map (safe_arg_pattern_of_constr env shft) state tys in
+      let state, pbod = safe_app_pattern_of_constr env shft state (Array.length tys) b in
+      state, PHProd (ptys, pbod)
   | _ -> CErrors.user_err Pp.(str "Subterm not recognised as head_pattern: " ++ Constr.debug_print t)
 
 
-let rec safe_arg_pattern_of_constr env shft state t = kind t |> function
+and safe_arg_pattern_of_constr env shft state t = kind t |> function
   | Rel i ->
       let state = update_shft_invtbl shft state i in
       state, APHole
@@ -163,10 +185,10 @@ and safe_rigid_arg_pattern_of_constr env shft state t = kind t |> function
       let state, pargs = Array.fold_left_map (safe_arg_pattern_of_constr env shft) state args in
       state, APApp (pf, pargs)
   | _ ->
-    let state, p = safe_head_pattern_of_constr env state t in
+    let state, p = safe_head_pattern_of_constr env shft state t in
     state, APHead p
 
-let safe_app_pattern_of_constr env shft ((curvar, invtbl), stateu) n t =
+and safe_app_pattern_of_constr env shft ((curvar, invtbl), stateu) n t =
   let f, args = decompose_appvect t in
   let nargs = Array.length args in
   if not (nargs >= n) then CErrors.user_err Pp.(str "Subterm not recognised as pattern under binders: " ++ Constr.debug_print t);
