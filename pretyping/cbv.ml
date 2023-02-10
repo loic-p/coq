@@ -769,18 +769,18 @@ and cbv_match_rigid_arg_pattern info tab p t =
   | PHFloat f, VAL(0, t') ->
     begin match kind t' with Float f' when Float64.equal f f' -> [], [] | _ -> raise PatternFailure end
   | PHLambda (ptys, pbod), LAM (nlam, ntys, _, env) ->
-    let tys = Array.of_list (List.rev_map (snd %> (cbv_stack_term info TOP env)) ntys) in
+    let tys = Array.map_of_list (snd %> (cbv_stack_term info TOP env)) ntys in
     if Array.length ptys <> Array.length tys then raise PatternFailure;
     let fss, fuss = Array.split @@ Array.map2 (cbv_match_arg_pattern info env) ptys tys in
     let fs, fus = cbv_match_arg_pattern info env pbod t in
     (List.concat (Array.to_list fss) @ fs, List.concat (Array.to_list fuss) @ fus)
   | PHProd (ptys, pbod), CBN (t', env) ->
     let ntys, body = Term.decompose_prod t' in
-    let tys = Array.map_of_list (snd %> (cbv_stack_term info TOP env)) ntys in
+    let tys = Array.of_list @@ List.rev_map (snd %> (cbv_stack_term info TOP env)) ntys in
     let na = Array.length tys in
     if Array.length ptys <> na then raise PatternFailure;
     let fss, fuss = Array.split @@ Array.map2 (cbv_match_arg_pattern info env) ptys tys in
-    let funbody = LAM (na, ntys, body, env) in
+    let funbody = LAM (na, List.rev ntys, body, env) in
     let fs, fus = cbv_match_arg_pattern info env pbod funbody in
     (List.concat (Array.to_list fss) @ fs, List.concat (Array.to_list fuss) @ fus)
   | (PHInd _ | PHConstr _ | PHInt _ | PHFloat _ | PHSort _ | PHSymbol _ | PHLambda _ | PHProd _), _ -> raise PatternFailure

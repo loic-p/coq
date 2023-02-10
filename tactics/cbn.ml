@@ -634,18 +634,18 @@ and cbn_match_rigid_arg_pattern whrec env sigma p t =
     if Float64.equal f f' then [], [] else raise PatternFailure
   | PHLambda (ptys, pbod), _ ->
     let ntys, body = EConstr.decompose_lambda sigma t in
-    let tys = Array.map_of_list snd ntys in
+    let tys = Array.of_list @@ List.rev_map snd ntys in
     if Array.length ptys <> Array.length tys then raise PatternFailure;
     let fss, fuss = Array.split @@ Array.map2 (cbn_match_arg_pattern whrec env sigma) ptys tys in
     let fs, fus = cbn_match_arg_pattern whrec env sigma pbod t in
     (List.concat (Array.to_list fss) @ fs, List.concat (Array.to_list fuss) @ fus)
   | PHProd (ptys, pbod), _ ->
     let ntys, body = EConstr.decompose_prod sigma t in
-    let tys = Array.map_of_list snd ntys in
+    let tys = Array.of_list @@ List.rev_map snd ntys in
     let na = Array.length tys in
     if Array.length ptys <> na then raise PatternFailure;
     let fss, fuss = Array.split @@ Array.map2 (cbn_match_arg_pattern whrec env sigma) ptys tys in
-    let funbody = EConstr.it_mkProd body ntys in
+    let funbody = EConstr.it_mkLambda body ntys in
     let fs, fus = cbn_match_arg_pattern whrec env sigma pbod funbody in
     (List.concat (Array.to_list fss) @ fs, List.concat (Array.to_list fuss) @ fus)
   | (PHInd _ | PHConstr _ | PHInt _ | PHFloat _ | PHSort _ | PHSymbol _), _ -> raise PatternFailure
