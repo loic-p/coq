@@ -296,7 +296,7 @@ type clos_infos = {
   i_relevances : Sorts.relevance Range.t;
   i_cache : infos_cache }
 
-type clos_tab = (fconstr, Empty.t, rewrite_rule list) constant_def KeyTable.t
+type clos_tab = (fconstr, Empty.t, bool * rewrite_rule list) constant_def KeyTable.t
 
 let info_flags info = info.i_flags
 let info_env info = info.i_cache.i_env
@@ -528,7 +528,11 @@ let ref_value_cache info flags tab ref =
           | ConstKey (cst,u) ->
             let cb = lookup_constant cst env in
             let () = shortcut_irrelevant info (cb.const_relevance) in
-            match Cmap_env.find_opt cst env.symb_pats with Some r -> raise (NotEvaluableConst (HasRules r)) | None -> ();
+            match Cmap_env.find_opt cst env.symb_pats with
+            | Some r ->
+              let b = match [@ocaml.warning "-4"] cb.const_body with Symbol b -> b | _ -> assert false in
+              raise (NotEvaluableConst (HasRules (b, r)))
+            | None -> ();
             if TransparentState.is_transparent_constant flags cst then constant_value_in u cb.const_body
             else raise Not_found
         in
@@ -536,7 +540,7 @@ let ref_value_cache info flags tab ref =
       with
       | Irrelevant -> Def mk_irrelevant
       | NotEvaluableConst (IsPrimitive (_u,op)) (* Const *) -> Primitive op
-      | NotEvaluableConst (HasRules r) -> Symbol r
+      | NotEvaluableConst (HasRules (b, r)) -> Symbol (b, r)
       | Not_found (* List.assoc *)
       | NotEvaluableConst _ (* Const *)
         -> Undef None
@@ -1586,8 +1590,8 @@ let rec knr info tab ~pat_state m stk =
           else
             (* Similarly to fix, partially applied primitives are not Ntrl! *)
             knr_ret info tab ~pat_state (m, stk)
-        | Symbol r ->
-            let unfold_fix = true && red_set info.i_flags fFIX in (* TODO *)
+        | Symbol (b, r) ->
+            let unfold_fix = b && red_set info.i_flags fFIX in (* TODO *)
             let _, u = match fl with ConstKey c -> c | RelKey _ | VarKey _ -> assert false in
             let states, elims = Array.split @@ Array.map
               (fun r ->
@@ -2154,8 +2158,8 @@ let unfold_ref_with_args infos tab fl v =
     let c = match [@ocaml.warning "-4"] fl with ConstKey c -> c | _ -> assert false in
     let rargs, a, nargs, v = get_native_args1 op c v in
     Some (a, (Zupdate a::(Zprimitive(op,c,rargs,nargs)::v)))
-  | Symbol r ->
-    let unfold_fix = true && red_set infos.i_flags fFIX in (* TODO *)
+  | Symbol (b, r) ->
+    let unfold_fix = b && red_set infos.i_flags fFIX in (* TODO *)
     let _, u = match fl with ConstKey c -> c | RelKey _ | VarKey _ -> assert false in
     (* not sure about calling reduction here and about dropping the transparent state *)
     let states, elims = Array.split @@ Array.map

@@ -105,6 +105,7 @@ type primitive_entry = {
 
 type symbol_entry = {
   symb_entry_type : types;
+  symb_entry_unfold_fix: bool;
   symb_entry_universes : universes_entry;
 }
 

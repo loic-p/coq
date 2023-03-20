@@ -201,6 +201,7 @@ sig
   val fold2 : ('a -> constr -> constr -> 'a) -> 'a -> t -> t -> 'a
   val append_app_list : EConstr.t list -> t -> t
   val strip_app : t -> t * t
+  val strip_app_case_proj : t -> t * t
   val strip_n_app : int -> t -> (t * EConstr.t * t) option
   val not_purely_applicative : t -> bool
   val list_of_app_stack : t -> constr list option
@@ -331,6 +332,12 @@ struct
     let rec aux out = function
       | ( App _ as e) :: s -> aux (e :: out) s
       | s -> List.rev out,s
+    in aux [] s
+
+  let strip_app_case_proj s =
+    let rec aux out = function
+      | (App _ | Case _ | Proj _ as e) :: s -> aux (e :: out) s
+      | s -> List.rev out, s
     in aux [] s
 
   let strip_n_app n s =
@@ -854,7 +861,7 @@ let whd_state_gen flags env sigma =
           (* Should not fail thanks to [check_native_args] *)
           let (before,a,after) = Option.get o in
           whrec (a,Stack.Primitive(p,const,before,kargs)::after)
-       | exception NotEvaluableConst (HasRules r) ->
+       | exception NotEvaluableConst (HasRules (b, r)) ->
           begin try
             let rhs, fs, fus, stack = simpl_apply_rules whrec env sigma u r stack in
             let usubst = Univ.Instance.of_array (Array.of_list fus) in
@@ -862,7 +869,13 @@ let whd_state_gen flags env sigma =
             let rhs' = substl fs rhsu in
             whrec (rhs', stack)
           with PatternFailure ->
-            fold ()
+            if not b then fold () else
+            match Stack.strip_app_case_proj stack with
+            | args, (Stack.Fix (f,s')::s'') when CClosure.RedFlags.red_set flags CClosure.RedFlags.fFIX ->
+              let x' = Stack.zip sigma (x, args) in
+              let out_sk = s' @ (Stack.append_app [|x'|] s'') in
+              whrec (reduce_and_refold_fix env sigma f out_sk)
+            | _ -> fold ()
           end
        | exception NotEvaluableConst _ -> fold ()
       else fold ()

@@ -130,13 +130,13 @@ let infer_primitive env { prim_entry_type = utyp; prim_entry_content = p; } =
     cook_univ_hyps = Instance.empty;
   }
 
-let infer_symbol env { symb_entry_universes; symb_entry_type } =
+let infer_symbol env { symb_entry_universes; symb_entry_unfold_fix; symb_entry_type } =
   let env, usubst, _, univs = process_universes env symb_entry_universes in
   let j = Typeops.infer env symb_entry_type in
   let r = Typeops.assumption_of_judgment env j in
   let t = Vars.subst_univs_level_constr usubst j.uj_val in
   {
-    Discharge.cook_body = Symbol ();
+    Discharge.cook_body = Symbol symb_entry_unfold_fix;
     cook_type = t;
     cook_universes = univs;
     cook_relevance = r;

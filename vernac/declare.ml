@@ -125,6 +125,7 @@ type primitive_entry = {
 
 type symbol_entry = {
   symb_entry_type : Constr.types;
+  symb_entry_unfold_fix: bool;
   symb_entry_universes : UState.named_universes_entry;
 }
 
@@ -158,8 +159,9 @@ let primitive_entry ?types c = {
   prim_entry_content = c;
 }
 
-let symbol_entry ?(univs=default_named_univ_entry) symb_entry_type = {
+let symbol_entry ?(univs=default_named_univ_entry) ~unfold_fix symb_entry_type = {
   symb_entry_universes = univs;
+  symb_entry_unfold_fix = unfold_fix;
   symb_entry_type;
 }
 
@@ -432,11 +434,12 @@ let declare_constant_core ~name ~typing_flags cd =
       } in
       let ubinders = (UState.Monomorphic_entry ctx, ubinders) in
       ConstantEntry (Entries.PrimitiveEntry e), false, ubinders, None
-    | SymbolEntry { symb_entry_type=typ; symb_entry_universes=(univs, ubinders) } ->
+    | SymbolEntry { symb_entry_type=typ; symb_entry_unfold_fix=un_fix; symb_entry_universes=(univs, ubinders) } ->
       let univ_entry, ctx = extract_monomorphic univs in
       let () = DeclareUctx.declare_universe_context ~poly:false ctx in
       let e = {
         Entries.symb_entry_type = typ;
+        Entries.symb_entry_unfold_fix = un_fix;
         Entries.symb_entry_universes = univ_entry;
       } in
       let ubinders = (UState.Monomorphic_entry ctx, ubinders) in

@@ -22,7 +22,7 @@ module RelDecl = Context.Rel.Declaration
 type inline = bool
 
 type 'opaque result = {
-  cook_body : (constr, 'opaque, unit) constant_def;
+  cook_body : (constr, 'opaque, bool) constant_def;
   cook_type : types;
   cook_universes : universes;
   cook_relevance : Sorts.relevance;

@@ -110,7 +110,7 @@ type typing_flags = {
 type 'opaque pconstant_body = {
     const_hyps : Constr.named_context; (** younger hyp at top *)
     const_univ_hyps : Univ.Instance.t;
-    const_body : (Constr.t, 'opaque, unit) constant_def;
+    const_body : (Constr.t, 'opaque, bool) constant_def;
     const_type : types;
     const_relevance : Sorts.relevance;
     const_body_code : Vmemitcodes.body_code option;

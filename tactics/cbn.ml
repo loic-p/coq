@@ -131,6 +131,7 @@ sig
   val equal : ('a -> 'a -> bool) -> (('a, 'a) pfixpoint -> ('a, 'a) pfixpoint -> bool)
     -> ('a case_stk -> 'a case_stk -> bool) -> 'a t -> 'a t -> bool
   val strip_app : 'a t -> 'a t * 'a t
+  val strip_app_case_proj : 'a t -> 'a t * 'a t
   val strip_n_app : int -> 'a t -> ('a t * 'a * 'a t) option
   val will_expose_iota : 'a t -> bool
   val list_of_app_stack : constr t -> constr list option
@@ -281,6 +282,13 @@ struct
       | ( App _ as e) :: s -> aux (e :: out) s
       | s -> List.rev out,s
     in aux [] s
+
+  let strip_app_case_proj s =
+    let rec aux out = function
+      | (App _ | Case _ | Proj _ as e) :: s -> aux (e :: out) s
+      | s -> List.rev out,s
+    in aux [] s
+
   let strip_n_app n s =
     let rec aux n out = function
       | App (i,a,j) as e :: s ->
@@ -799,7 +807,7 @@ let whd_state_gen ?csts flags env sigma =
           (* Should not fail thanks to [check_native_args] *)
           let (before,a,after) = Option.get o in
           whrec Cst_stack.empty (a,Stack.Primitive(p,const,before,kargs,cst_l)::after)
-       | exception NotEvaluableConst (HasRules r) ->
+       | exception NotEvaluableConst (HasRules (b, r)) ->
           begin try
             let rhs, fs, fus, stack = cbn_apply_rules whrec env sigma u r stack in
             let usubst = Univ.Instance.of_array (Array.of_list fus) in
@@ -807,7 +815,13 @@ let whd_state_gen ?csts flags env sigma =
             let rhs' = substl fs rhsu in
             whrec Cst_stack.empty (rhs', stack)
           with PatternFailure ->
-            fold ()
+            if not b then fold () else
+            match Stack.strip_app_case_proj stack with
+            | args, (Stack.Fix (f,s',cst_l)::s'') when CClosure.RedFlags.red_set flags CClosure.RedFlags.fFIX ->
+                let x' = Stack.zip sigma (x, args) in
+                let out_sk = s' @ (Stack.append_app [|x'|] s'') in
+                reduce_and_refold_fix whrec env sigma cst_l f out_sk
+            | _ -> fold ()
           end
        | exception NotEvaluableConst _ -> fold ()
       else fold ()

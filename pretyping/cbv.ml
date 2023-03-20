@@ -159,7 +159,7 @@ let mkSTACK = function
 
 type cbv_infos = {
   env : Environ.env;
-  tab : (cbv_value, Empty.t, Declarations.rewrite_rule list) Declarations.constant_def KeyTable.t;
+  tab : (cbv_value, Empty.t, bool * Declarations.rewrite_rule list) Declarations.constant_def KeyTable.t;
   reds : RedFlags.reds;
   sigma : Evd.evar_map
 }
@@ -574,7 +574,7 @@ and norm_head_ref k info env stack normt t =
           | RelKey _ | VarKey _ -> assert false
         in
         (PRIMITIVE(op,c,[||]),stack)
-      | Declarations.Symbol r ->
+      | Declarations.Symbol (_, r) -> (* TODO *)
         let (_, u) = match normt with
           | ConstKey c -> c
           | RelKey _ | VarKey _ -> assert false
@@ -720,7 +720,7 @@ and cbv_value_cache info ref =
         Declarations.Def v
       with
       | Environ.NotEvaluableConst (Environ.IsPrimitive (_u,op)) -> Declarations.Primitive op
-      | Environ.NotEvaluableConst (Environ.HasRules r) -> Declarations.Symbol r
+      | Environ.NotEvaluableConst (Environ.HasRules (b, r)) -> Declarations.Symbol (b, r)
       | Not_found | Environ.NotEvaluableConst _ -> Declarations.Undef None
     in
     KeyTable.add info.tab ref v; v

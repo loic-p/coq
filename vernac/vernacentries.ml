@@ -2445,7 +2445,10 @@ let translate_vernac ?loc ~atts v = let open Vernacextend in match v with
     vtdefault(fun () -> with_def_attributes ~atts vernac_assumption discharge kind l nl)
   | VernacSymbol l ->
     vtdefault (fun () ->
-        ComSymbol.do_symbols ~poly:(only_polymorphism atts) l)
+      let unfold_fix, poly =
+      Attributes.(parse Notations.(unfold_fix ++ polymorphic)) atts
+      in
+        ComSymbol.do_symbols ~poly ~unfold_fix l)
   | VernacInductive (finite, l) ->
     vtdefault(fun () -> vernac_inductive ~atts finite l)
   | VernacFixpoint (discharge, l) ->

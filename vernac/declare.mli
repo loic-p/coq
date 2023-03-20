@@ -345,6 +345,7 @@ val primitive_entry
 
 val symbol_entry
   :  ?univs:UState.named_universes_entry
+  -> unfold_fix:bool
   -> Constr.types
   -> symbol_entry
 

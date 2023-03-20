@@ -39,7 +39,7 @@ let preprocess_symbols l =
   List.iter (function AddCoercion, (({CAst.loc; _}, _) :: _, _) -> CErrors.user_err ?loc no_coercion_msg | AddCoercion, _ -> assert false | _ -> ()) l;
   udecl, List.concat_map (fun (coe, (idl, c)) -> List.map (fun (id, _) -> id, c) idl) l
 
-let do_symbol ~poly udecl (id, typ) =
+let do_symbol ~poly ~unfold_fix udecl (id, typ) =
   if Dumpglob.dump () then Dumpglob.dump_definition id false "symb";
   let id = id.CAst.v in
   let env = Global.env () in
@@ -54,9 +54,9 @@ let do_symbol ~poly udecl (id, typ) =
   let evd = Evd.restrict_universe_context evd uvars in
   let typ = EConstr.to_constr evd typ in
   let univs = Evd.check_univ_decl ~poly evd udecl in
-  let entry = Declare.symbol_entry ~univs typ in
+  let entry = Declare.symbol_entry ~univs ~unfold_fix typ in
   declare id entry
 
-let do_symbols ~poly l =
+let do_symbols ~poly ~unfold_fix l =
   let udecl, l = preprocess_symbols l in
-  List.iter (do_symbol ~poly udecl) l
+  List.iter (do_symbol ~poly ~unfold_fix udecl) l
