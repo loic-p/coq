@@ -275,7 +275,7 @@ type ('constr, 'stack) state =
   | LocStart of { elims: pattern_elimination list status array; head: 'constr; stack: 'stack; next: ('constr, 'stack) state_next }
   | LocArg of { patterns: pattern_argument status array; arg: 'constr; next: ('constr, 'stack) state }
 
-and ('constr, 'stack) state_next = (('constr, 'stack) state, 'constr * 'stack) next
+and ('constr, 'stack) state_next = (('constr, 'stack) state, bool * 'constr * 'stack) next
 
 
 type ('constr, 'stack) resume_state =

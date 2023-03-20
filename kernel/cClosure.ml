@@ -739,6 +739,30 @@ let strip_update_shift_app head stack =
   assert (match head.mark with Red -> false | Ntrl | Cstr -> true);
   strip_update_shift_app_red head stack
 
+let strip_update_shift_app_case_proj_red head stk =
+  let rec strip_rec h depth = function
+    | Zshift k :: s ->
+        strip_rec (lift_fconstr k h) (depth+k) s
+    | (Zapp args :: s) ->
+        strip_rec {mark=h.mark;term=FApp(h,args)} depth s
+    | Zupdate(m)::s ->
+      (** The stack contains [Zupdate] marks only if in sharing mode *)
+        let () = update m h.mark h.term in
+        strip_rec m depth s
+    | ZcaseT (ci, u, pms, p, br, e) :: s ->
+        let t = FCaseT(ci, u, pms, p, h, br, e) in
+        strip_rec {mark=h.mark;term=t} depth s
+    | Zproj pr :: s ->
+      strip_rec {mark=h.mark;term=FProj(Projection.make pr true, h)} depth s
+    | ((Zfix _ | Zprimitive _) :: _ | []) as stk ->
+      (h, stk)
+  in
+  strip_rec head 0 stk
+
+let _strip_update_shift_app_case_proj head stack =
+  assert (match head.mark with Red -> false | Ntrl | Cstr -> true);
+  strip_update_shift_app_case_proj_red head stack
+
 let get_nth_arg head n stk =
   assert (match head.mark with Red -> false | Ntrl | Cstr -> true);
   let rec strip_rec rstk h n = function
@@ -1496,7 +1520,7 @@ type ('constr, 'stack) state =
   | LocStart of { elims: pattern_elimination list status array; head: 'constr; stack: 'stack; next: ('constr, 'stack) state_next }
   | LocArg of { patterns: pattern_argument status array; arg: 'constr; next: ('constr, 'stack) state }
 
-and ('constr, 'stack) state_next = (('constr, 'stack) state, 'constr * 'stack) next
+and ('constr, 'stack) state_next = (('constr, 'stack) state, bool * 'constr * 'stack) next
 
 
 type ('constr, 'stack) resume_state =
@@ -1563,6 +1587,7 @@ let rec knr info tab ~pat_state m stk =
             (* Similarly to fix, partially applied primitives are not Ntrl! *)
             knr_ret info tab ~pat_state (m, stk)
         | Symbol r ->
+            let unfold_fix = true && red_set info.i_flags fFIX in (* TODO *)
             let _, u = match fl with ConstKey c -> c | RelKey _ | VarKey _ -> assert false in
             let states, elims = Array.split @@ Array.map
               (fun r ->
@@ -1570,7 +1595,7 @@ let rec knr info tab ~pat_state m stk =
                 Live { subst = []; usubst = match_universes pu u; rhs = r.Declarations.rhs }, Check es
               ) (Array.of_list r)
             in
-            let loc = LocStart { elims; head = m; stack = stk; next = Return (m, stk) } in
+            let loc = LocStart { elims; head = m; stack = stk; next = Return (unfold_fix, m, stk) } in
             match_main info tab ~pat_state states loc
         | Undef _ | OpaqueDef _ -> (set_ntrl m; knr_ret info tab ~pat_state (m,stk)))
   | FConstruct(c,_u) ->
@@ -1718,14 +1743,24 @@ and match_kill info tab ~pat_state = function
       ignore (zip head stack);
       match next with
       | Continue next -> match_kill info tab ~pat_state next
-      | Return k -> knr_ret info tab ~pat_state ~failed:true k
+      | Return k -> try_unfoldfix info tab ~pat_state k
 
 and match_endstack info tab ~pat_state states next =
   match next with
   | Continue next -> match_main info tab ~pat_state states next
   | Return k ->
       assert (Array.for_all (function Dead -> true | Live _ -> false) states);
-      knr_ret info tab ~pat_state ~failed:true k
+      try_unfoldfix info tab ~pat_state k
+
+and try_unfoldfix info tab ~pat_state (b, m, stk) =
+  if not b then knr_ret info tab ~pat_state ~failed:true (m, stk) else
+  let m', stack = strip_update_shift_app_case_proj_red m stk in
+  match [@ocaml.warning "-4"] stack with
+  | Zfix (fx, par) :: s ->
+    let stk' = par @ append_stack [|m'|] s in
+    let (fxe,fxbd) = contract_fix_vect fx.term in
+    knit info tab ~pat_state fxe fxbd stk'
+  | _ -> knr_ret info tab ~pat_state ~failed:true (m, stk)
 
 
 and match_elim info tab ~pat_state next states elims head stk =
@@ -2120,6 +2155,7 @@ let unfold_ref_with_args infos tab fl v =
     let rargs, a, nargs, v = get_native_args1 op c v in
     Some (a, (Zupdate a::(Zprimitive(op,c,rargs,nargs)::v)))
   | Symbol r ->
+    let unfold_fix = true && red_set infos.i_flags fFIX in (* TODO *)
     let _, u = match fl with ConstKey c -> c | RelKey _ | VarKey _ -> assert false in
     (* not sure about calling reduction here and about dropping the transparent state *)
     let states, elims = Array.split @@ Array.map
@@ -2129,6 +2165,6 @@ let unfold_ref_with_args infos tab fl v =
       ) (Array.of_list r)
     in
     let head = {mark = Red; term = FFlex fl } in
-    let loc = LocStart { elims; head; stack = v; next = Return (head, v) } in
+    let loc = LocStart { elims; head; stack = v; next = Return (unfold_fix, head, v) } in
     match_main (infos_with_reds infos all) tab ~pat_state:(Nil (Yes ((fun x -> Some x), None))) states loc
   | Undef _ | OpaqueDef _ | Primitive _ -> None
