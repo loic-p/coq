@@ -320,8 +320,13 @@ and pattern_argument =
   | EHoleIgnored
   | ERigid of head_elimination
 
+(* equation between two hole indices *)
+type hole_equation =
+  | HEEq of int * int
+
 type rewrite_rule = {
   lhs_pat : rewrite_pattern;
+  lhs_eqs : hole_equation list;
   rhs : constr;
 }
 

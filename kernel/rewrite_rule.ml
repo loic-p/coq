@@ -75,28 +75,22 @@ let rec pattern_of_constr t = kind t |> function
   | Proj (p, c) -> PProj (p, pattern_of_constr c)
   | _ -> assert false
 
-type state = (int * int Int.Map.t) * (int * int Int.Map.t)
+type state = (int * int Int.Map.t * hole_equation list) * (int * int Int.Map.t)
 
-let update_invtbl i curvar tbl =
-  succ curvar, tbl |> Int.Map.update i @@ function
-  | None -> Some curvar
-  | Some k as c when k = curvar -> c
-  | Some k ->
-      CErrors.user_err
-        Pp.(str "Variable "
-          ++ Constr.debug_print (of_kind (Rel i))
-          ++ str" already taken for hole " ++ int k
-          ++ str" but used here for hole " ++ int curvar
-          ++ str".")
+let update_invtbl i curvar tbl eqs =
+  Int.Map.find_opt i tbl |> function
+  | None -> succ curvar, Int.Map.add i curvar tbl, eqs
+  | Some k when k = curvar -> succ curvar, tbl, eqs
+  | Some k -> succ curvar, tbl, (HEEq (k , curvar))::eqs
 
 let update_shft_invtbl shft (state, stateu) i =
-  let (curvar, invtbl) = state in
+  let (curvar, invtbl, eqs) = state in
   if i <= shft then
     CErrors.user_err
       Pp.(str "Variable "
         ++ Constr.debug_print (of_kind (Rel i))
         ++ str" not available from toplevel.");
-  update_invtbl (i-shft) curvar invtbl, stateu
+  update_invtbl (i-shft) curvar invtbl eqs, stateu
 
 let update_invtblu1 lvl curvaru tbl =
   succ curvaru, tbl |> Int.Map.update lvl @@ function
@@ -188,7 +182,7 @@ and safe_rigid_arg_pattern_of_constr env shft state t = kind t |> function
     let state, p = safe_head_pattern_of_constr env shft state t in
     state, APHead p
 
-and safe_app_pattern_of_constr env shft ((curvar, invtbl), stateu) n t =
+and safe_app_pattern_of_constr env shft state n t =
   let f, args = decompose_appvect t in
   let nargs = Array.length args in
   if not (nargs >= n) then CErrors.user_err Pp.(str "Subterm not recognised as pattern under binders: " ++ Constr.debug_print t);
@@ -199,7 +193,7 @@ and safe_app_pattern_of_constr env shft ((curvar, invtbl), stateu) n t =
       | t -> CErrors.user_err Pp.(str "Subterm not recognised as pattern under binders: " ++ Constr.debug_print (of_kind t)))
     usedargs
   in
-  safe_arg_pattern_of_constr env (n + shft) ((curvar, invtbl), stateu) (mkApp (f, remargs))
+  safe_arg_pattern_of_constr env (n + shft) state (mkApp (f, remargs))
 
 let safe_app_pattern_of_constr' env shft state p = safe_app_pattern_of_constr env shft state (Array.length (fst p)) (snd p)
 
@@ -244,6 +238,11 @@ let rec rename eltbl c =
     if Int.equal i j then c else mkRel j
   | _ -> map_with_binders (on_fst succ) rename eltbl c
 
+let rec debug_string_of_equations = function
+  | [] -> Pp.str"None"
+  | HEEq (lft, rgt)::[] -> Pp.(str"(" ++ int lft ++ str" = " ++ int rgt ++ str").")
+  | HEEq (lft, rgt)::tl -> Pp.(str"(" ++ int lft ++ str" = " ++ int rgt ++ str"), " ++ debug_string_of_equations tl)
+
 let rule_of_constant env c =
   let cb = Environ.lookup_constant c env in
   let ctx, eq_rule = Term.decompose_prod_decls cb.const_type in
@@ -257,12 +256,12 @@ let rule_of_constant env c =
   in
   let nvars = Context.Rel.length ctx in
   let nvarus = Univ.AbstractContext.size @@ Declareops.constant_polymorphic_context cb in
-  let ((seen_vars, invtbl), (_, invtblu)), lhs_pat =
-    safe_pattern_of_constr env 0 ((1, Int.Map.empty), (0, Int.Map.empty)) lhs
+  let ((seen_vars, invtbl, lhs_eqs), (_, invtblu)), lhs_pat =
+    safe_pattern_of_constr env 0 ((1, Int.Map.empty, []), (0, Int.Map.empty)) lhs
   in
   let seen_vars = pred seen_vars in
   (* Rels begin at 1 *)
-  if not (seen_vars = nvars) then
+  if not (seen_vars = nvars + List.length lhs_eqs) then
     CErrors.user_err
       Pp.(str "Not all pattern variables appear in the pattern.");
   Vars.universes_of_constr rhs |> Univ.Level.Set.iter (fun lvl -> lvl |> Univ.Level.var_index |> Option.iter (fun lvli ->
@@ -272,5 +271,11 @@ let rule_of_constant env c =
   ));
   let usubst = Univ.Instance.of_array (Array.init nvarus (fun i -> Univ.Level.var (Option.default i (Int.Map.find_opt i invtblu)))) in
   Format.print_flush ();
-  head_constant lhs_pat, { lhs_pat = lhs_pat; rhs = rename (0, invtbl) (Vars.subst_instance_constr usubst rhs); }
-
+  (* debugging *)
+  Pp.(Feedback.msg_info (str "Equation successfully added.\nThere are " ++ int seen_vars ++ str" holes and "
+                         ++ int nvars ++ str" variables."
+                         ++ str "\nRight side after renaming of the holes: "
+                         ++ Constr.debug_print (rename (0, invtbl) (Vars.subst_instance_constr usubst rhs))
+                         ++ str "\nThe equations on holes are as follows: "
+                         ++ debug_string_of_equations lhs_eqs)) ;
+  head_constant lhs_pat, { lhs_pat = lhs_pat; lhs_eqs = lhs_eqs; rhs = rename (0, invtbl) (Vars.subst_instance_constr usubst rhs); }
