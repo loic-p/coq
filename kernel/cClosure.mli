@@ -254,6 +254,8 @@ open Declarations
 type 'constr partial_subst = {
   subst: 'constr list;
   usubst: Univ.Level.t list;
+  hole_index: int;
+  lhs_eqs: int Int.Map.t;
   rhs: constr;
 }
 

@@ -680,6 +680,13 @@ and comp_subs (el,u) (s,u') =
    reallocation. *)
 let term_of_fconstr c = to_constr (el_id, Univ.Instance.empty) c
 
+let debug_print x = Constr.debug_print (term_of_fconstr x)
+
+let rec debug_print_subst = function
+  | [] -> Pp.str "(Empty substitution)"
+  | hd::[] -> Pp.(str "\n- " ++ debug_print hd)
+  | hd::tl -> Pp.(str "\n- " ++ debug_print hd ++ debug_print_subst tl)
+
 (* fstrong applies unfreeze_fun recursively on the (freeze) term and
  * yields a term.  Assumes that the unfreeze_fun never returns a
  * FCLOS term.
@@ -1489,6 +1496,8 @@ let eliminations_of_pattern = eliminations_of_pattern []
 type 'constr partial_subst = {
   subst: 'constr list;
   usubst: Univ.Level.t list;
+  hole_index: int;
+  lhs_eqs: int Int.Map.t;
   rhs: constr;
 }
 
@@ -1591,16 +1600,18 @@ let rec knr info tab ~pat_state m stk =
             (* Similarly to fix, partially applied primitives are not Ntrl! *)
             knr_ret info tab ~pat_state (m, stk)
         | Symbol (b, r) ->
-            let unfold_fix = b && red_set info.i_flags fFIX in (* TODO *)
-            let _, u = match fl with ConstKey c -> c | RelKey _ | VarKey _ -> assert false in
-            let states, elims = Array.split @@ Array.map
+           Feedback.msg_info Pp.(str "We saw a symbol during reduction. Starting pattern loop.\n") ;
+           let unfold_fix = b && red_set info.i_flags fFIX in (* TODO *)
+           let _, u = match fl with ConstKey c -> c | RelKey _ | VarKey _ -> assert false in
+           let states, elims = Array.split @@ Array.map
               (fun r ->
                 let es, pu = eliminations_of_pattern r.lhs_pat in
-                Live { subst = []; usubst = match_universes pu u; rhs = r.Declarations.rhs }, Check es
+                Live { subst = []; usubst = match_universes pu u; hole_index = 1;
+                       lhs_eqs = r.Declarations.lhs_eqs; rhs = r.Declarations.rhs }, Check es
               ) (Array.of_list r)
-            in
-            let loc = LocStart { elims; head = m; stack = stk; next = Return (unfold_fix, m, stk) } in
-            match_main info tab ~pat_state states loc
+           in
+           let loc = LocStart { elims; head = m; stack = stk; next = Return (unfold_fix, m, stk) } in
+           match_main info tab ~pat_state states loc
         | Undef _ | OpaqueDef _ -> (set_ntrl m; knr_ret info tab ~pat_state (m,stk)))
   | FConstruct(c,_u) ->
      let use_match = red_set info.i_flags fMATCH in
@@ -1727,6 +1738,8 @@ and match_main info tab ~pat_state states loc =
   | LocStart { elims; head; stack; next = Return _ as next } ->
     begin match Array.find2_map (fun state elim -> match [@ocaml.warning "-4"] state, elim with Live s, Check [] -> Some s | _ -> None) states elims with
     | Some { subst; usubst; rhs } ->
+        Feedback.msg_info Pp.(str "We finished the pattern loop. We got the following substitution:\n"
+                              ++ debug_print_subst subst);
         let subst = List.fold_right subs_cons subst (subs_id 0) in
         let usubst = Univ.Instance.of_array (Array.of_list usubst) in
         let m' = mk_clos (subst, usubst) rhs in
@@ -1836,9 +1849,20 @@ and match_elim info tab ~pat_state next states elims head stk =
 and match_arg info tab ~pat_state next states patterns t =
   let match_deeper = ref false in
   let states, patterns = Array.split @@ Array.map2
-    (function Dead -> fun _ -> Dead, Ignore | (Live ({ subst; _ } as state) as sstate) -> function
+    (function Dead -> fun _ -> Dead, Ignore | (Live ({ subst; usubst; hole_index; lhs_eqs; _ } as state) as sstate) -> function
       | Ignore -> sstate, Ignore
-      | Check EHole -> Live { state with subst = subst @ [t] }, Ignore
+      | Check EHole -> (Int.Map.find_opt hole_index lhs_eqs |> function
+        | Some hole -> (* we have an equation to check *)
+           let expected = List.nth subst (pred hole) in (* should the exceptions be handled more gracefully? *)
+           Feedback.msg_info Pp.(str "We have an equation to check between\n"
+                                 ++ debug_print t ++ str "\nand\n" ++ debug_print expected);
+           let eq_istrue = !conv info tab t expected in
+           Feedback.msg_info Pp.(str "Equation is " ++ bool eq_istrue ++ str ".\n");
+           if eq_istrue then
+             Live { state with subst = subst @ [t]; hole_index = succ hole_index; }, Ignore
+           else
+             Dead, Ignore
+        | None -> Live { state with subst = subst @ [t]; hole_index = succ hole_index; }, Ignore)
       | Check EHoleIgnored -> sstate, Ignore
       | Check ERigid p -> match_deeper := true; sstate, Check p
     ) states patterns in
@@ -2165,7 +2189,8 @@ let unfold_ref_with_args infos tab fl v =
     let states, elims = Array.split @@ Array.map
       (fun r ->
         let es, pu = eliminations_of_pattern r.lhs_pat in
-        Live { subst = []; usubst = match_universes pu u; rhs = r.Declarations.rhs }, Check es
+        Live { subst = []; usubst = match_universes pu u; hole_index = 1;
+                       lhs_eqs = r.Declarations.lhs_eqs; rhs = r.Declarations.rhs }, Check es
       ) (Array.of_list r)
     in
     let head = {mark = Red; term = FFlex fl } in
