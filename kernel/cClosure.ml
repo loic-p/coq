@@ -619,6 +619,7 @@ let it_mkLambda_or_LetIn ctx t =
   | LocalDef _ :: _ ->
       mk_clos (subs_id 0, UVars.Instance.empty) (Term.it_mkLambda_or_LetIn (term_of_fconstr t) ctx)
 
+
 (* fstrong applies unfreeze_fun recursively on the (freeze) term and
  * yields a term.  Assumes that the unfreeze_fun never returns a
  * FCLOS term.
@@ -1754,7 +1755,16 @@ and match_arg : 'a. _ -> _ -> pat_state:(fconstr, stack, _, 'a) depth -> _ -> _ 
   let patterns, states = Array.split @@ Array.map2
     (function Dead -> fun _ -> Ignore, Dead | (Live ({ subst; _ } as psubst) as state) -> function
       | Ignore -> Ignore, state
-      | Check EHole i -> Ignore, Live { psubst with subst = Partial_subst.add_term i t' subst }
+      | Check EHole i ->
+          begin match Partial_subst.get_term subst i with
+          | None -> Ignore, Live { psubst with subst = Partial_subst.add_term i t' subst }
+          | Some t0 ->
+            let eq_istrue = !conv info tab t' t0 in
+            if eq_istrue then
+              Ignore, state
+            else
+              Ignore, Dead
+          end
       | Check EHoleIgnored -> Ignore, state
       | Check ERigid p -> match_deeper := true; Check p, state
     ) states patterns in

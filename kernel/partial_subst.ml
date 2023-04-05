@@ -16,6 +16,8 @@ module NoDupArray : sig
   type 'a t
   val make : int -> 'a t
 
+  val get : 'a t -> int -> 'a option
+
   val add : int -> 'a -> 'a t -> 'a t
 
   val to_array : 'a t -> 'a array
@@ -25,6 +27,9 @@ end = struct
   type 'a t = 'a option array * bool ref
 
   let make n = Array.make n None, ref true
+
+  let get a n =
+    (fst a).(n-1)
 
   let invalidate b =
     if not !b then
@@ -52,6 +57,9 @@ type ('term, 'quality, 'univ) t =
 
 let make (m, n, p) =
   (NoDupArray.make m, NoDupArray.make n, NoDupArray.make p)
+
+let get_term (ts, _, _) n =
+  NoDupArray.get ts n
 
 let add_term i t tqus : ('t, 'q, 'u) t =
   on_pi1 (NoDupArray.add (i-1) t) tqus
