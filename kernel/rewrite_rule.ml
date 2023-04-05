@@ -75,13 +75,13 @@ let rec pattern_of_constr t = kind t |> function
   | Proj (p, c) -> PProj (p, pattern_of_constr c)
   | _ -> assert false
 
-type state = (int * int Int.Map.t * hole_equation list) * (int * int Int.Map.t)
+type state = (int * int Int.Map.t * int Int.Map.t) * (int * int Int.Map.t)
 
 let update_invtbl i curvar tbl eqs =
   Int.Map.find_opt i tbl |> function
   | None -> succ curvar, Int.Map.add i curvar tbl, eqs
   | Some k when k = curvar -> succ curvar, tbl, eqs
-  | Some k -> succ curvar, tbl, (HEEq (k , curvar))::eqs
+  | Some k -> assert (k < curvar) ; succ curvar, tbl, Int.Map.add curvar k eqs
 
 let update_shft_invtbl shft (state, stateu) i =
   let (curvar, invtbl, eqs) = state in
@@ -238,10 +238,11 @@ let rec rename eltbl c =
     if Int.equal i j then c else mkRel j
   | _ -> map_with_binders (on_fst succ) rename eltbl c
 
-let rec debug_string_of_equations = function
-  | [] -> Pp.str"None"
-  | HEEq (lft, rgt)::[] -> Pp.(str"(" ++ int lft ++ str" = " ++ int rgt ++ str").")
-  | HEEq (lft, rgt)::tl -> Pp.(str"(" ++ int lft ++ str" = " ++ int rgt ++ str"), " ++ debug_string_of_equations tl)
+let rec debug_string_of_equations eqs =
+  if Int.Map.is_empty eqs then
+    Pp.str "None."
+  else
+    Int.Map.fold (fun lhs rhs s -> Pp.(str"(" ++ int lhs ++ str" = " ++ int rhs ++ str") " ++ s)) eqs (Pp.str "")
 
 let rule_of_constant env c =
   let cb = Environ.lookup_constant c env in
@@ -257,11 +258,12 @@ let rule_of_constant env c =
   let nvars = Context.Rel.length ctx in
   let nvarus = Univ.AbstractContext.size @@ Declareops.constant_polymorphic_context cb in
   let ((seen_vars, invtbl, lhs_eqs), (_, invtblu)), lhs_pat =
-    safe_pattern_of_constr env 0 ((1, Int.Map.empty, []), (0, Int.Map.empty)) lhs
+    safe_pattern_of_constr env 0 ((1, Int.Map.empty, Int.Map.empty), (0, Int.Map.empty)) lhs
   in
+  let neqs = Int.Map.cardinal lhs_eqs in
   let seen_vars = pred seen_vars in
   (* Rels begin at 1 *)
-  if not (seen_vars = nvars + List.length lhs_eqs) then
+  if not (seen_vars = nvars + neqs) then
     CErrors.user_err
       Pp.(str "Not all pattern variables appear in the pattern.");
   Vars.universes_of_constr rhs |> Univ.Level.Set.iter (fun lvl -> lvl |> Univ.Level.var_index |> Option.iter (fun lvli ->
