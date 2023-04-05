@@ -1626,7 +1626,16 @@ and match_arg : 'a. ('a, 'a patstate) reduction -> _ -> _ -> pat_state:(fconstr,
   let patterns, states = Array.split @@ Array.map2
     (function Dead -> fun _ -> Ignore, Dead | (Live ({ subst; _ } as psubst) as state) -> function
       | Ignore -> Ignore, state
-      | Check EHole i -> Ignore, Live { psubst with subst = Partial_subst.add_term i t' subst }
+      | Check EHole i ->
+          begin match Partial_subst.get_term subst i with
+          | None -> Ignore, Live { psubst with subst = Partial_subst.add_term i t' subst }
+          | Some t0 ->
+            let eq_istrue = !conv info tab t' t0 in
+            if eq_istrue then
+              Ignore, state
+            else
+              Ignore, Dead
+          end
       | Check EHoleIgnored -> Ignore, state
       | Check ERigid p -> match_deeper := true; Check p, state
     ) states patterns in

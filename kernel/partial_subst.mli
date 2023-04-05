@@ -13,6 +13,8 @@ type ('term, 'quality, 'univ) t
 
 val make : int * int * int -> ('term, 'quality, 'univ) t
 
+val get_term : ('term, _, _) t -> int -> 'term option
+
 val add_term : int -> 't -> ('t, 'q, 'u) t -> ('t, 'q, 'u) t
 val maybe_add_term : int option -> 't -> ('t, 'q, 'u) t -> ('t, 'q, 'u) t
 

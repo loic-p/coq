@@ -75,15 +75,9 @@ let rec is_rel_inst k = function
   | SList.Cons (t, l) -> kind t = Rel k && is_rel_inst (succ k) l
 
 let update_invtbl ~loc env evd evk (curvar, tbl) =
-  curvar, (succ curvar, tbl |> Evar.Map.update evk @@ function
-  | None -> Some curvar
-  | Some k as c when k = curvar -> c
-  | Some k ->
-      CErrors.user_err ?loc
-        Pp.(str "Variable "
-          ++ Termops.pr_existential_key env evd evk
-          ++ str" is bound multiple times in the pattern (holes number "
-          ++ int k ++ str" and " ++ int curvar ++ str")."))
+  match Evar.Map.find_opt evk tbl with
+  | None -> curvar, (succ curvar, Evar.Map.add evk curvar tbl)
+  | Some v -> v, (curvar, tbl)
 
 let update_invtblu1 ~loc evd lvlold lvl (curvaru, tbl) =
   succ curvaru, tbl |> Int.Map.update lvl @@ function
