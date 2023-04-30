@@ -680,7 +680,7 @@ and comp_subs (el,u) (s,u') =
    reallocation. *)
 let term_of_fconstr c = to_constr (el_id, Univ.Instance.empty) c
 
-let debug_print x = Constr.debug_print (term_of_fconstr x)
+let debug_print x = Flags.with_option Flags.in_debugger (fun x -> Constr.debug_print (term_of_fconstr x)) x
 
 let rec debug_print_subst = function
   | [] -> Pp.str "(Empty substitution)"
@@ -1600,7 +1600,7 @@ let rec knr info tab ~pat_state m stk =
             (* Similarly to fix, partially applied primitives are not Ntrl! *)
             knr_ret info tab ~pat_state (m, stk)
         | Symbol (b, r) ->
-           Feedback.msg_info Pp.(str "We saw a symbol during reduction. Starting pattern loop.\n") ;
+           (* Feedback.msg_info Pp.(str "We saw a symbol during reduction. Starting pattern loop.\n") ; *)
            let unfold_fix = b && red_set info.i_flags fFIX in (* TODO *)
            let _, u = match fl with ConstKey c -> c | RelKey _ | VarKey _ -> assert false in
            let states, elims = Array.split @@ Array.map
@@ -1737,9 +1737,9 @@ and match_main info tab ~pat_state states loc =
   match [@ocaml.warning "-4"] loc with
   | LocStart { elims; head; stack; next = Return _ as next } ->
     begin match Array.find2_map (fun state elim -> match [@ocaml.warning "-4"] state, elim with Live s, Check [] -> Some s | _ -> None) states elims with
-    | Some { subst; usubst; rhs } ->
-        Feedback.msg_info Pp.(str "We finished the pattern loop. We got the following substitution:\n"
-                              ++ debug_print_subst subst);
+    | Some { subst = subst; usubst = usubst; rhs = rhs; _ } ->
+        (* Feedback.msg_info Pp.(str "We finished the pattern loop. We got the following substitution:\n" *)
+        (*                       ++ debug_print_subst subst); *)
         let subst = List.fold_right subs_cons subst (subs_id 0) in
         let usubst = Univ.Instance.of_array (Array.of_list usubst) in
         let m' = mk_clos (subst, usubst) rhs in
@@ -1849,15 +1849,19 @@ and match_elim info tab ~pat_state next states elims head stk =
 and match_arg info tab ~pat_state next states patterns t =
   let match_deeper = ref false in
   let states, patterns = Array.split @@ Array.map2
-    (function Dead -> fun _ -> Dead, Ignore | (Live ({ subst; usubst; hole_index; lhs_eqs; _ } as state) as sstate) -> function
+    (function Dead -> fun _ -> Dead, Ignore | (Live ({ subst = subst; hole_index = hole_index; lhs_eqs = lhs_eqs; _ } as state) as sstate) -> function
       | Ignore -> sstate, Ignore
       | Check EHole -> (Int.Map.find_opt hole_index lhs_eqs |> function
         | Some hole -> (* we have an equation to check *)
            let expected = List.nth subst (pred hole) in (* should the exceptions be handled more gracefully? *)
-           Feedback.msg_info Pp.(str "We have an equation to check between\n"
-                                 ++ debug_print t ++ str "\nand\n" ++ debug_print expected);
-           let eq_istrue = !conv info tab t expected in
-           Feedback.msg_info Pp.(str "Equation is " ++ bool eq_istrue ++ str ".\n");
+           (* Feedback.msg_info Pp.(str "We have an equation to check between\n" *)
+           (*                       ++ debug_print t ++ str "\nand\n" ++ debug_print expected); *)
+           let eq_istrue =
+             let tab = if info.i_cache.i_mode == Conversion then tab else KeyTable.create 17 in
+             let info = {info with i_cache = { info.i_cache with i_mode = Conversion}; i_flags=all} in
+             !conv info tab t expected
+           in
+           (* Feedback.msg_info Pp.(str "Equation is " ++ bool eq_istrue ++ str ".\n"); *)
            if eq_istrue then
              Live { state with subst = subst @ [t]; hole_index = succ hole_index; }, Ignore
            else

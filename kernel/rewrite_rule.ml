@@ -238,7 +238,7 @@ let rec rename eltbl c =
     if Int.equal i j then c else mkRel j
   | _ -> map_with_binders (on_fst succ) rename eltbl c
 
-let rec debug_string_of_equations eqs =
+let debug_string_of_equations eqs =
   if Int.Map.is_empty eqs then
     Pp.str "None."
   else
