@@ -26,6 +26,7 @@ open Ind_tables
 open Auto_ind_decl
 open Eqschemes
 open Elimschemes
+open Observational
 
 (** Data of an inductive scheme with name resolved *)
 type resolved_scheme = Names.Id.t CAst.t * Indrec.dep_flag * Names.inductive * Sorts.family
@@ -92,6 +93,15 @@ let () =
       optkey   = ["Rewriting";"Schemes"];
       optread  = (fun () -> !rewriting_flag) ;
       optwrite = (fun b -> rewriting_flag := b) }
+
+let observational_flag = ref false
+let () =
+  declare_bool_option
+    { optstage = Summary.Stage.Interp;
+      optdepr  = false;
+      optkey   = ["Observational";"Inductives"];
+      optread  = (fun () -> !observational_flag);
+      optwrite = (fun b -> observational_flag := b) }
 
 (* Util *)
 let define ~poly name sigma c types =
@@ -528,4 +538,5 @@ let declare_default_schemes kn =
   if !eq_dec_flag then try_declare_eq_decidability kn;
   if !rewriting_flag then map_inductive_block declare_congr_scheme kn n;
   if !rewriting_flag then map_inductive_block declare_sym_scheme kn n;
-  if !rewriting_flag then map_inductive_block declare_rewriting_schemes kn n
+  if !rewriting_flag then map_inductive_block declare_rewriting_schemes kn n;
+  if !observational_flag then declare_inductive_observational_data kn;
