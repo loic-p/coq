@@ -25,3 +25,9 @@ val declare_inductive_casts : Names.MutInd.t -> unit
 val declare_inductive_rewrite_rules : Names.MutInd.t -> unit
 
 val declare_inductive_observational_data : Names.MutInd.t -> unit
+
+val declare_observational_equality :
+  (univs:UState.named_universes_entry
+   -> name:Id.t
+   -> Constr.t
+   -> Constant.t) ref

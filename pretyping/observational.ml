@@ -75,6 +75,9 @@ let duplicate_context ctx =
     ~init:(Esubst.el_id, Context.Rel.empty)
   in nctx
 
+let declare_observational_equality = ref (fun ~univs ~name c ->
+    CErrors.anomaly (Pp.str "observational equality declaration not registered"))
+
 let declare_one_inductive_obs_eqs ind =
   let env = Global.env () in
   (* sigma contains the graph of global universes as well as an empty local universe context
@@ -88,27 +91,30 @@ let declare_one_inductive_obs_eqs ind =
   let dctx = duplicate_context mib.mind_params_ctxt in
 
   let settype = EConstr.mkSort EConstr.ESorts.set in
-  let temp = it_mkProd_or_LetIn_name env (EConstr.Unsafe.to_constr settype) dctx in
-  Feedback.msg_debug (str "We will be declaring " ++ Constr.debug_print temp);
+  let tm = it_mkProd_or_LetIn_name env (EConstr.Unsafe.to_constr settype) dctx in
+  Feedback.msg_debug (str "We will be declaring " ++ Constr.debug_print tm);
 
   (* recover the local universes from the evar map, minimize them, and update the term *)
   let uctx = Evd.evar_universe_context sigma in
   let uctx = UState.minimize uctx in
   let tm = UState.nf_universes uctx tm in
-  (* declare the definition *)
-  let kind = Decls.(IsDefinition Definition) in
   let poly = Declareops.inductive_is_polymorphic mib in
-  let univ_entry = UState.univ_entry ~poly uctx in
-  let entry = Declare.definition_entry ~univs:univ_entry tm in
-  let kn = Declare.declare_constant ~name ~kind entry in
+  let univs = UState.univ_entry ~poly uctx in
+  let name = Names.Id.of_string "grillepain" in
+  (* declare the definition *)
+  let _ = !declare_observational_equality ~univs ~name tm in
+  ()
 
-  (* minimize universes *)
-
-  (* declare the definition but the intended way *)
-  let info = Declare.Info.make ~poly in
-  let cinfo = Declare.CInfo.make name (Some typ) () in
-  let opaque = false in
-  let kn = Declare.declare_definition ~info ~cinfo ~opaque ~body evd
+  (* (\* minimize universes *\) *)
+  (* let sigma = Evd.minimize_universes sigma in *)
+  (* let body = EConstr.of_constr tm in *)
+  (* let poly = Declareops.inductive_is_polymorphic mib in *)
+  (* (\* declare the definition but the intended way *\) *)
+  (* let kind = Decls.(IsAssumption Logical) in *)
+  (* let info = Declare.Info.make ~poly ~kind in *)
+  (* let cinfo = Declare.CInfo.make name (Some typ) () in *)
+  (* let opaque = true in *)
+  (* let kn = Declare.declare_definition ~info ~cinfo ~opaque ~body sigma in *)
 
 (* let declare_definition_scheme ~internal ~univs ~role ~name c = *)
 (*   let kind = Decls.(IsDefinition Scheme) in *)

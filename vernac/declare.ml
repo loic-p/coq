@@ -665,6 +665,14 @@ let declare_definition_scheme ~internal ~univs ~role ~name c =
   let () = if internal then () else definition_message name in
   kn, eff
 
+(* Observational stuff *)
+let declare_observational_equality ~univs ~name c =
+  let kind = Decls.(IsAssumption Logical) in
+  let entry = ParameterEntry (parameter_entry ~univs c) in
+  let kn = declare_constant ~name ~kind ~typing_flags:None entry in
+  let () = definition_message name in
+  kn
+
 (* Locality stuff *)
 let declare_entry_core ~name ?(scope=Locality.default_scope) ~kind ~typing_flags ?hook ~obls ~impargs ~uctx entry =
   let should_suggest =
@@ -2186,6 +2194,7 @@ end (* Proof module *)
 
 let _ = Ind_tables.declare_definition_scheme := declare_definition_scheme
 let _ = Abstract.declare_abstract := Proof.declare_abstract
+let _ = Observational.declare_observational_equality := declare_observational_equality
 
 let build_by_tactic = Proof.build_by_tactic
 
