@@ -33,6 +33,12 @@ open Environ
 open Reductionops
 open Context.Rel.Declaration
 
+(* useful for testing *)
+
+(* let settype = EConstr.to_constr sigma (EConstr.mkSort EConstr.ESorts.set) in *)
+(* let tm = it_mkProd_or_LetIn_name env settype ctor.cs_args in *)
+(* Feedback.msg_debug (str "The args of contructor " ++ str eq_name ++ str " seem to be " ++ Constr.debug_print tm) ; *)
+
 (* Some helpers, I imagine *)
 
 let ident_hd env ids t na =
@@ -63,6 +69,8 @@ let next_name = function
   | Anonymous -> Anonymous
   | Name x    -> Name (next_ident_away x Id.Set.empty)
 
+(* Duplicate all the entries in a context, and return a substitution from the duplicated context *)
+
 let duplicate_context ctx =
   let aux = (fun decl (ren, nctx) ->
       let decl = Context.Rel.Declaration.map_constr (Vars.exliftn ren) decl in
@@ -71,12 +79,89 @@ let duplicate_context ctx =
       let ren = Esubst.el_shft 1 (Esubst.el_liftn 2 ren) in
       (ren, d1 :: d2 :: nctx))
   in
-  let (_, nctx) = Context.Rel.fold_outside aux ctx
+  Context.Rel.fold_outside aux ctx
     ~init:(Esubst.el_id, Context.Rel.empty)
-  in nctx
+
+(* Fetching the observational primitives *)
+
+let obseq_constant = ref None
+let cast_constant = ref None
+
+let fetch_observational_data () =
+  let obseq_qualid = Libnames.qualid_of_ident (Names.Id.of_string "obseq") in
+  let cast_qualid = Libnames.qualid_of_ident (Names.Id.of_string "cast") in
+  try
+    obseq_constant := Some (Nametab.locate_constant obseq_qualid) ;
+    cast_constant := Some (Nametab.locate_constant cast_qualid) ;
+  with
+    Not_found -> user_err Pp.(str "The observational equality or the cast operator does not exist.\
+                                   Did you forget to open the observational library?")
+
+let make_obseq ty tm1 tm2 =
+  match !obseq_constant with
+  | None ->
+     user_err Pp.(str "The observational equality does not exist.\
+                       Did you forget to open the observational library?")
+  | Some obseq ->
+     let obseq = Constr.mkConst obseq in
+     Constr.mkApp (obseq, [| ty ; tm1 ; tm2 |])
+
+let make_cast ty1 ty2 eq tm =
+  match !cast_constant with
+  | None ->
+     user_err Pp.(str "The cast operator does not exist.\
+                       Did you forget to open the observational library?")
+  | Some cast ->
+     let cast = Constr.mkConst cast in
+     Constr.mkApp (cast, [| ty1 ; ty2 ; eq ; tm |])
+
+(* Building and declaring the observational equalities *)
 
 let declare_observational_equality = ref (fun ~univs ~name c ->
-    CErrors.anomaly (Pp.str "observational equality declaration not registered"))
+    CErrors.anomaly (Pp.str "observational axioms declarator not registered"))
+
+let declare_one_ctor_arg_obs_eq ~poly env sigma name decl (ctxt, ren, cnt) =
+  match decl with
+  | Context.Rel.Declaration.LocalAssum (na, ty) ->
+     (* generating the term *)
+     let ty = Context.Rel.Declaration.get_type decl in
+     let sort = Retyping.get_sort_of env sigma (EConstr.of_constr ty) in
+     let s = EConstr.mkSort sort in
+     let s = EConstr.to_constr sigma s in
+     (** TODO : error messages *)
+     let ty1 = Vars.exliftn ren ty in
+     let ty2 = Vars.exliftn (Esubst.el_liftn 1 ren) ty in
+     let eq = make_obseq s ty1 ty2 in
+     let tm = it_mkProd_or_LetIn_name env eq ctxt in
+
+     (* declaring the term *)
+     let name = Names.Id.of_string (name ^ string_of_int cnt) in
+     Feedback.msg_debug (str "We are trying to declare " ++ Constr.debug_print tm) ;
+     let uctx = Evd.evar_universe_context sigma in
+     let uctx = UState.minimize uctx in
+     let tm = UState.nf_universes uctx tm in
+     (** TODO : is it really necessary to normalize universes every time? *)
+     let univs = UState.univ_entry ~poly uctx in
+     let _ = !declare_observational_equality ~univs ~name tm in
+
+     (* preparing the next context *)
+     let ctxt = (Context.Rel.Declaration.LocalAssum (na, ty1)) :: ctxt in
+     let ctxt = (Context.Rel.Declaration.LocalAssum (na, ty1)) :: ctxt in
+     (* let cast_term = make_cast (wk1 ty1) (wk1 ty2) (wk1 eq) (mkRel 1) in *)
+     (* let ctxt = (mkletin cast_term) :: ctxt in *)
+     let ren = Esubst.el_shft 1 (Esubst.el_liftn 2 ren) in
+     (ctxt, ren, cnt + 1)
+  | Context.Rel.Declaration.LocalDef (na, tm, ty) ->
+     (ctxt, ren, cnt)
+
+let declare_one_constructor_obs_eqs ~poly env sigma ctxt ctor ctor_name =
+  let eq_name = "eq_" ^ Names.Id.to_string ctor_name ^ "_" in
+  let (ren, dup_ctxt) = duplicate_context ctxt in
+  let args = ctor.cs_args in
+
+  let _ = Context.Rel.fold_outside (declare_one_ctor_arg_obs_eq ~poly env sigma eq_name) args
+    ~init:(dup_ctxt, ren, 0) in
+  ()
 
 let declare_one_inductive_obs_eqs ind =
   let env = Global.env () in
@@ -84,50 +169,33 @@ let declare_one_inductive_obs_eqs ind =
      we update sigma with the local universe context of the inductive *)
   let sigma = Evd.from_env env in
   let sigma, pind = Evd.fresh_inductive_instance ~rigid:UState.univ_rigid env sigma ind in
-
   let (mib,mip) = Global.lookup_inductive (fst pind) in
-  (* sans doute qu'il faut substituer (snd pind) qqpart *)
-
-  let dctx = duplicate_context mib.mind_params_ctxt in
-
-  let settype = EConstr.mkSort EConstr.ESorts.set in
-  let tm = it_mkProd_or_LetIn_name env (EConstr.Unsafe.to_constr settype) dctx in
-  Feedback.msg_debug (str "We will be declaring " ++ Constr.debug_print tm);
-
-  (* recover the local universes from the evar map, minimize them, and update the term *)
-  let uctx = Evd.evar_universe_context sigma in
-  let uctx = UState.minimize uctx in
-  let tm = UState.nf_universes uctx tm in
   let poly = Declareops.inductive_is_polymorphic mib in
-  let univs = UState.univ_entry ~poly uctx in
-  let name = Names.Id.of_string "grillepain" in
-  (* declare the definition *)
-  let _ = !declare_observational_equality ~univs ~name tm in
-  ()
+  (* u is the universe instance that maps universe variables in the inductive to universes in the evd *)
+  let u = snd pind in
 
-  (* (\* minimize universes *\) *)
-  (* let sigma = Evd.minimize_universes sigma in *)
-  (* let body = EConstr.of_constr tm in *)
-  (* let poly = Declareops.inductive_is_polymorphic mib in *)
-  (* (\* declare the definition but the intended way *\) *)
-  (* let kind = Decls.(IsAssumption Logical) in *)
-  (* let info = Declare.Info.make ~poly ~kind in *)
-  (* let cinfo = Declare.CInfo.make name (Some typ) () in *)
-  (* let opaque = true in *)
-  (* let kn = Declare.declare_definition ~info ~cinfo ~opaque ~body sigma in *)
+  (* params_ctxt is the parameter context of the mutual inductive (including letins) *)
+  let param_ctxt = Inductive.inductive_paramdecls (mib,u) in
+  let params = Context.Rel.instance_list mkRel 0 param_ctxt in
+  (* indf is the inductive family with its parameters instanciated to the ones in params_ctxt *)
+  let indf = Inductiveops.make_ind_family (pind, params) in
+  let n_indx = Inductiveops.inductive_nrealargs env (fst pind) in
+  let indx_ctxt, s = Inductiveops.get_arity env indf in
 
-(* let declare_definition_scheme ~internal ~univs ~role ~name c = *)
-(*   let kind = Decls.(IsDefinition Scheme) in *)
-(*   let entry = pure_definition_entry ~univs c in *)
-(*   let kn, eff = declare_private_constant ~role ~kind ~name entry in *)
-(*   let () = if internal then () else definition_message name in *)
-(*   kn, eff *)
+  (* the full context contains parameters AND indices (also called "real arguments") *)
+  let full_ctxt = indx_ctxt @ param_ctxt in
+  let full_params = Context.Rel.instance_list mkRel n_indx param_ctxt in
+  (* full_indf is the same as indf, but weakened to the context full_ctxt *)
+  let full_indf = Inductiveops.make_ind_family (pind, full_params) in
+
+  let ctors = Inductiveops.get_constructors env full_indf in
+  let ctors_names = mip.mind_consnames in
+  for i = 0 to (Array.length ctors) - 1 do
+    declare_one_constructor_obs_eqs ~poly env sigma full_ctxt ctors.(i) ctors_names.(i)
+  done
 
 let declare_inductive_obs_eqs kn =
   let mib = Global.lookup_mind kn in
-  (* On récup l'environnement
-   on instancie les univers
-   Nécessairement, *)
   for i = 0 to Array.length mib.mind_packets - 1 do
     declare_one_inductive_obs_eqs (kn,i);
   done
@@ -141,10 +209,10 @@ let declare_inductive_rewrite_rules kn =
 let warn_about_sections () =
   CWarnings.create ~name:"observational-in-section" ~category:"inductives"
          (fun msg -> hov 0 msg) (hov 0 (str "Observational inductives are not properly supported in sections yet"))
-  (* user_err Pp.(str "Observational inductives are not supported in sections yet") *)
 
 let declare_inductive_observational_data kn =
   let mib = Global.lookup_mind kn in
+  fetch_observational_data ();
   if mib.mind_finite = Declarations.CoFinite then
     user_err Pp.(str "Observational coinductive types are not supported yet");
   if Context.Named.length mib.mind_hyps > 0 then

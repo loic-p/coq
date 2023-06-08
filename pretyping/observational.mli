@@ -16,7 +16,7 @@ open Evd
 (** From an inductive type, generates a list of observational equalities
     that *)
 
-val duplicate_context : (constr, constr) Context.Rel.pt -> (constr, constr) Context.Rel.pt
+val duplicate_context : (constr, constr) Context.Rel.pt -> Esubst.lift * (constr, constr) Context.Rel.pt
 
 val declare_inductive_obs_eqs : Names.MutInd.t -> unit
 
