@@ -82,7 +82,25 @@ let duplicate_context ctx =
   Context.Rel.fold_outside aux ctx
     ~init:(Esubst.el_id, Context.Rel.empty)
 
-(* Fetching the observational primitives *)
+(* Adding a universe level to an evar map that is greater than the sort s *)
+
+let univ_level_sup env sigma s =
+  let sigma, u1 = Evd.new_univ_level_variable Evd.univ_flexible sigma in
+  let s1 = EConstr.ESorts.make (Sorts.sort_of_univ (Univ.Universe.make u1)) in
+  let sigma = Evd.set_leq_sort env sigma s s1 in
+  sigma, u1
+
+(* Adding a universe level to an evar map that is strictly greater than the level u *)
+
+let univ_level_next sigma u =
+  let sigma, u1 = Evd.new_univ_level_variable Evd.univ_flexible sigma in
+  let cstr = Univ.Constraints.singleton (u, Univ.Lt, u1) in
+  let sigma = Evd.add_constraints sigma cstr in
+  sigma, u1
+
+(* Fetching the observational primitives
+   For now, they are being fetched from the current file
+   Eventually they should be fetched from the library *)
 
 let obseq_constant = ref None
 let cast_constant = ref None
@@ -97,22 +115,26 @@ let fetch_observational_data () =
     Not_found -> user_err Pp.(str "The observational equality or the cast operator does not exist.\
                                    Did you forget to open the observational library?")
 
-let make_obseq ty tm1 tm2 =
+(* Building an observational equality term *)
+
+let make_obseq u ty tm1 tm2 =
   match !obseq_constant with
   | None ->
-     user_err Pp.(str "The observational equality does not exist.\
+     user_err Pp.(str "The observational equality does not exist. \
                        Did you forget to open the observational library?")
   | Some obseq ->
-     let obseq = Constr.mkConst obseq in
+     let obseq = Constr.mkConstU (obseq, Univ.Instance.of_array [| u |]) in
      Constr.mkApp (obseq, [| ty ; tm1 ; tm2 |])
 
-let make_cast ty1 ty2 eq tm =
+(* Building a cast term *)
+
+let make_cast u1 u2 ty1 ty2 eq tm =
   match !cast_constant with
   | None ->
-     user_err Pp.(str "The cast operator does not exist.\
+     user_err Pp.(str "The cast operator does not exist. \
                        Did you forget to open the observational library?")
   | Some cast ->
-     let cast = Constr.mkConst cast in
+     let cast = Constr.mkConstU (cast, Univ.Instance.of_array [| u1 ; u2 |]) in
      Constr.mkApp (cast, [| ty1 ; ty2 ; eq ; tm |])
 
 (* Building and declaring the observational equalities *)
@@ -120,18 +142,22 @@ let make_cast ty1 ty2 eq tm =
 let declare_observational_equality = ref (fun ~univs ~name c ->
     CErrors.anomaly (Pp.str "observational axioms declarator not registered"))
 
-let declare_one_ctor_arg_obs_eq ~poly env sigma name decl (ctxt, ren, cnt) =
+let declare_one_ctor_arg_obs_eq env sigma name decl (ctxt, ren, cnt) =
   match decl with
   | Context.Rel.Declaration.LocalAssum (na, ty) ->
      (* generating the term *)
      let ty = Context.Rel.Declaration.get_type decl in
+
+     (* u1 is the level of the sort of ty (or higher), u2 is a level higher than u1 *)
      let sort = Retyping.get_sort_of env sigma (EConstr.of_constr ty) in
+     let sigma, u1 = univ_level_sup env sigma sort in
+     let sigma, u2 = univ_level_next sigma u1 in
      let s = EConstr.mkSort sort in
      let s = EConstr.to_constr sigma s in
-     (** TODO : error messages *)
+
      let ty1 = Vars.exliftn ren ty in
      let ty2 = Vars.exliftn (Esubst.el_liftn 1 ren) ty in
-     let eq = make_obseq s ty1 ty2 in
+     let eq = make_obseq u2 s ty1 ty2 in
      let tm = it_mkProd_or_LetIn_name env eq ctxt in
 
      (* declaring the term *)
@@ -140,11 +166,11 @@ let declare_one_ctor_arg_obs_eq ~poly env sigma name decl (ctxt, ren, cnt) =
      let uctx = Evd.evar_universe_context sigma in
      let uctx = UState.minimize uctx in
      let tm = UState.nf_universes uctx tm in
-     (** TODO : is it really necessary to normalize universes every time? *)
-     let univs = UState.univ_entry ~poly uctx in
+     let univs = UState.univ_entry ~poly:true uctx in
      let _ = !declare_observational_equality ~univs ~name tm in
 
      (* preparing the next context *)
+     (** TODO *)
      let ctxt = (Context.Rel.Declaration.LocalAssum (na, ty1)) :: ctxt in
      let ctxt = (Context.Rel.Declaration.LocalAssum (na, ty1)) :: ctxt in
      (* let cast_term = make_cast (wk1 ty1) (wk1 ty2) (wk1 eq) (mkRel 1) in *)
@@ -152,14 +178,15 @@ let declare_one_ctor_arg_obs_eq ~poly env sigma name decl (ctxt, ren, cnt) =
      let ren = Esubst.el_shft 1 (Esubst.el_liftn 2 ren) in
      (ctxt, ren, cnt + 1)
   | Context.Rel.Declaration.LocalDef (na, tm, ty) ->
+     (** TODO *)
      (ctxt, ren, cnt)
 
-let declare_one_constructor_obs_eqs ~poly env sigma ctxt ctor ctor_name =
+let declare_one_constructor_obs_eqs env sigma ctxt ctor ctor_name =
   let eq_name = "eq_" ^ Names.Id.to_string ctor_name ^ "_" in
   let (ren, dup_ctxt) = duplicate_context ctxt in
   let args = ctor.cs_args in
 
-  let _ = Context.Rel.fold_outside (declare_one_ctor_arg_obs_eq ~poly env sigma eq_name) args
+  let _ = Context.Rel.fold_outside (declare_one_ctor_arg_obs_eq env sigma eq_name) args
     ~init:(dup_ctxt, ren, 0) in
   ()
 
@@ -170,7 +197,6 @@ let declare_one_inductive_obs_eqs ind =
   let sigma = Evd.from_env env in
   let sigma, pind = Evd.fresh_inductive_instance ~rigid:UState.univ_rigid env sigma ind in
   let (mib,mip) = Global.lookup_inductive (fst pind) in
-  let poly = Declareops.inductive_is_polymorphic mib in
   (* u is the universe instance that maps universe variables in the inductive to universes in the evd *)
   let u = snd pind in
 
@@ -191,7 +217,7 @@ let declare_one_inductive_obs_eqs ind =
   let ctors = Inductiveops.get_constructors env full_indf in
   let ctors_names = mip.mind_consnames in
   for i = 0 to (Array.length ctors) - 1 do
-    declare_one_constructor_obs_eqs ~poly env sigma full_ctxt ctors.(i) ctors_names.(i)
+    declare_one_constructor_obs_eqs env sigma full_ctxt ctors.(i) ctors_names.(i)
   done
 
 let declare_inductive_obs_eqs kn =
@@ -208,15 +234,23 @@ let declare_inductive_rewrite_rules kn =
 
 let warn_about_sections () =
   CWarnings.create ~name:"observational-in-section" ~category:"inductives"
-         (fun msg -> hov 0 msg) (hov 0 (str "Observational inductives are not properly supported in sections yet"))
+    (fun msg -> hov 0 msg) (hov 0 (str "Observational inductives do not properly support the sections mechanism yet. \
+                                        You might get rules that are weaker than you expect outside of the section."))
 
 let declare_inductive_observational_data kn =
   let mib = Global.lookup_mind kn in
-  fetch_observational_data ();
+  (* check that all options are set correctly *)
+  if not (Declareops.inductive_is_polymorphic mib) then
+    (* Is this true, though? The problem is that we need a cast and an obseq for each sort.
+       Maybe we can generate them when needed... *)
+    user_err Pp.(str "Observational inductives require universe polymorphism. \
+                      (Set Universe Polymorphism)");
   if mib.mind_finite = Declarations.CoFinite then
-    user_err Pp.(str "Observational coinductive types are not supported yet");
+    user_err Pp.(str "Observational coinductive types are not supported yet.");
   if Context.Named.length mib.mind_hyps > 0 then
     warn_about_sections ();
+  (* generate stuff *)
+  fetch_observational_data ();
   declare_inductive_obs_eqs kn;
   declare_inductive_casts kn;
   declare_inductive_rewrite_rules kn
