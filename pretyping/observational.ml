@@ -142,52 +142,63 @@ let make_cast u1 u2 ty1 ty2 eq tm =
 let declare_observational_equality = ref (fun ~univs ~name c ->
     CErrors.anomaly (Pp.str "observational axioms declarator not registered"))
 
-let declare_one_ctor_arg_obs_eq env sigma name decl (ctxt, ren, cnt) =
+let declare_one_ctor_arg_obs_eq env name decl (sigma, ctxt, ren, cnt) =
   match decl with
   | Context.Rel.Declaration.LocalAssum (na, ty) ->
-     (* generating the term *)
+     (* generating the type of the observational equality *)
      let ty = Context.Rel.Declaration.get_type decl in
-
-     (* u1 is the level of the sort of ty (or higher), u2 is a level higher than u1 *)
      let sort = Retyping.get_sort_of env sigma (EConstr.of_constr ty) in
-     let sigma, u1 = univ_level_sup env sigma sort in
-     let sigma, u2 = univ_level_next sigma u1 in
      let s = EConstr.mkSort sort in
      let s = EConstr.to_constr sigma s in
-
      let ty1 = Vars.exliftn ren ty in
      let ty2 = Vars.exliftn (Esubst.el_liftn 1 ren) ty in
-     let eq = make_obseq u2 s ty1 ty2 in
-     let tm = it_mkProd_or_LetIn_name env eq ctxt in
+     (* we declare new universe levels u1 and u2 to instanciate the polymorphic obseq constant *)
+     let sigma, u1 = univ_level_sup env sigma sort in
+     let sigma, u2 = univ_level_next sigma u1 in
+     let eq_ty = make_obseq u2 s ty1 ty2 in
+     (* generalizing it over the context to output a closed axiom *)
+     let axiom = it_mkProd_or_LetIn_name env eq_ty ctxt in
 
-     (* declaring the term *)
+     (* generating a name for the axiom *)
      let name = Names.Id.of_string (name ^ string_of_int cnt) in
-     Feedback.msg_debug (str "We are trying to declare " ++ Constr.debug_print tm) ;
+     Feedback.msg_debug (str "We are trying to declare " ++ Constr.debug_print axiom) ; (* optional debug *)
+     (* normalizing the universes in the evar map and in the body of the axiom *)
      let uctx = Evd.evar_universe_context sigma in
      let uctx = UState.minimize uctx in
-     let tm = UState.nf_universes uctx tm in
+     let tm = UState.nf_universes uctx axiom in
+     (* declaring the axiom with its local universe context *)
      let univs = UState.univ_entry ~poly:true uctx in
-     let _ = !declare_observational_equality ~univs ~name tm in
+     let eq_name = !declare_observational_equality ~univs ~name tm in
 
-     (* preparing the next context *)
-     (** TODO *)
+     (* generating the instance of the equality axiom that we will use in make_cast *)
+     (* first, we recover the universe instance that the definition was abstracted on *)
+     let eq_univ_instance = (match fst univs with
+       | UState.Polymorphic_entry pe -> pe
+       | _ -> user_err (Pp.str "Polymorphic declaration error.")) |> Univ.UContext.instance
+     in
+     let eq_tm = Constr.mkConstU (eq_name, eq_univ_instance) in
+     (* then we apply it to the whole context that we generalized on *)
+     let eq_args = Context.Rel.instance mkRel 0 ctxt in
+     let eq_hyp = Constr.mkApp (eq_tm, eq_args) in
+
+     (* preparing the context for the next axiom *)
      let ctxt = (Context.Rel.Declaration.LocalAssum (na, ty1)) :: ctxt in
-     let ctxt = (Context.Rel.Declaration.LocalAssum (na, ty1)) :: ctxt in
-     (* let cast_term = make_cast (wk1 ty1) (wk1 ty2) (wk1 eq) (mkRel 1) in *)
-     (* let ctxt = (mkletin cast_term) :: ctxt in *)
+     let wk1 = Vars.exliftn (Esubst.el_shft 1 (Esubst.el_id)) in
+     let cast_term = make_cast u1 u2 (wk1 ty1) (wk1 ty2) (wk1 eq_hyp) (mkRel 1) in
+     let ctxt = (Context.Rel.Declaration.LocalDef (na, cast_term, wk1 ty2)) :: ctxt in
      let ren = Esubst.el_shft 1 (Esubst.el_liftn 2 ren) in
-     (ctxt, ren, cnt + 1)
+     (sigma, ctxt, ren, cnt + 1)
   | Context.Rel.Declaration.LocalDef (na, tm, ty) ->
      (** TODO *)
-     (ctxt, ren, cnt)
+     (sigma, ctxt, ren, cnt)
 
 let declare_one_constructor_obs_eqs env sigma ctxt ctor ctor_name =
   let eq_name = "eq_" ^ Names.Id.to_string ctor_name ^ "_" in
   let (ren, dup_ctxt) = duplicate_context ctxt in
   let args = ctor.cs_args in
 
-  let _ = Context.Rel.fold_outside (declare_one_ctor_arg_obs_eq env sigma eq_name) args
-    ~init:(dup_ctxt, ren, 0) in
+  let _ = Context.Rel.fold_outside (declare_one_ctor_arg_obs_eq env eq_name) args
+    ~init:(sigma, dup_ctxt, ren, 0) in
   ()
 
 let declare_one_inductive_obs_eqs ind =
