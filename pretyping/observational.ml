@@ -142,7 +142,7 @@ let make_cast u1 u2 ty1 ty2 eq tm =
 let declare_observational_equality = ref (fun ~univs ~name c ->
     CErrors.anomaly (Pp.str "observational axioms declarator not registered"))
 
-let declare_one_ctor_arg_obs_eq env name decl (sigma, ctxt, ren, cnt) =
+let declare_one_ctor_arg_obs_eq env name decl (sigma, ctxt, ren1, ren2, cnt) =
   match decl with
   | Context.Rel.Declaration.LocalAssum (na, ty) ->
      (* generating the type of the observational equality *)
@@ -150,8 +150,8 @@ let declare_one_ctor_arg_obs_eq env name decl (sigma, ctxt, ren, cnt) =
      let sort = Retyping.get_sort_of env sigma (EConstr.of_constr ty) in
      let s = EConstr.mkSort sort in
      let s = EConstr.to_constr sigma s in
-     let ty1 = Vars.exliftn ren ty in
-     let ty2 = Vars.exliftn (Esubst.el_liftn 1 ren) ty in
+     let ty1 = Vars.exliftn ren1 ty in
+     let ty2 = Vars.exliftn ren2 ty in
      (* we declare new universe levels u1 and u2 to instanciate the polymorphic obseq constant *)
      let sigma, u1 = univ_level_sup env sigma sort in
      let sigma, u2 = univ_level_next sigma u1 in
@@ -186,19 +186,31 @@ let declare_one_ctor_arg_obs_eq env name decl (sigma, ctxt, ren, cnt) =
      let wk1 = Vars.exliftn (Esubst.el_shft 1 (Esubst.el_id)) in
      let cast_term = make_cast u1 u2 (wk1 ty1) (wk1 ty2) (wk1 eq_hyp) (mkRel 1) in
      let ctxt = (Context.Rel.Declaration.LocalDef (na, cast_term, wk1 ty2)) :: ctxt in
-     let ren = Esubst.el_shft 1 (Esubst.el_liftn 2 ren) in
-     (sigma, ctxt, ren, cnt + 1)
+     let ren1 = Esubst.el_shft 1 (Esubst.el_liftn 2 ren1) in
+     let ren2 = Esubst.el_liftn 1 (Esubst.el_shft 1 (Esubst.el_liftn 1 ren2)) in
+     (sigma, ctxt, ren1, ren2, cnt + 1)
   | Context.Rel.Declaration.LocalDef (na, tm, ty) ->
      (** TODO *)
-     (sigma, ctxt, ren, cnt)
+     (sigma, ctxt, ren1, ren2, cnt)
 
-let declare_one_constructor_obs_eqs env sigma ctxt ctor ctor_name =
-  let eq_name = "eq_" ^ Names.Id.to_string ctor_name ^ "_" in
+let declare_one_constructor_obs_eqs env sigma ctxt ind ctor ctor_name =
+  (* preparing the context of hypotheses for the axioms *)
   let (ren, dup_ctxt) = duplicate_context ctxt in
+  (* extending it with the equality between two instances of the inductive *)
+  let (indty, s, u1, u2) = ind in
+  let indty1 = Vars.exliftn ren indty in
+  let indty2 = Vars.exliftn (Esubst.el_liftn 1 ren) indty in
+  let eq_hyp = make_obseq u2 s indty1 indty2 in
+  let eq_annot = Context.make_annot (Names.Name.mk_name (Names.Id.of_string "e")) Sorts.Irrelevant in
+  let hyp_ctxt = (Context.Rel.Declaration.LocalAssum (eq_annot, eq_hyp))::dup_ctxt in
+
+  let eq_name = "obseq_" ^ Names.Id.to_string ctor_name ^ "_" in
   let args = ctor.cs_args in
+  let ren1 = Esubst.el_shft 1 (Esubst.el_liftn 1 ren) in
+  let ren2 = Esubst.el_shft 1 (Esubst.el_liftn 2 ren) in
 
   let _ = Context.Rel.fold_outside (declare_one_ctor_arg_obs_eq env eq_name) args
-    ~init:(sigma, dup_ctxt, ren, 0) in
+    ~init:(sigma, hyp_ctxt, ren1, ren2, 0) in
   ()
 
 let declare_one_inductive_obs_eqs ind =
@@ -215,20 +227,33 @@ let declare_one_inductive_obs_eqs ind =
   let param_ctxt = Inductive.inductive_paramdecls (mib,u) in
   let params = Context.Rel.instance_list mkRel 0 param_ctxt in
   (* indf is the inductive family with its parameters instanciated to the ones in params_ctxt *)
-  let indf = Inductiveops.make_ind_family (pind, params) in
+  let ind_fam = Inductiveops.make_ind_family (pind, params) in
   let n_indx = Inductiveops.inductive_nrealargs env (fst pind) in
-  let indx_ctxt, s = Inductiveops.get_arity env indf in
+  let indx_ctxt, _ = Inductiveops.get_arity env ind_fam in
 
   (* the full context contains parameters AND indices (also called "real arguments") *)
   let full_ctxt = indx_ctxt @ param_ctxt in
   let full_params = Context.Rel.instance_list mkRel n_indx param_ctxt in
   (* full_indf is the same as indf, but weakened to the context full_ctxt *)
-  let full_indf = Inductiveops.make_ind_family (pind, full_params) in
+  let full_ind_fam = Inductiveops.make_ind_family (pind, full_params) in
 
-  let ctors = Inductiveops.get_constructors env full_indf in
+  (* instanciating the inductive type in the full context *)
+  let indx = Context.Rel.instance_list EConstr.mkRel 0 indx_ctxt in
+  let ind_ty = Inductiveops.mkAppliedInd (Inductiveops.make_ind_type (full_ind_fam, indx)) in
+  (* getting the sort of the inductive type *)
+  let sort = Retyping.get_sort_of env sigma ind_ty in
+  let s = EConstr.mkSort sort in
+  let s = EConstr.to_constr sigma s in
+  (* declaring a universe level for the inductive type, and a level for its sort *)
+  let sigma, u1 = univ_level_sup env sigma sort in
+  let sigma, u2 = univ_level_next sigma u1 in
+  let instanciated_ind = (EConstr.to_constr sigma ind_ty, s, u1, u2) in
+
+  (* declaring the observational equality axioms for every constructor *)
+  let ctors = Inductiveops.get_constructors env full_ind_fam in
   let ctors_names = mip.mind_consnames in
   for i = 0 to (Array.length ctors) - 1 do
-    declare_one_constructor_obs_eqs env sigma full_ctxt ctors.(i) ctors_names.(i)
+    declare_one_constructor_obs_eqs env sigma full_ctxt instanciated_ind ctors.(i) ctors_names.(i)
   done
 
 let declare_inductive_obs_eqs kn =
@@ -265,3 +290,4 @@ let declare_inductive_observational_data kn =
   declare_inductive_obs_eqs kn;
   declare_inductive_casts kn;
   declare_inductive_rewrite_rules kn
+  (** TODO : do not generate anything when the inductive is in Prop/SProp  *)
