@@ -93,6 +93,8 @@ let univ_level_sup env sigma s =
   let s1 =
     if EConstr.ESorts.is_sprop sigma s then
       s
+    else if EConstr.ESorts.is_prop sigma s then
+      user_err (Pp.str "Prop is not compatible with the observational mode. Use SProp instead.")
     else
       EConstr.ESorts.make (Sorts.sort_of_univ (Univ.Universe.make u1))
   in
@@ -230,41 +232,43 @@ let declare_one_inductive_obs_eqs ind =
   let sigma = Evd.from_env env in
   let sigma, pind = Evd.fresh_inductive_instance ~rigid:UState.univ_rigid env sigma ind in
   let (mib,mip) = Global.lookup_inductive (fst pind) in
-  (* u is the universe instance that maps universe variables in the inductive to universes in the evd *)
-  let u = snd pind in
+  match mip.mind_relevance with
+  | Sorts.Relevant ->
+     (* u is the universe instance that maps universe variables in the inductive to universes in the evd *)
+     let u = snd pind in
 
-  (* params_ctxt is the parameter context of the mutual inductive (including letins) *)
-  let param_ctxt = Inductive.inductive_paramdecls (mib,u) in
-  let params = Context.Rel.instance_list mkRel 0 param_ctxt in
-  (* indf is the inductive family with its parameters instanciated to the ones in params_ctxt *)
-  let ind_fam = Inductiveops.make_ind_family (pind, params) in
-  let n_indx = Inductiveops.inductive_nrealargs env (fst pind) in
-  let indx_ctxt, _ = Inductiveops.get_arity env ind_fam in
+     (* params_ctxt is the parameter context of the mutual inductive (including letins) *)
+     let param_ctxt = Inductive.inductive_paramdecls (mib,u) in
+     let params = Context.Rel.instance_list mkRel 0 param_ctxt in
+     (* indf is the inductive family with its parameters instanciated to the ones in params_ctxt *)
+     let ind_fam = Inductiveops.make_ind_family (pind, params) in
+     let n_indx = Inductiveops.inductive_nrealargs env (fst pind) in
+     let indx_ctxt, _ = Inductiveops.get_arity env ind_fam in
 
-  (* the full context contains parameters AND indices (also called "real arguments") *)
-  let full_ctxt = indx_ctxt @ param_ctxt in
-  let full_params = Context.Rel.instance_list mkRel n_indx param_ctxt in
-  (* full_indf is the same as indf, but weakened to the context full_ctxt *)
-  let full_ind_fam = Inductiveops.make_ind_family (pind, full_params) in
+     (* the full context contains parameters AND indices (also called "real arguments") *)
+     let full_ctxt = indx_ctxt @ param_ctxt in
+     let full_params = Context.Rel.instance_list mkRel n_indx param_ctxt in
+     (* full_indf is the same as indf, but weakened to the context full_ctxt *)
+     let full_ind_fam = Inductiveops.make_ind_family (pind, full_params) in
 
-  (* instanciating the inductive type in the full context *)
-  let indx = Context.Rel.instance_list EConstr.mkRel 0 indx_ctxt in
-  let ind_ty = Inductiveops.mkAppliedInd (Inductiveops.make_ind_type (full_ind_fam, indx)) in
-  (* getting the sort of the inductive type *)
-  let sort = get_sort_of_in_context env sigma full_ctxt ind_ty in
-  let s = EConstr.mkSort sort in
-  let s = EConstr.to_constr sigma s in
-  (* declaring a universe level for the inductive type, and a level for its sort *)
-  let sigma, _, u1 = univ_level_sup env sigma sort in
-  let sigma, u2 = univ_level_next sigma u1 in
-  let instanciated_ind = (EConstr.to_constr sigma ind_ty, s, u1, u2) in
+     (* instanciating the inductive type in the full context *)
+     let indx = Context.Rel.instance_list EConstr.mkRel 0 indx_ctxt in
+     let ind_ty = Inductiveops.mkAppliedInd (Inductiveops.make_ind_type (full_ind_fam, indx)) in
+     (* declaring a universe level for the inductive type, and a level for its sort *)
+     let sort = get_sort_of_in_context env sigma full_ctxt ind_ty in
+     let sigma, newsort, u1 = univ_level_sup env sigma sort in
+     let sigma, u2 = univ_level_next sigma u1 in
+     let s = EConstr.mkSort newsort in
+     let s = EConstr.to_constr sigma s in
+     let instanciated_ind = (EConstr.to_constr sigma ind_ty, s, u1, u2) in
 
-  (* declaring the observational equality axioms for every constructor *)
-  let ctors = Inductiveops.get_constructors env full_ind_fam in
-  let ctors_names = mip.mind_consnames in
-  for i = 0 to (Array.length ctors) - 1 do
-    declare_one_constructor_obs_eqs env sigma full_ctxt instanciated_ind ctors.(i) ctors_names.(i)
-  done
+     (* declaring the observational equality axioms for every constructor *)
+     let ctors = Inductiveops.get_constructors env full_ind_fam in
+     let ctors_names = mip.mind_consnames in
+     for i = 0 to (Array.length ctors) - 1 do
+       declare_one_constructor_obs_eqs env sigma full_ctxt instanciated_ind ctors.(i) ctors_names.(i)
+     done
+  | _ -> ()
 
 let declare_inductive_obs_eqs kn =
   let mib = Global.lookup_mind kn in
@@ -300,4 +304,3 @@ let declare_inductive_observational_data kn =
   declare_inductive_obs_eqs kn;
   declare_inductive_casts kn;
   declare_inductive_rewrite_rules kn
-  (** TODO : do not generate anything when the inductive is in Prop/SProp  *)
