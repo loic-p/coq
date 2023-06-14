@@ -69,6 +69,10 @@ let next_name = function
   | Anonymous -> Anonymous
   | Name x    -> Name (next_ident_away x Id.Set.empty)
 
+let get_sort_of_in_context env sigma ctxt ty =
+  let env = Environ.push_rel_context ctxt env in
+  Retyping.get_sort_of env sigma ty
+
 (* Duplicate all the entries in a context, and return a substitution from the duplicated context *)
 
 let duplicate_context ctx =
@@ -86,9 +90,14 @@ let duplicate_context ctx =
 
 let univ_level_sup env sigma s =
   let sigma, u1 = Evd.new_univ_level_variable Evd.univ_flexible sigma in
-  let s1 = EConstr.ESorts.make (Sorts.sort_of_univ (Univ.Universe.make u1)) in
+  let s1 =
+    if EConstr.ESorts.is_sprop sigma s then
+      s
+    else
+      EConstr.ESorts.make (Sorts.sort_of_univ (Univ.Universe.make u1))
+  in
   let sigma = Evd.set_leq_sort env sigma s s1 in
-  sigma, u1
+  sigma, s1, u1
 
 (* Adding a universe level to an evar map that is strictly greater than the level u *)
 
@@ -147,14 +156,14 @@ let declare_one_ctor_arg_obs_eq env name decl (sigma, ctxt, ren1, ren2, cnt) =
   | Context.Rel.Declaration.LocalAssum (na, ty) ->
      (* generating the type of the observational equality *)
      let ty = Context.Rel.Declaration.get_type decl in
-     let sort = Retyping.get_sort_of env sigma (EConstr.of_constr ty) in
-     let s = EConstr.mkSort sort in
-     let s = EConstr.to_constr sigma s in
      let ty1 = Vars.exliftn ren1 ty in
      let ty2 = Vars.exliftn ren2 ty in
+     let sort = get_sort_of_in_context env sigma ctxt (EConstr.of_constr ty1) in
      (* we declare new universe levels u1 and u2 to instanciate the polymorphic obseq constant *)
-     let sigma, u1 = univ_level_sup env sigma sort in
+     let sigma, newsort, u1 = univ_level_sup env sigma sort in
      let sigma, u2 = univ_level_next sigma u1 in
+     let s = EConstr.mkSort newsort in
+     let s = EConstr.to_constr sigma s in
      let eq_ty = make_obseq u2 s ty1 ty2 in
      (* generalizing it over the context to output a closed axiom *)
      let axiom = it_mkProd_or_LetIn_name env eq_ty ctxt in
@@ -165,10 +174,11 @@ let declare_one_ctor_arg_obs_eq env name decl (sigma, ctxt, ren1, ren2, cnt) =
      (* normalizing the universes in the evar map and in the body of the axiom *)
      let uctx = Evd.evar_universe_context sigma in
      let uctx = UState.minimize uctx in
-     let tm = UState.nf_universes uctx axiom in
+     let axiom = UState.nf_universes uctx axiom in
      (* declaring the axiom with its local universe context *)
      let univs = UState.univ_entry ~poly:true uctx in
-     let eq_name = !declare_observational_equality ~univs ~name tm in
+     let eq_name = !declare_observational_equality ~univs ~name axiom in
+     Feedback.msg_debug (str "Declaration was successful.") ;
 
      (* generating the instance of the equality axiom that we will use in make_cast *)
      (* first, we recover the universe instance that the definition was abstracted on *)
@@ -241,11 +251,11 @@ let declare_one_inductive_obs_eqs ind =
   let indx = Context.Rel.instance_list EConstr.mkRel 0 indx_ctxt in
   let ind_ty = Inductiveops.mkAppliedInd (Inductiveops.make_ind_type (full_ind_fam, indx)) in
   (* getting the sort of the inductive type *)
-  let sort = Retyping.get_sort_of env sigma ind_ty in
+  let sort = get_sort_of_in_context env sigma full_ctxt ind_ty in
   let s = EConstr.mkSort sort in
   let s = EConstr.to_constr sigma s in
   (* declaring a universe level for the inductive type, and a level for its sort *)
-  let sigma, u1 = univ_level_sup env sigma sort in
+  let sigma, _, u1 = univ_level_sup env sigma sort in
   let sigma, u2 = univ_level_next sigma u1 in
   let instanciated_ind = (EConstr.to_constr sigma ind_ty, s, u1, u2) in
 
