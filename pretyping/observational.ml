@@ -172,7 +172,10 @@ let declare_one_ctor_arg_obs_eq env name decl (sigma, ctxt, ren1, ren2, cnt) =
 
      (* generating a name for the axiom *)
      let name = Names.Id.of_string (name ^ string_of_int cnt) in
-     Feedback.msg_debug (str "We are trying to declare " ++ Constr.debug_print axiom) ; (* optional debug *)
+     Feedback.msg_debug (str "We are trying to declare "
+                         ++ str (Names.Id.to_string name)
+                         ++ str " whose type is "
+                         ++ Constr.debug_print axiom) ; (* optional debug *)
      (* normalizing the universes in the evar map and in the body of the axiom *)
      let uctx = Evd.evar_universe_context sigma in
      let uctx = UState.minimize uctx in
@@ -201,8 +204,16 @@ let declare_one_ctor_arg_obs_eq env name decl (sigma, ctxt, ren1, ren2, cnt) =
      let ren1 = Esubst.el_shft 1 (Esubst.el_liftn 2 ren1) in
      let ren2 = Esubst.el_liftn 1 (Esubst.el_shft 1 (Esubst.el_liftn 1 ren2)) in
      (sigma, ctxt, ren1, ren2, cnt + 1)
-  | Context.Rel.Declaration.LocalDef (na, tm, ty) ->
-     (** TODO *)
+  | Context.Rel.Declaration.LocalDef (na, tm, ty) as decl ->
+     (* we simply make two copies of the letin, with the correct renamings *)
+     let wk1 = Vars.exliftn (Esubst.el_shft 1 (Esubst.el_id)) in
+     let decl1 = Context.Rel.Declaration.map_constr (Vars.exliftn ren1) decl in
+     let ctxt = decl1::ctxt in
+     let decl2 = Context.Rel.Declaration.map_constr (Vars.exliftn ren2) decl in
+     let decl2 = Context.Rel.Declaration.map_constr wk1 decl2 in
+     let ctxt = decl2::ctxt in
+     let ren1 = Esubst.el_shft 1 (Esubst.el_liftn 2 ren1) in
+     let ren2 = Esubst.el_liftn 1 (Esubst.el_shft 1 (Esubst.el_liftn 1 ren2)) in
      (sigma, ctxt, ren1, ren2, cnt)
 
 let declare_one_constructor_obs_eqs env sigma ctxt ind ctor ctor_name =
