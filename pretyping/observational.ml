@@ -153,14 +153,32 @@ let make_cast u1 u2 ty1 ty2 eq tm =
 let declare_observational_equality = ref (fun ~univs ~name c ->
     CErrors.anomaly (Pp.str "observational axioms declarator not registered"))
 
+let wk1_tm = Vars.exliftn (Esubst.el_shft 1 (Esubst.el_id))
+
+let wkn n sigma = (Esubst.el_shft n (Esubst.el_liftn n sigma))
+
+(* weaken an entire context, lifting the substitution every time *)
+let wk1_context ctxt =
+  let aux = fun decl (ren, ctxt) ->
+    let decl = Context.Rel.Declaration.map_constr (Vars.exliftn ren) decl in
+    let wk = Esubst.el_lift ren in
+    (wk, decl::ctxt)
+  in
+  let _, ctxt = Context.Rel.fold_outside aux ctxt
+                  ~init:(wkn 1 (Esubst.el_id), Context.Rel.empty) in
+  ctxt
+
 let declare_one_ctor_arg_obs_eq env name decl (sigma, ctxt, ren1, ren2, cnt) =
   match decl with
   | Context.Rel.Declaration.LocalAssum (na, ty) ->
+     let (param_ctxt, arg_ctxt, arg0_ctxt) = ctxt in
+     let full_ctxt = arg0_ctxt @ (arg_ctxt @ param_ctxt) in
+     let n_args = List.length arg_ctxt in
      (* generating the type of the observational equality *)
      let ty = Context.Rel.Declaration.get_type decl in
-     let ty1 = Vars.exliftn ren1 ty in
-     let ty2 = Vars.exliftn ren2 ty in
-     let sort = get_sort_of_in_context env sigma ctxt (EConstr.of_constr ty1) in
+     let ty1 = Vars.exliftn (wkn n_args (Esubst.el_liftn n_args ren1)) ty in
+     let ty2 = Vars.exliftn (Esubst.el_liftn n_args (wkn n_args ren2)) ty in
+     let sort = get_sort_of_in_context env sigma full_ctxt (EConstr.of_constr ty1) in
      (* we declare new universe levels u1 and u2 to instanciate the polymorphic obseq constant *)
      let sigma, newsort, u1 = univ_level_sup env sigma sort in
      let sigma, u2 = univ_level_next sigma u1 in
@@ -168,14 +186,14 @@ let declare_one_ctor_arg_obs_eq env name decl (sigma, ctxt, ren1, ren2, cnt) =
      let s = EConstr.to_constr sigma s in
      let eq_ty = make_obseq u2 s ty1 ty2 in
      (* generalizing it over the context to output a closed axiom *)
-     let axiom = it_mkProd_or_LetIn_name env eq_ty ctxt in
+     let axiom = it_mkProd_or_LetIn_name env eq_ty full_ctxt in
 
      (* generating a name for the axiom *)
      let name = Names.Id.of_string (name ^ string_of_int cnt) in
-     Feedback.msg_debug (str "We are trying to declare "
-                         ++ str (Names.Id.to_string name)
-                         ++ str " whose type is "
-                         ++ Constr.debug_print axiom) ; (* optional debug *)
+     (* Feedback.msg_debug (str "We are trying to declare " *)
+     (*                     ++ str (Names.Id.to_string name) *)
+     (*                     ++ str " whose type is " *)
+     (*                     ++ Constr.debug_print axiom) ; (\* optional debug *\) *)
      (* normalizing the universes in the evar map and in the body of the axiom *)
      let uctx = Evd.evar_universe_context sigma in
      let uctx = UState.minimize uctx in
@@ -183,7 +201,7 @@ let declare_one_ctor_arg_obs_eq env name decl (sigma, ctxt, ren1, ren2, cnt) =
      (* declaring the axiom with its local universe context *)
      let univs = UState.univ_entry ~poly:true uctx in
      let eq_name = !declare_observational_equality ~univs ~name axiom in
-     Feedback.msg_debug (str "Declaration was successful.") ;
+     (* Feedback.msg_debug (str "Declaration was successful.") ; *)
 
      (* generating the instance of the equality axiom that we will use in make_cast *)
      (* first, we recover the universe instance that the definition was abstracted on *)
@@ -193,28 +211,33 @@ let declare_one_ctor_arg_obs_eq env name decl (sigma, ctxt, ren1, ren2, cnt) =
      in
      let eq_tm = Constr.mkConstU (eq_name, eq_univ_instance) in
      (* then we apply it to the whole context that we generalized on *)
-     let eq_args = Context.Rel.instance mkRel 0 ctxt in
+     let eq_args = Context.Rel.instance mkRel 0 full_ctxt in
      let eq_hyp = Constr.mkApp (eq_tm, eq_args) in
 
      (* preparing the context for the next axiom *)
-     let ctxt = (Context.Rel.Declaration.LocalAssum (na, ty1)) :: ctxt in
-     let wk1 = Vars.exliftn (Esubst.el_shft 1 (Esubst.el_id)) in
-     let cast_term = make_cast u1 u2 (wk1 ty1) (wk1 ty2) (wk1 eq_hyp) (mkRel 1) in
-     let ctxt = (Context.Rel.Declaration.LocalDef (na, cast_term, wk1 ty2)) :: ctxt in
-     let ren1 = Esubst.el_shft 1 (Esubst.el_liftn 2 ren1) in
-     let ren2 = Esubst.el_liftn 1 (Esubst.el_shft 1 (Esubst.el_liftn 1 ren2)) in
-     (sigma, ctxt, ren1, ren2, cnt + 1)
+     let newty = Vars.exliftn (Esubst.el_liftn n_args ren1) ty in
+     let arg_ctxt = (Context.Rel.Declaration.LocalAssum (na, newty)) :: arg_ctxt in
+     (* since we added a term in arg_ctxt, we must weaken everything in arg0_ctxt *)
+     let arg0_ctxt = wk1_context arg0_ctxt in
+     (* then we add the new cast term to arg0_ctxt *)
+     let ty1 = Vars.exliftn (wkn (n_args + 1) (Esubst.el_liftn n_args ren1)) ty in
+     let ty2 = Vars.exliftn (Esubst.el_liftn n_args (wkn (n_args + 1) ren2)) ty in
+     let cast_term = make_cast u1 u2 ty1 ty2 (wk1_tm eq_hyp) (mkRel (n_args + 1)) in
+     let arg0_ctxt = (Context.Rel.Declaration.LocalDef (na, cast_term, ty2)) :: arg0_ctxt in
+     (sigma, (param_ctxt, arg_ctxt, arg0_ctxt), ren1, ren2, cnt + 1)
   | Context.Rel.Declaration.LocalDef (na, tm, ty) as decl ->
+     let (param_ctxt, arg_ctxt, arg0_ctxt) = ctxt in
+     (* let full_ctxt = arg0_ctxt @ (arg_ctxt @ param_ctxt) in *)
+     let n_args = List.length arg_ctxt in
      (* we simply make two copies of the letin, with the correct renamings *)
-     let wk1 = Vars.exliftn (Esubst.el_shft 1 (Esubst.el_id)) in
-     let decl1 = Context.Rel.Declaration.map_constr (Vars.exliftn ren1) decl in
-     let ctxt = decl1::ctxt in
-     let decl2 = Context.Rel.Declaration.map_constr (Vars.exliftn ren2) decl in
-     let decl2 = Context.Rel.Declaration.map_constr wk1 decl2 in
-     let ctxt = decl2::ctxt in
-     let ren1 = Esubst.el_shft 1 (Esubst.el_liftn 2 ren1) in
-     let ren2 = Esubst.el_liftn 1 (Esubst.el_shft 1 (Esubst.el_liftn 1 ren2)) in
-     (sigma, ctxt, ren1, ren2, cnt)
+     let new_ren1 = (wkn n_args (Esubst.el_liftn n_args ren1)) in
+     let decl1 = Context.Rel.Declaration.map_constr (Vars.exliftn new_ren1) decl in
+     let arg_ctxt = decl1::arg_ctxt in
+     let arg0_ctxt = wk1_context arg0_ctxt in
+     let new_ren2 = (Esubst.el_liftn n_args (wkn (n_args + 1) ren2)) in
+     let decl2 = Context.Rel.Declaration.map_constr (Vars.exliftn new_ren2) decl in
+     let arg0_ctxt = decl2::arg0_ctxt in
+     (sigma, (param_ctxt, arg_ctxt, arg0_ctxt), ren1, ren2, cnt)
 
 let declare_one_constructor_obs_eqs env sigma ctxt ind ctor ctor_name =
   (* preparing the context of hypotheses for the axioms *)
@@ -232,8 +255,34 @@ let declare_one_constructor_obs_eqs env sigma ctxt ind ctor ctor_name =
   let ren1 = Esubst.el_shft 1 (Esubst.el_liftn 1 ren) in
   let ren2 = Esubst.el_shft 1 (Esubst.el_liftn 2 ren) in
 
-  let _ = Context.Rel.fold_outside (declare_one_ctor_arg_obs_eq env eq_name) args
-    ~init:(sigma, hyp_ctxt, ren1, ren2, 0) in
+  let new_ctxt = Context.Rel.fold_outside (declare_one_ctor_arg_obs_eq env eq_name) args
+    ~init:(sigma, (hyp_ctxt, Context.Rel.empty, Context.Rel.empty), ren1, ren2, 0) in
+  new_ctxt
+
+let declare_one_constructor_rew_rules env ctxt_info ind ctor ctor_name =
+  let sigma, (param_ctxt, arg_ctxt, arg0_ctxt), ren1, ren2, _ = ctxt_info in
+  let n_args = List.length arg_ctxt in
+
+  let (indty, s, u1, u2) = ind in
+  let indty1 = Vars.exliftn (wkn n_args ren1) indty in
+  let indty2 = Vars.exliftn (wkn n_args ren2) indty in
+  let eq_hyp = mkRel (List.length arg_ctxt + 1) in
+
+  let rew_name = "rewrite_" ^ Names.Id.to_string ctor_name in
+
+  let inst_ctor = Inductiveops.build_dependent_constructor ctor in
+  let inst_ctor_1 = Vars.exliftn (Esubst.el_liftn n_args ren1) inst_ctor in
+  let rew_left = make_cast u1 u2 indty1 indty2 eq_hyp inst_ctor_1 in
+  let inst_ctor_2 = Vars.exliftn (Esubst.el_liftn n_args (wkn n_args ren2)) inst_ctor in
+  let rew_right = it_mkLambda_or_LetIn_name env inst_ctor_2 arg0_ctxt in
+
+  Feedback.msg_debug (str "We are trying to declare "
+                      ++ Constr.debug_print rew_left
+                      ++ str " which should rewrite to "
+                      ++ Constr.debug_print rew_right) ;
+
+  (* let rew = make_rew u1 u2 indty2 rew_left rew_right in *)
+  (* declare_rew rew *)
   ()
 
 let declare_one_inductive_obs_eqs ind =
@@ -277,7 +326,8 @@ let declare_one_inductive_obs_eqs ind =
      let ctors = Inductiveops.get_constructors env full_ind_fam in
      let ctors_names = mip.mind_consnames in
      for i = 0 to (Array.length ctors) - 1 do
-       declare_one_constructor_obs_eqs env sigma full_ctxt instanciated_ind ctors.(i) ctors_names.(i)
+       let ctxt_info = declare_one_constructor_obs_eqs env sigma full_ctxt instanciated_ind ctors.(i) ctors_names.(i) in
+       declare_one_constructor_rew_rules env ctxt_info instanciated_ind ctors.(i) ctors_names.(i)
      done
   | _ -> ()
 
