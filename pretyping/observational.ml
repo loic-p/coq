@@ -115,13 +115,16 @@ let univ_level_next sigma u =
 
 let obseq_constant = ref None
 let cast_constant = ref None
+let prop_cast_constant = ref None
 
 let fetch_observational_data () =
   let obseq_qualid = Libnames.qualid_of_ident (Names.Id.of_string "obseq") in
   let cast_qualid = Libnames.qualid_of_ident (Names.Id.of_string "cast") in
+  let prop_cast_qualid = Libnames.qualid_of_ident (Names.Id.of_string "cast_prop") in
   try
     obseq_constant := Some (Nametab.locate_constant obseq_qualid) ;
     cast_constant := Some (Nametab.locate_constant cast_qualid) ;
+    prop_cast_constant := Some (Nametab.locate_constant prop_cast_qualid) ;
   with
     Not_found -> user_err Pp.(str "The observational equality or the cast operator does not exist.\
                                    Did you forget to open the observational library?")
@@ -139,14 +142,23 @@ let make_obseq u ty tm1 tm2 =
 
 (* Building a cast term *)
 
-let make_cast u1 u2 ty1 ty2 eq tm =
-  match !cast_constant with
-  | None ->
-     user_err Pp.(str "The cast operator does not exist. \
-                       Did you forget to open the observational library?")
-  | Some cast ->
-     let cast = Constr.mkConstU (cast, Univ.Instance.of_array [| u1 ; u2 |]) in
-     Constr.mkApp (cast, [| ty1 ; ty2 ; eq ; tm |])
+let make_cast ?(is_sprop = false) u1 u2 ty1 ty2 eq tm =
+  if is_sprop then
+    match !prop_cast_constant with
+    | None ->
+       user_err Pp.(str "The propositional cast operator does not exist. \
+                         Did you forget to open the observational library?")
+    | Some cast ->
+       let cast = Constr.mkConstU (cast, Univ.Instance.of_array [| u2 |]) in
+       Constr.mkApp (cast, [| ty1 ; ty2 ; eq ; tm |])
+  else
+    match !cast_constant with
+    | None ->
+       user_err Pp.(str "The cast operator does not exist. \
+                         Did you forget to open the observational library?")
+    | Some cast ->
+       let cast = Constr.mkConstU (cast, Univ.Instance.of_array [| u1 ; u2 |]) in
+       Constr.mkApp (cast, [| ty1 ; ty2 ; eq ; tm |])
 
 (* Building and declaring the observational equalities *)
 
@@ -179,6 +191,7 @@ let declare_one_ctor_arg_obs_eq env name decl (sigma, ctxt, ren1, ren2, cnt) =
      let ty1 = Vars.exliftn (wkn n_args (Esubst.el_liftn n_args ren1)) ty in
      let ty2 = Vars.exliftn (Esubst.el_liftn n_args (wkn n_args ren2)) ty in
      let sort = get_sort_of_in_context env sigma full_ctxt (EConstr.of_constr ty1) in
+     let is_sprop = EConstr.ESorts.is_sprop sigma sort in
      (* we declare new universe levels u1 and u2 to instanciate the polymorphic obseq constant *)
      let sigma, newsort, u1 = univ_level_sup env sigma sort in
      let sigma, u2 = univ_level_next sigma u1 in
@@ -222,7 +235,7 @@ let declare_one_ctor_arg_obs_eq env name decl (sigma, ctxt, ren1, ren2, cnt) =
      (* then we add the new cast term to arg0_ctxt *)
      let ty1 = Vars.exliftn (wkn (n_args + 1) (Esubst.el_liftn n_args ren1)) ty in
      let ty2 = Vars.exliftn (Esubst.el_liftn n_args (wkn (n_args + 1) ren2)) ty in
-     let cast_term = make_cast u1 u2 ty1 ty2 (wk1_tm eq_hyp) (mkRel (n_args + 1)) in
+     let cast_term = make_cast ~is_sprop u1 u2 ty1 ty2 (wk1_tm eq_hyp) (mkRel (n_args + 1)) in
      let arg0_ctxt = (Context.Rel.Declaration.LocalDef (na, cast_term, ty2)) :: arg0_ctxt in
      (sigma, (param_ctxt, arg_ctxt, arg0_ctxt), ren1, ren2, cnt + 1)
   | Context.Rel.Declaration.LocalDef (na, tm, ty) as decl ->
