@@ -116,15 +116,18 @@ let univ_level_next sigma u =
 let obseq_constant = ref None
 let cast_constant = ref None
 let prop_cast_constant = ref None
+let rewrite_rule_inductive = ref None
 
 let fetch_observational_data () =
   let obseq_qualid = Libnames.qualid_of_ident (Names.Id.of_string "obseq") in
   let cast_qualid = Libnames.qualid_of_ident (Names.Id.of_string "cast") in
   let prop_cast_qualid = Libnames.qualid_of_ident (Names.Id.of_string "cast_prop") in
+  let rewrite_rule_qualid = Libnames.qualid_of_ident (Names.Id.of_string "rewrite") in
   try
     obseq_constant := Some (Nametab.locate_constant obseq_qualid) ;
     cast_constant := Some (Nametab.locate_constant cast_qualid) ;
     prop_cast_constant := Some (Nametab.locate_constant prop_cast_qualid) ;
+    rewrite_rule_inductive := Some (Nametab.global_inductive rewrite_rule_qualid) ;
   with
     Not_found -> user_err Pp.(str "The observational equality or the cast operator does not exist.\
                                    Did you forget to open the observational library?")
@@ -133,9 +136,7 @@ let fetch_observational_data () =
 
 let make_obseq u ty tm1 tm2 =
   match !obseq_constant with
-  | None ->
-     user_err Pp.(str "The observational equality does not exist. \
-                       Did you forget to open the observational library?")
+  | None -> user_err Pp.(str "The observational equality does not exist.")
   | Some obseq ->
      let obseq = Constr.mkConstU (obseq, Univ.Instance.of_array [| u |]) in
      Constr.mkApp (obseq, [| ty ; tm1 ; tm2 |])
@@ -145,20 +146,31 @@ let make_obseq u ty tm1 tm2 =
 let make_cast ?(is_sprop = false) u1 u2 ty1 ty2 eq tm =
   if is_sprop then
     match !prop_cast_constant with
-    | None ->
-       user_err Pp.(str "The propositional cast operator does not exist. \
-                         Did you forget to open the observational library?")
+    | None -> user_err Pp.(str "The propositional cast operator does not exist.")
     | Some cast ->
        let cast = Constr.mkConstU (cast, Univ.Instance.of_array [| u2 |]) in
        Constr.mkApp (cast, [| ty1 ; ty2 ; eq ; tm |])
   else
     match !cast_constant with
-    | None ->
-       user_err Pp.(str "The cast operator does not exist. \
-                         Did you forget to open the observational library?")
+    | None -> user_err Pp.(str "The cast operator does not exist.")
     | Some cast ->
        let cast = Constr.mkConstU (cast, Univ.Instance.of_array [| u1 ; u2 |]) in
        Constr.mkApp (cast, [| ty1 ; ty2 ; eq ; tm |])
+
+(* Building a rewrite rule *)
+
+let make_rewrite_rule env sigma u1 u2 ty tm1 tm2 =
+  match !rewrite_rule_inductive with
+  | None -> user_err Pp.(str "The rewrite rule inductive does not exist.")
+  | Some ind ->
+     let pind = (ind, Univ.Instance.of_array [| u1 ; u2 |]) in
+     let params = [ty ; tm1 ; tm2] in
+     let ind_fam = Inductiveops.make_ind_family (pind, params) in
+     let ctors = Inductiveops.get_constructors env ind_fam in
+     let inst_ctor = Inductiveops.build_dependent_constructor ctors.(0) in
+     let ind_ty = Inductiveops.mkAppliedInd (Inductiveops.make_ind_type (ind_fam, [])) in
+     let ind_ty = EConstr.to_constr sigma ind_ty in
+     (inst_ctor, ind_ty)
 
 (* Building and declaring the observational equalities *)
 
@@ -281,20 +293,21 @@ let declare_one_constructor_rew_rules env ctxt_info ind ctor ctor_name =
   let indty2 = Vars.exliftn (wkn n_args ren2) indty in
   let eq_hyp = mkRel (List.length arg_ctxt + 1) in
 
-  let rew_name = "rewrite_" ^ Names.Id.to_string ctor_name in
-
   let inst_ctor = Inductiveops.build_dependent_constructor ctor in
   let inst_ctor_1 = Vars.exliftn (Esubst.el_liftn n_args ren1) inst_ctor in
   let rew_left = make_cast u1 u2 indty1 indty2 eq_hyp inst_ctor_1 in
   let inst_ctor_2 = Vars.exliftn (Esubst.el_liftn n_args (wkn n_args ren2)) inst_ctor in
   let rew_right = it_mkLambda_or_LetIn_name env inst_ctor_2 arg0_ctxt in
 
-  Feedback.msg_debug (str "We are trying to declare "
-                      ++ Constr.debug_print rew_left
-                      ++ str " which should rewrite to "
-                      ++ Constr.debug_print rew_right) ;
+  let rew_name = "rewrite_" ^ Names.Id.to_string ctor_name in
+  let (rew_tm, rew_ty) = make_rewrite_rule env sigma u1 u2 indty2 rew_left rew_right in
+  let rule_tm = it_mkLambda_or_LetIn_name env rew_tm (arg_ctxt @ param_ctxt) in
+  let rule_ty = it_mkProd_or_LetIn_name env rew_ty (arg_ctxt @ param_ctxt) in
 
-  (* let rew = make_rew u1 u2 indty2 rew_left rew_right in *)
+  Feedback.msg_debug (str "We are trying to declare the rewrite rule "
+                      ++ Constr.debug_print rule_tm
+                      ++ str " with type "
+                      ++ Constr.debug_print rule_ty) ;
   (* declare_rew rew *)
   ()
 
