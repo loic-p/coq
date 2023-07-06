@@ -673,6 +673,13 @@ let declare_observational_equality ~univs ~name c =
   let () = definition_message name in
   kn
 
+let declare_observational_rewrite ~univs ~name c types =
+  let kind = Decls.(IsDefinition Definition) in
+  let entry = DefinitionEntry (definition_entry ~univs ~types c) in
+  let kn = declare_constant ~name ~kind ~typing_flags:None entry in
+  let () = definition_message name in
+  kn
+
 (* Locality stuff *)
 let declare_entry_core ~name ?(scope=Locality.default_scope) ~kind ~typing_flags ?hook ~obls ~impargs ~uctx entry =
   let should_suggest =
@@ -2195,6 +2202,7 @@ end (* Proof module *)
 let _ = Ind_tables.declare_definition_scheme := declare_definition_scheme
 let _ = Abstract.declare_abstract := Proof.declare_abstract
 let _ = Observational.declare_observational_equality := declare_observational_equality
+let _ = Observational.declare_observational_rewrite := declare_observational_rewrite
 
 let build_by_tactic = Proof.build_by_tactic
 

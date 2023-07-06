@@ -134,10 +134,11 @@ let fetch_observational_data () =
 
 (* Building an observational equality term *)
 
-let make_obseq u ty tm1 tm2 =
+let make_obseq ?(is_sprop = false) sigma u ty tm1 tm2 =
   match !obseq_constant with
   | None -> user_err Pp.(str "The observational equality does not exist.")
   | Some obseq ->
+     let ty = if is_sprop then EConstr.(to_constr sigma (mkSort (ESorts.make Sorts.sprop))) else ty in
      let obseq = Constr.mkConstU (obseq, Univ.Instance.of_array [| u |]) in
      Constr.mkApp (obseq, [| ty ; tm1 ; tm2 |])
 
@@ -177,6 +178,9 @@ let make_rewrite_rule env sigma u1 u2 ty tm1 tm2 =
 let declare_observational_equality = ref (fun ~univs ~name c ->
     CErrors.anomaly (Pp.str "observational axioms declarator not registered"))
 
+let declare_observational_rewrite = ref (fun ~univs ~name c d ->
+    CErrors.anomaly (Pp.str "observational axioms declarator not registered"))
+
 let wk1_tm = Vars.exliftn (Esubst.el_shft 1 (Esubst.el_id))
 
 let wkn n sigma = (Esubst.el_shft n (Esubst.el_liftn n sigma))
@@ -192,7 +196,7 @@ let wk1_context ctxt =
                   ~init:(wkn 1 (Esubst.el_id), Context.Rel.empty) in
   ctxt
 
-let declare_one_ctor_arg_obs_eq env name decl (sigma, ctxt, ren1, ren2, cnt) =
+let declare_one_ctor_arg_obs_eq env uinfo name decl (sigma, ctxt, ren1, ren2, cnt) =
   match decl with
   | Context.Rel.Declaration.LocalAssum (na, ty) ->
      let (param_ctxt, arg_ctxt, arg0_ctxt) = ctxt in
@@ -205,11 +209,13 @@ let declare_one_ctor_arg_obs_eq env name decl (sigma, ctxt, ren1, ren2, cnt) =
      let sort = get_sort_of_in_context env sigma full_ctxt (EConstr.of_constr ty1) in
      let is_sprop = EConstr.ESorts.is_sprop sigma sort in
      (* we declare new universe levels u1 and u2 to instanciate the polymorphic obseq constant *)
-     let sigma, newsort, u1 = univ_level_sup env sigma sort in
-     let sigma, u2 = univ_level_next sigma u1 in
-     let s = EConstr.mkSort newsort in
-     let s = EConstr.to_constr sigma s in
-     let eq_ty = make_obseq u2 s ty1 ty2 in
+       (** TODO: I changed it to re-use the levels from the inductive. Make sure that it's safe!! *)
+       (* let sigma, newsort, u1 = univ_level_sup env sigma sort in *)
+       (* let sigma, u2 = univ_level_next sigma u1 in *)
+       (* let s = EConstr.mkSort newsort in *)
+       (* let s = EConstr.to_constr sigma s in *)
+     let u1, u2, s = uinfo in
+     let eq_ty = make_obseq ~is_sprop sigma u2 s ty1 ty2 in
      (* generalizing it over the context to output a closed axiom *)
      let axiom = it_mkProd_or_LetIn_name env eq_ty full_ctxt in
 
@@ -271,7 +277,7 @@ let declare_one_constructor_obs_eqs env sigma ctxt ind ctor ctor_name =
   let (indty, s, u1, u2) = ind in
   let indty1 = Vars.exliftn ren indty in
   let indty2 = Vars.exliftn (Esubst.el_liftn 1 ren) indty in
-  let eq_hyp = make_obseq u2 s indty1 indty2 in
+  let eq_hyp = make_obseq sigma u2 s indty1 indty2 in
   let eq_annot = Context.make_annot (Names.Name.mk_name (Names.Id.of_string "e")) Sorts.Irrelevant in
   let hyp_ctxt = (Context.Rel.Declaration.LocalAssum (eq_annot, eq_hyp))::dup_ctxt in
 
@@ -280,7 +286,9 @@ let declare_one_constructor_obs_eqs env sigma ctxt ind ctor ctor_name =
   let ren1 = Esubst.el_shft 1 (Esubst.el_liftn 1 ren) in
   let ren2 = Esubst.el_shft 1 (Esubst.el_liftn 2 ren) in
 
-  let new_ctxt = Context.Rel.fold_outside (declare_one_ctor_arg_obs_eq env eq_name) args
+  let uinfo = (u1, u2, s) in
+
+  let new_ctxt = Context.Rel.fold_outside (declare_one_ctor_arg_obs_eq env uinfo eq_name) args
     ~init:(sigma, (hyp_ctxt, Context.Rel.empty, Context.Rel.empty), ren1, ren2, 0) in
   new_ctxt
 
@@ -299,17 +307,24 @@ let declare_one_constructor_rew_rules env ctxt_info ind ctor ctor_name =
   let inst_ctor_2 = Vars.exliftn (Esubst.el_liftn n_args (wkn n_args ren2)) inst_ctor in
   let rew_right = it_mkLambda_or_LetIn_name env inst_ctor_2 arg0_ctxt in
 
-  let rew_name = "rewrite_" ^ Names.Id.to_string ctor_name in
+  let name = Names.Id.of_string ("rewrite_" ^ Names.Id.to_string ctor_name) in
   let (rew_tm, rew_ty) = make_rewrite_rule env sigma u1 u2 indty2 rew_left rew_right in
   let rule_tm = it_mkLambda_or_LetIn_name env rew_tm (arg_ctxt @ param_ctxt) in
   let rule_ty = it_mkProd_or_LetIn_name env rew_ty (arg_ctxt @ param_ctxt) in
 
-  Feedback.msg_debug (str "We are trying to declare the rewrite rule "
-                      ++ Constr.debug_print rule_tm
-                      ++ str " with type "
-                      ++ Constr.debug_print rule_ty) ;
-  (* declare_rew rew *)
-  ()
+  (* Feedback.msg_debug (str "We are trying to declare the rewrite rule " *)
+  (*                     ++ Constr.debug_print rule_tm *)
+  (*                     ++ str " with type " *)
+  (*                     ++ Constr.debug_print rule_ty) ; *)
+
+  let uctx = Evd.evar_universe_context sigma in
+  let uctx = UState.minimize uctx in
+  let rule_tm = UState.nf_universes uctx rule_tm in
+  let rule_ty = UState.nf_universes uctx rule_ty in
+  (* declaring the axiom with its local universe context *)
+  let univs = UState.univ_entry ~poly:true uctx in
+  let kn = !declare_observational_rewrite ~univs ~name rule_tm rule_ty in
+  Global.add_rewrite_rule kn
 
 let declare_one_inductive_obs_eqs ind =
   let env = Global.env () in
