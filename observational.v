@@ -15,7 +15,7 @@ Notation "a ~ b" := (obseq _ a b) (at level 50).
 Parameter obseq_refl : forall {A : Type} (a : A), a ~ a.
 Parameter obseq_transp : forall {A : Type} (P : A -> SProp) (a : A) (t : P a) (b : A) (e : a ~ b), P b.
 
-Definition obseq_J {A : Type} (a : A) (P : forall (b : A), a ~ b -> SProp) (t : P a (obseq_refl a)) (b : A) (e : a ~ b) : P b e :=
+Definition obseq_J {A : Type} (a : A) (P : forall b : A, a ~ b -> SProp) (t : P a (obseq_refl a)) (b : A) (e : a ~ b) : P b e :=
   obseq_transp (fun X => forall (e : a ~ X), P X e) a (fun _ => t) b e e.
 
 Definition obseq_trans {A : Type} {a b c : A} (e : a ~ b) (e' : b ~ c) : a ~ c :=
@@ -25,10 +25,10 @@ Notation "e ** f" := (obseq_trans e f) (at level 50, left associativity, only pa
 (* Type casting *)
 
 Symbol cast@{u v} : forall (A B : Type@{u}), obseq@{v} Type@{u} A B -> A -> B.
-Notation "a # e" := (cast _ _ e a) (at level 40, only parsing).
+Notation "e # a" := (cast _ _ e a) (at level 40, only parsing).
 
 Definition cast_prop (A B : SProp) (e : A ~ B) (a : A) := obseq_transp (fun X => X) A a B e.
-Notation "a #% e" := (cast_prop _ _ e a) (at level 40, only parsing).
+Notation "e #% a" := (cast_prop _ _ e a) (at level 40, only parsing).
 
 Definition cast_conv := [A t e] |- cast A A e t ==> t.
 Rewrite Rule cast_conv.
@@ -37,18 +37,28 @@ Rewrite Rule cast_conv.
 
 Parameter seq_forall_1 : forall {A A' B B'}, (forall (x : A), B x) ~ (forall (x : A'), B' x) -> A' ~ A.
 Parameter seq_forall_2 : forall {A A' B B'} (e : (forall (x : A), B x) ~ (forall (x : A'), B' x)) (x : A'),
-    B (x # (seq_forall_1 e)) ~ B' x.
+    B (seq_forall_1 e # x) ~ B' x.
 
-Parameter funext : forall {A B} (f g : forall (x : A), B x), (forall (x : A), (f x) ~ (g x)) -> f ~ g.
+Parameter funext : forall {A B} (f g : forall (x : A), B x), forall (x : A), f x ~ g x -> f ~ g.
 
-Definition cast_pi@{u u' v} : (* sort of ugly with all the universes. I think the lazy version works just as well *)
-  forall (A : Type@{u}) (B : A -> Type@{u}) (A' : Type@{u}) (B' : A' -> Type@{u})
-         (e : obseq@{u'} Type@{u} (forall (x : A), B x) (forall (x : A'), B' x)) f,
+(*
+Definition cast_pi : 
+  forall (A : Type) (B : A -> Type) (A' : Type) (B' : A' -> Type)
+    (e : (forall (x : A), B x) ~ (forall (x : A'), B' x)) f,
+    rewrite (f # e)
+                  (fun (x : A') => f (x # (seq_forall_1 e)) # (seq_forall_2 e x))
+  := [A B A' B' e f] |- (cast (forall (x : A), B x) (forall (x : A'), B' x) e f)
+                          ==> (fun (x : A') => (f (x # (seq_forall_1 e))) # (seq_forall_2 e x)).
+*)
+
+
+Definition cast_pi@{u u' v} (A : Type@{u}) (B : A -> Type@{u}) (A' : Type@{u}) (B' : A' -> Type@{u})
+         (e : obseq@{u'} Type@{u} (forall (x : A), B x) (forall (x : A'), B' x)) f :
     rewrite@{u v} (cast@{u u'} (forall (x : A), B x) (forall (x : A'), B' x) e f)
                   (fun (x : A') => cast@{u u'} _ _ (seq_forall_2@{u u u u u u' u u' u'} e x)
                                                    (f (cast@{u u'} A' A (seq_forall_1@{u' u u u u u u'} e) x)))
-  := [A B A' B' e f] |- (cast (forall (x : A), B x) (forall (x : A'), B' x) e f)
-                          ==> (fun (x : A') => (f (x # (seq_forall_1 e))) # (seq_forall_2 e x)).
+  := cast (forall (x : A), B x) (forall (x : A'), B' x) e f
+     ==> fun (x : A') => seq_forall_2 e x # f (seq_forall_1 e # x).
 Rewrite Rule cast_pi.
 
 (** axioms for the observational equality on strict propositions *)
