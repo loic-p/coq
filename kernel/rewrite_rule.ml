@@ -96,13 +96,13 @@ let update_invtblu1 lvl curvaru tbl =
   succ curvaru, tbl |> Int.Map.update lvl @@ function
     | None -> Some curvaru
     | Some k as c when k = curvaru -> c
-    | Some k ->
-        CErrors.user_err
-          Pp.(str "Universe variable "
-            ++ Univ.Level.(pr (var lvl))
-            ++ str" already taken for hole " ++ int k
-            ++ str" but used here for hole " ++ int curvaru
-            ++ str".")
+    | Some k as c -> c          (** FIXME *)
+        (* CErrors.user_err *)
+        (*   Pp.(str "Universe variable " *)
+        (*     ++ Univ.Level.(pr (var lvl)) *)
+        (*     ++ str" already taken for hole " ++ int k *)
+        (*     ++ str" but used here for hole " ++ int curvaru *)
+        (*     ++ str".") *)
 
 let update_invtblu (state, stateu) u =
   let u = Univ.Instance.to_array u in
@@ -274,10 +274,10 @@ let rule_of_constant env c =
   let usubst = Univ.Instance.of_array (Array.init nvarus (fun i -> Univ.Level.var (Option.default i (Int.Map.find_opt i invtblu)))) in
   Format.print_flush ();
   (* debugging *)
-  Pp.(Feedback.msg_info (str "Equation successfully added.\nThere are " ++ int seen_vars ++ str" holes and "
-                         ++ int nvars ++ str" variables."
-                         ++ str "\nRight side after renaming of the holes: "
-                         ++ Constr.debug_print (rename (0, invtbl) (Vars.subst_instance_constr usubst rhs))
-                         ++ str "\nThe equations on holes are as follows: "
-                         ++ debug_string_of_equations lhs_eqs)) ;
+  (* Pp.(Feedback.msg_info (str "Equation successfully added.\nThere are " ++ int seen_vars ++ str" holes and " *)
+  (*                        ++ int nvars ++ str" variables." *)
+  (*                        ++ str "\nRight side after renaming of the holes: " *)
+  (*                        ++ Constr.debug_print (rename (0, invtbl) (Vars.subst_instance_constr usubst rhs)) *)
+  (*                        ++ str "\nThe equations on holes are as follows: " *)
+  (*                        ++ debug_string_of_equations lhs_eqs)) ; *)
   head_constant lhs_pat, { lhs_pat = lhs_pat; lhs_eqs = lhs_eqs; rhs = rename (0, invtbl) (Vars.subst_instance_constr usubst rhs); }
