@@ -96,7 +96,7 @@ let update_invtblu1 lvl curvaru tbl =
   succ curvaru, tbl |> Int.Map.update lvl @@ function
     | None -> Some curvaru
     | Some k as c when k = curvaru -> c
-    | Some k as c -> c          (** FIXME *)
+    | Some _ as c -> c          (** FIXME *)
         (* CErrors.user_err *)
         (*   Pp.(str "Universe variable " *)
         (*     ++ Univ.Level.(pr (var lvl)) *)
@@ -238,11 +238,13 @@ let rec rename eltbl c =
     if Int.equal i j then c else mkRel j
   | _ -> map_with_binders (on_fst succ) rename eltbl c
 
-let debug_string_of_equations eqs =
+(*
+ let debug_string_of_equations eqs =
   if Int.Map.is_empty eqs then
     Pp.str "None."
   else
     Int.Map.fold (fun lhs rhs s -> Pp.(str"(" ++ int lhs ++ str" = " ++ int rhs ++ str") " ++ s)) eqs (Pp.str "")
+    *)
 
 let rule_of_constant env c =
   let cb = Environ.lookup_constant c env in

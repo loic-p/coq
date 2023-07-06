@@ -52,7 +52,7 @@ help:
 	@echo "  Note: these targets produce a developer build, not suitable"
 	@echo "        for distribution to end-users or install"
 	@echo ""
-	@echo " To run an \$$app \\in {coqc,coqtop,coqbyte,coqide}:"
+	@echo " To run an \$$app \\in {coqc,coqtop,coqbyte}:"
 	@echo ""
 	@echo "  - use 'dune exec -- dev/shim/\$$app args'"
 	@echo "    Example: 'dune exec -- dev/shim/coqc file.v'"
@@ -138,7 +138,7 @@ dunestrap: $(DUNE_FILES)
 states: dunestrap
 	dune build $(DUNEOPT) dev/shim/coqtop
 
-NONDOC_INSTALL_TARGETS:=coq-core.install coq-stdlib.install coqide-server.install coqide.install coq.install
+NONDOC_INSTALL_TARGETS:=coq-core.install coq-stdlib.install coq.install
 
 world: dunestrap
 	dune build $(DUNEOPT) $(NONDOC_INSTALL_TARGETS)

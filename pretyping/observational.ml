@@ -18,19 +18,12 @@ open Pp
 open CErrors
 open Util
 open Names
-open Libnames
-open Nameops
 open Term
 open Constr
-open Context
-open Vars
 open Namegen
 open Declarations
-open Declareops
-open Inductive
 open Inductiveops
 open Environ
-open Reductionops
 open Context.Rel.Declaration
 
 (* useful for testing *)
@@ -44,15 +37,15 @@ open Context.Rel.Declaration
 let ident_hd env ids t na =
   let na = named_hd env (Evd.from_env env) (EConstr.of_constr t) na in
   next_name_away na ids
-let named_hd env t na = Name (ident_hd env Id.Set.empty t na)
+(*let named_hd env t na = Name (ident_hd env Id.Set.empty t na)
 let name_assumption env = function
 | LocalAssum (na,t) -> LocalAssum (map_annot (named_hd env t) na, t)
 | LocalDef (na,c,t) -> LocalDef (map_annot (named_hd env c) na, c, t)
-
-let mkLambda_or_LetIn_name env d b = mkLambda_or_LetIn (name_assumption env d) b
+*)
+(*let mkLambda_or_LetIn_name env d b = mkLambda_or_LetIn (name_assumption env d) b
 let mkProd_or_LetIn_name env d b = mkProd_or_LetIn (name_assumption env d) b
 let mkLambda_name env (n,a,b) = mkLambda_or_LetIn_name env (LocalAssum (n,a)) b
-let mkProd_name env (n,a,b) = mkProd_or_LetIn_name env (LocalAssum (n,a)) b
+let mkProd_name env (n,a,b) = mkProd_or_LetIn_name env (LocalAssum (n,a)) b*)
 
 let set_names env_for_named_hd env_for_next_ident_away l =
   let ids = Id.Set.of_list (Termops.ids_of_rel_context (rel_context env_for_next_ident_away)) in
@@ -61,9 +54,9 @@ let set_names env_for_named_hd env_for_next_ident_away l =
 let it_mkLambda_or_LetIn_name env b l = it_mkLambda_or_LetIn b (set_names env env l)
 let it_mkProd_or_LetIn_name env b l = it_mkProd_or_LetIn b (set_names env env l)
 
-let make_prod_dep dep env = if dep then mkProd_name env else mkProd
+(*let make_prod_dep dep env = if dep then mkProd_name env else mkProd
 let make_name env s r =
-  make_annot (Name (next_ident_away (Id.of_string s) (Id.Set.of_list (Termops.ids_of_rel_context (rel_context env))))) r
+  make_annot (Name (next_ident_away (Id.of_string s) (Id.Set.of_list (Termops.ids_of_rel_context (rel_context env))))) r *)
 
 let next_name = function
   | Anonymous -> Anonymous
@@ -209,11 +202,11 @@ let declare_one_ctor_arg_obs_eq env uinfo name decl (sigma, ctxt, ren1, ren2, cn
      let sort = get_sort_of_in_context env sigma full_ctxt (EConstr.of_constr ty1) in
      let is_sprop = EConstr.ESorts.is_sprop sigma sort in
      (* we declare new universe levels u1 and u2 to instanciate the polymorphic obseq constant *)
-       (** TODO: I changed it to re-use the levels from the inductive. Make sure that it's safe!! *)
-       (* let sigma, newsort, u1 = univ_level_sup env sigma sort in *)
-       (* let sigma, u2 = univ_level_next sigma u1 in *)
-       (* let s = EConstr.mkSort newsort in *)
-       (* let s = EConstr.to_constr sigma s in *)
+     (* TODO: I changed it to re-use the levels from the inductive. Make sure that it's safe!! *)
+     (* let sigma, newsort, u1 = univ_level_sup env sigma sort in *)
+     (* let sigma, u2 = univ_level_next sigma u1 in *)
+     (* let s = EConstr.mkSort newsort in *)
+     (* let s = EConstr.to_constr sigma s in *)
      let u1, u2, s = uinfo in
      let eq_ty = make_obseq ~is_sprop sigma u2 s ty1 ty2 in
      (* generalizing it over the context to output a closed axiom *)

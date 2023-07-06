@@ -10,8 +10,6 @@
 
 open Names
 open Constr
-open Environ
-open Evd
 
 (** From an inductive type, generates a list of observational equalities
     that *)

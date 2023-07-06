@@ -680,13 +680,6 @@ and comp_subs (el,u) (s,u') =
    reallocation. *)
 let term_of_fconstr c = to_constr (el_id, Univ.Instance.empty) c
 
-let debug_print x = Flags.with_option Flags.in_debugger (fun x -> Constr.debug_print (term_of_fconstr x)) x
-
-let rec debug_print_subst = function
-  | [] -> Pp.str "(Empty substitution)"
-  | hd::[] -> Pp.(str "\n- " ++ debug_print hd)
-  | hd::tl -> Pp.(str "\n- " ++ debug_print hd ++ debug_print_subst tl)
-
 (* fstrong applies unfreeze_fun recursively on the (freeze) term and
  * yields a term.  Assumes that the unfreeze_fun never returns a
  * FCLOS term.
