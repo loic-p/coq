@@ -10,10 +10,10 @@ Notation "[ x .. y ] |- t" :=
 
 (* Postulating the observational equality *)
 
-Axiom obseq@{u} : forall (A : Type@{u}) (a b : A), SProp.
+Parameter obseq@{u} : forall (A : Type@{u}) (a b : A), SProp.
 Notation "a ~ b" := (obseq _ a b) (at level 50).
-Axiom obseq_refl : forall {A : Type} (a : A), a ~ a.
-Axiom obseq_transp : forall {A : Type} (P : A -> SProp) (a : A) (t : P a) (b : A) (e : a ~ b), P b.
+Parameter obseq_refl : forall {A : Type} (a : A), a ~ a.
+Parameter obseq_transp : forall {A : Type} (P : A -> SProp) (a : A) (t : P a) (b : A) (e : a ~ b), P b.
 
 Definition obseq_J {A : Type} (a : A) (P : forall (b : A), a ~ b -> SProp) (t : P a (obseq_refl a)) (b : A) (e : a ~ b) : P b e :=
   obseq_transp (fun X => forall (e : a ~ X), P X e) a (fun _ => t) b e e.
@@ -35,11 +35,11 @@ Rewrite Rule cast_conv.
 
 (** axioms for the observational equality on pi's *)
 
-Axiom seq_forall_1 : forall {A A' B B'}, (forall (x : A), B x) ~ (forall (x : A'), B' x) -> A' ~ A.
-Axiom seq_forall_2 : forall {A A' B B'} (e : (forall (x : A), B x) ~ (forall (x : A'), B' x)) (x : A'),
+Parameter seq_forall_1 : forall {A A' B B'}, (forall (x : A), B x) ~ (forall (x : A'), B' x) -> A' ~ A.
+Parameter seq_forall_2 : forall {A A' B B'} (e : (forall (x : A), B x) ~ (forall (x : A'), B' x)) (x : A'),
     B (x # (seq_forall_1 e)) ~ B' x.
 
-Axiom funext : forall {A B} (f g : forall (x : A), B x), (forall (x : A), (f x) ~ (g x)) -> f ~ g.
+Parameter funext : forall {A B} (f g : forall (x : A), B x), (forall (x : A), (f x) ~ (g x)) -> f ~ g.
 
 Definition cast_pi@{u u' v} : (* sort of ugly with all the universes. I think the lazy version works just as well *)
   forall (A : Type@{u}) (B : A -> Type@{u}) (A' : Type@{u}) (B' : A' -> Type@{u})
@@ -53,7 +53,7 @@ Rewrite Rule cast_pi.
 
 (** axioms for the observational equality on strict propositions *)
 
-Axiom propext : forall {A B : SProp}, (A -> B) -> (B -> A) -> A ~ B.
+Parameter propext : forall {A B : SProp}, (A -> B) -> (B -> A) -> A ~ B.
 
 (** Some tests *)
 
@@ -72,16 +72,21 @@ Eval lazy in (cast (A -> C) (A -> C) (obseq_refl _) f).
 
 Set Observational Inductives.
 
-(* declaring the inductive adds axioms for equality and rewrite rules for cast *)
+(* Declaring an inductive automaticall adds equalities and rewrite rules for cast *)
 Inductive list (A : Type) : Type :=
 | nil : list A
 | cons : forall (a : A) (l : list A), list A.
 
-(* Some tests *)
+(* The following equality has been defined *)
+Print obseq_cons_0.
 
+(* The following rewrite rules have been defined *)
+Print rewrite_nil.
+Print rewrite_cons.
+
+(* Casting a singleton list *)
 Axiom obseq_list : list A ~ list B.
 Axiom a : A.
-Print obseq_cons_0.
 Eval lazy in (cast (list A) (list B) obseq_list (cons A a (nil A))).
 
 (* forded vectors *)
@@ -89,14 +94,20 @@ Inductive vect (A : Type) (n : nat) : Type :=
 | vnil : obseq nat n 0 -> vect A n
 | vcons : forall (a : A) (m : nat) (v : vect A m), obseq nat n (m + 1) -> vect A n.
 
+(* equalities for vectors *)
 Print obseq_vnil_0.
 Print obseq_vcons_0.
 Print obseq_vcons_1.
 Print obseq_vcons_2.
 Print obseq_vcons_3.
 
+(* rewrite rules for vectors *)
+Print rewrite_vnil.
+Print rewrite_vcons.
+
 (* forded Martin-Löf identity type *)
 Inductive eq (A : Type) (a : A) (b : A) : Type :=
 | refl0 : forall (e : a ~ b), eq A a b.
 
 Print obseq_refl0_0.
+Print rewrite_refl0.
