@@ -8,12 +8,15 @@
 (*         *     (see LICENSE file for the text of the license)         *)
 (************************************************************************)
 
+
 Set Implicit Arguments.
+
 
 Require Export Notations.
 Require Import Ltac.
 
 Notation "A -> B" := (forall (_ : A), B) : type_scope.
+
 
 (** * Propositional connectives *)
 
@@ -36,6 +39,74 @@ Definition not (A:Prop) := A -> False.
 Notation "~ x" := (not x) : type_scope.
 
 Register not as core.not.type.
+
+Unset Implicit Arguments.
+
+(** Observational Coq setup  *)
+
+Set Universe Polymorphism.
+
+Inductive rewrite@{i j} {A : Type@{i}} (a: A) (b: A) : Type@{j} := rewrite_intro.
+Notation "a ==> b" := (rewrite_intro a b) (right associativity, at level 55).
+
+(* Postulating the observational equality *)
+
+Parameter obseq@{u} : forall (A : Type@{u}) (a b : A), SProp.
+Notation "a ~ b" := (obseq _ a b) (at level 50).
+Parameter obseq_refl : forall {A : Type} (a : A), a ~ a.
+
+Arguments obseq {A} a _.
+Arguments obseq_refl {A a} , [A] a.
+
+Parameter obseq_transp : forall {A : Type} (P : A -> SProp) (a : A) (t : P a) (b : A) (e : a ~ b), P b.
+
+Definition obseq_J {A : Type} (a : A) (P : forall b : A, a ~ b -> SProp) (t : P a (obseq_refl a)) (b : A) (e : a ~ b) : P b e :=
+  obseq_transp (fun X => forall (e : a ~ X), P X e) a (fun _ => t) b e e.
+
+Definition obseq_trans {A : Type} {a b c : A} (e : a ~ b) (e' : b ~ c) : a ~ c :=
+  obseq_transp (fun X => a ~ X) b e c e'.
+Notation "e @@@ f" := (obseq_trans e f) (at level 40, left associativity, only parsing).
+
+(* Type casting *)
+
+Symbol cast@{u v} : forall (A B : Type@{u}), @obseq@{v} Type@{u} A B -> A -> B.
+Notation "e # a" := (cast _ _ e a) (at level 55, only parsing).
+
+Definition cast_prop (A B : SProp) (e : A ~ B) (a : A) := obseq_transp (fun X => X) A a B e.
+Notation "e #% a" := (cast_prop _ _ e a) (at level 40, only parsing).
+
+Definition cast_refl A t e := cast A A e t ==> t.
+Rewrite Rule cast_refl.
+
+(** Variables for the observational equality on pi's *)
+
+Parameter seq_forall_1 : forall {A A' B B'}, (forall (x : A), B x) ~ (forall (x : A'), B' x) -> A' ~ A.
+Parameter seq_forall_2 : forall {A A' B B'} (e : (forall (x : A), B x) ~ (forall (x : A'), B' x)) (x : A'),
+    B (seq_forall_1 e # x) ~ B' x.
+
+Parameter funext : forall {A B} (f g : forall (x : A), B x), forall (x : A), f x ~ g x -> f ~ g.
+
+Definition cast_pi@{u u' v} (A : Type@{u}) (B : A -> Type@{u}) (A' : Type@{u}) (B' : A' -> Type@{u})
+         (e : @obseq@{u'} Type@{u} (forall (x : A), B x) (forall (x : A'), B' x)) f :
+    rewrite@{u v} (cast@{u u'} (forall (x : A), B x) (forall (x : A'), B' x) e f)
+                  (fun (x : A') => cast@{u u'} _ _ (seq_forall_2@{u u u u u u' u u' u'} e x)
+                                                   (f (cast@{u u'} A' A (seq_forall_1@{u' u u u u u u'} e) x)))
+  := e # f ==> fun (x : A') => seq_forall_2 e x # f (seq_forall_1 e # x).
+Rewrite Rule cast_pi.
+
+(** Axioms for the observational equality on strict propositions *)
+
+Parameter propext : forall {A B : SProp}, (A -> B) -> (B -> A) -> A ~ B.
+
+
+Definition ap {A B} (f : A -> B) {x y} (e : x ~ y) : f x ~ f y := obseq_transp (fun y => f x ~ f y) _ obseq_refl _ e.
+
+Definition obseq_rect : forall (A : Type) (x : A) (P : A -> Type), P x -> forall a : A, x ~ a -> P a
+ := fun A x P t y e => cast (P x) (P y) (ap P e) t.
+
+Unset Universe Polymorphism.
+
+Set Implicit Arguments.
 
 (** Negation of a type in [Type] *)
 
@@ -379,7 +450,14 @@ Inductive eq (A:Type) (x:A) : A -> Prop :=
 
 where "x = y :> A" := (@eq A x y) : type_scope.
 
+Parameter refl0 : forall A a b (e : a ~ b), @eq A a b.
+
+Parameter obseq_refl0_0
+: forall (A A0 : Type) (a : A) (a0 : A0) (b : A) (b0 : A0),
+    eq a b ~ eq a0 b0 -> (a ~ b) ~ (a0 ~ b0).
+
 Arguments eq {A} x _.
+
 Arguments eq_refl {A x} , [A] x.
 
 Arguments eq_ind [A] x P _ y _ : rename.
@@ -802,7 +880,7 @@ Proof.
   intros A P (x & Hp & Huniq); split.
   - intro; exists x; auto.
   - intros (x0 & HPx0 & HQx0) x1 HPx1.
-    assert (H : x0 = x1) by (transitivity x; [symmetry|]; auto).
+    assert (H : x0 = x1). transitivity x; [symmetry|]; auto.
     destruct H.
     assumption.
 Qed.
@@ -998,7 +1076,7 @@ Section ex.
   Definition eq_ex_uncurried_iff {A : Prop} {P : A -> Prop} (u v : exists a : A, P a)
     : u = v <-> exists p : ex_proj1 u = ex_proj1 v, rew p in ex_proj2 u = ex_proj2 v.
   Proof.
-    split; [ intro; subst; exists eq_refl; reflexivity | apply eq_ex_uncurried ].
+    split; [ intro e; destruct e; exists eq_refl; reflexivity | apply eq_ex_uncurried ].
   Defined.
 
   (** Equivalence of equality of [ex] involving hProps with equality of the first components *)
@@ -1131,7 +1209,7 @@ Section ex2.
       <-> exists2 p : ex_proj1 u = ex_proj1 v,
                       rew p in ex_proj2 u = ex_proj2 v & rew p in ex_proj3 u = ex_proj3 v.
   Proof.
-    split; [ intro; subst; exists eq_refl; reflexivity | apply eq_ex2_uncurried ].
+    split; [ intro e; destruct e; exists eq_refl; reflexivity | apply eq_ex2_uncurried ].
   Defined.
 
   (** Induction principle for [@eq (ex2 _ _)] *)
