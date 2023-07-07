@@ -30,10 +30,10 @@ Notation "e # a" := (cast _ _ e a) (at level 40, only parsing).
 Definition cast_prop (A B : SProp) (e : A ~ B) (a : A) := obseq_transp (fun X => X) A a B e.
 Notation "e #% a" := (cast_prop _ _ e a) (at level 40, only parsing).
 
-Definition cast_conv := [A t e] |- cast A A e t ==> t.
-Rewrite Rule cast_conv.
+Definition cast_refl := [A t e] |- cast A A e t ==> t.
+Rewrite Rule cast_refl.
 
-(** axioms for the observational equality on pi's *)
+(** Variables for the observational equality on pi's *)
 
 Parameter seq_forall_1 : forall {A A' B B'}, (forall (x : A), B x) ~ (forall (x : A'), B' x) -> A' ~ A.
 Parameter seq_forall_2 : forall {A A' B B'} (e : (forall (x : A), B x) ~ (forall (x : A'), B' x)) (x : A'),
@@ -57,27 +57,29 @@ Definition cast_pi@{u u' v} (A : Type@{u}) (B : A -> Type@{u}) (A' : Type@{u}) (
     rewrite@{u v} (cast@{u u'} (forall (x : A), B x) (forall (x : A'), B' x) e f)
                   (fun (x : A') => cast@{u u'} _ _ (seq_forall_2@{u u u u u u' u u' u'} e x)
                                                    (f (cast@{u u'} A' A (seq_forall_1@{u' u u u u u u'} e) x)))
-  := cast (forall (x : A), B x) (forall (x : A'), B' x) e f
-     ==> fun (x : A') => seq_forall_2 e x # f (seq_forall_1 e # x).
+  := e # f ==> fun (x : A') => seq_forall_2 e x # f (seq_forall_1 e # x).
 Rewrite Rule cast_pi.
 
-(** axioms for the observational equality on strict propositions *)
+(** Axioms for the observational equality on strict propositions *)
 
 Parameter propext : forall {A B : SProp}, (A -> B) -> (B -> A) -> A ~ B.
 
 (** Some tests *)
 
-Axiom A B C : Set.
-Axiom obseq_fun1 : (A -> C) ~ (B -> C).
-Axiom obseq_fun2 : (C -> A) ~ (C -> B).
-Axiom f : A -> C.
-Axiom g : C -> A.
 
-(* remark that when the domain/codomain match, one of the casts is eliminated *)
-Eval lazy in (cast (A -> C) (B -> C) (obseq_fun1) f).
-Eval lazy in (cast (C -> A) (C -> B) (obseq_fun2) g).
-Eval lazy in (cast (A -> C) (A -> C) (obseq_refl _) f).
+Section Basic_Test. 
+  Variable A B C : Set.
+  Variable obseq_fun1 : (A -> C) ~ (B -> C).
+  Variable obseq_fun2 : (C -> A) ~ (C -> B).
+  Variable f : A -> C.
+  Variable g : C -> A.
 
+  (* remark that when the domain/codomain match, one of the casts is eliminated *)
+  Eval lazy in (cast (A -> C) (B -> C) (obseq_fun1) f).
+  Eval lazy in (cast (C -> A) (C -> B) (obseq_fun2) g).
+  Eval lazy in (cast (A -> C) (A -> C) (obseq_refl _) f).
+
+End Basic_Test. 
 (** Inductive types *)
 
 Set Observational Inductives.
@@ -95,11 +97,16 @@ Print rewrite_nil.
 Print rewrite_cons.
 
 (* Casting a singleton list *)
-Axiom obseq_list : list A ~ list B.
-Axiom a : A.
-Eval lazy in (cast (list A) (list B) obseq_list (cons A a (nil A))).
+Section List_Test. 
 
-(* forded vectors *)
+  Variable A B C : Set.
+  Variable obseq_list : list A ~ list B.
+  Variable a : A.
+  Eval lazy in (cast (list A) (list B) obseq_list (cons A a (nil A))).
+
+  (* forded vectors *)
+End List_Test. 
+
 Inductive vect (A : Type) (n : nat) : Type :=
 | vnil : obseq nat n 0 -> vect A n
 | vcons : forall (a : A) (m : nat) (v : vect A m), obseq nat n (m + 1) -> vect A n.
