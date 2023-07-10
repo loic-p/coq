@@ -1,11 +1,13 @@
 Require Import Logic. 
 
+Rewrite Rule cast_refl.
+Rewrite Rule cast_pi.
+
 (** Observational Coq setup  *)
 
 Set Universe Polymorphism.
 
-(** Some tests *)
-
+(** Tests cast for functions *)
 
 Section Basic_Test. 
   Variable A B C : Set.
@@ -45,7 +47,7 @@ Section List_Test.
   Eval lazy in (cast (list A) (list B) obseq_list (cons A a (nil A))).
 
   (* forded vectors *)
-End List_Test. 
+End List_Test.
 
 Inductive vect (A : Type) (n : nat) : Type :=
 | vnil : n ~ 0 -> vect A n
