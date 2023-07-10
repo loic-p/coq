@@ -65,8 +65,8 @@ Print rewrite_vnil.
 Print rewrite_vcons.
 
 (* forded Martin-Löf identity type *)
-Inductive eq (A : Type) (a : A) (b : A) : Type :=
-| refl0 : forall (e : a ~ b), eq A a b.
+Inductive Id (A : Type) (a : A) (b : A) : Type :=
+| idrefl : forall (e : a ~ b), Id A a b.
 
-Print obseq_refl0_0.
-Print rewrite_refl0.
+Print obseq_idrefl_0.
+Print rewrite_idrefl.
