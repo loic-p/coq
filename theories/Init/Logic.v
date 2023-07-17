@@ -84,7 +84,7 @@ Parameter seq_forall_1 : forall {A A' B B'}, (forall (x : A), B x) ~ (forall (x 
 Parameter seq_forall_2 : forall {A A' B B'} (e : (forall (x : A), B x) ~ (forall (x : A'), B' x)) (x : A'),
     B (seq_forall_1 e # x) ~ B' x.
 
-Parameter funext : forall {A B} (f g : forall (x : A), B x), forall (x : A), f x ~ g x -> f ~ g.
+Parameter funext : forall {A B} (f g : forall (x : A), B x), (forall (x : A), f x ~ g x) -> f ~ g.
 
 Definition cast_pi@{u u' v} (A : Type@{u}) (B : A -> Type@{u}) (A' : Type@{u}) (B' : A' -> Type@{u})
          (e : @obseq@{u'} Type@{u} (forall (x : A), B x) (forall (x : A'), B' x)) f :
