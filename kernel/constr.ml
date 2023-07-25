@@ -86,10 +86,10 @@ type 'constr pcase_invert =
   | CaseInvert of { indices : 'constr array }
 
 type 'constr pcase_branch = Name.t Context.binder_annot array * 'constr
-type 'types pcase_return = Name.t Context.binder_annot array * 'types
+type ('types, 'univs) pcase_return = (Name.t Context.binder_annot array * 'types) * 'univs
 
 type ('constr, 'types, 'univs) pcase =
-  case_info * 'univs * 'constr array * 'types pcase_return * 'constr pcase_invert * 'constr * 'constr pcase_branch array
+  case_info * 'univs * 'constr array * ('types, 'univs) pcase_return * 'constr pcase_invert * 'constr * 'constr pcase_branch array
 
 (* [Var] is used for named variables and [Rel] for variables as
    de Bruijn indices. *)
@@ -107,7 +107,7 @@ type ('constr, 'types, 'sort, 'univs) kind_of_term =
   | Const     of (Constant.t * 'univs)
   | Ind       of (inductive * 'univs)
   | Construct of (constructor * 'univs)
-  | Case      of case_info * 'univs * 'constr array * 'types pcase_return * 'constr pcase_invert * 'constr * 'constr pcase_branch array
+  | Case      of case_info * 'univs * 'constr array * ('types, 'univs) pcase_return * 'constr pcase_invert * 'constr * 'constr pcase_branch array
   | Fix       of ('constr, 'types) pfixpoint
   | CoFix     of ('constr, 'types) pcofixpoint
   | Proj      of Projection.t * 'constr
@@ -123,7 +123,7 @@ type types = constr
 type existential = existential_key * constr SList.t
 
 type case_invert = constr pcase_invert
-type case_return = types pcase_return
+type case_return = (types, Instance.t) pcase_return
 type case_branch = constr pcase_branch
 type case = (constr, types, Instance.t) pcase
 type rec_declaration = (constr, types) prec_declaration
@@ -489,7 +489,7 @@ let fold f acc c = match kind c with
   | App (c,l) -> Array.fold_left f (f acc c) l
   | Proj (_p,c) -> f acc c
   | Evar (_,l) -> SList.Skip.fold f acc l
-  | Case (_,_,pms,(_,p),iv,c,bl) ->
+  | Case (_,_,pms,((_,p),_),iv,c,bl) ->
     Array.fold_left (fun acc (_, b) -> f acc b) (f (fold_invert f (f (Array.fold_left f acc pms) p) iv) c) bl
   | Fix (_,(_lna,tl,bl)) ->
     Array.fold_left2 (fun acc t b -> f (f acc t) b) acc tl bl
@@ -518,7 +518,7 @@ let iter f c = match kind c with
   | Proj (_p,c) -> f c
   | Evar (_,l) -> SList.Skip.iter f l
   | Case (_,_,pms,p,iv,c,bl) ->
-    Array.iter f pms; f (snd p); iter_invert f iv; f c; Array.iter (fun (_, b) -> f b) bl
+    Array.iter f pms; f (snd (fst p)); iter_invert f iv; f c; Array.iter (fun (_, b) -> f b) bl
   | Fix (_,(_,tl,bl)) -> Array.iter f tl; Array.iter f bl
   | CoFix (_,(_,tl,bl)) -> Array.iter f tl; Array.iter f bl
   | Array(_u,t,def,ty) -> Array.iter f t; f def; f ty
@@ -538,7 +538,7 @@ let iter_with_binders g f n c = match kind c with
   | LetIn (_,b,t,c) -> f n b; f n t; f (g n) c
   | App (c,l) -> f n c; Array.Fun1.iter f n l
   | Evar (_,l) -> SList.Skip.iter (fun c -> f n c) l
-  | Case (_,_,pms,p,iv,c,bl) ->
+  | Case (_,_,pms,(p,_),iv,c,bl) ->
     Array.Fun1.iter f n pms;
     f (iterate g (Array.length (fst p)) n) (snd p);
     iter_invert (f n) iv;
@@ -572,7 +572,7 @@ let fold_constr_with_binders g f n acc c =
   | App (c,l) -> Array.fold_left (f n) (f n acc c) l
   | Proj (_p,c) -> f n acc c
   | Evar (_,l) -> SList.Skip.fold (f n) acc l
-  | Case (_,_,pms,p,iv,c,bl) ->
+  | Case (_,_,pms,(p,_),iv,c,bl) ->
     let fold_ctx n accu (nas, c) =
       f (iterate g (Array.length nas) n) accu c
     in
@@ -601,8 +601,8 @@ let map_branches f bl =
   let bl' = Array.map (map_under_context f) bl in
   if Array.for_all2 (==) bl' bl then bl else bl'
 
-let map_return_predicate f p =
-  map_under_context f p
+let map_return_predicate f (p, pu) =
+  (map_under_context f p, pu)
 
 let map_under_context_with_binders g f l d =
   let (nas, p) = d in
@@ -614,8 +614,8 @@ let map_branches_with_binders g f l bl =
   let bl' = Array.map (map_under_context_with_binders g f l) bl in
   if Array.for_all2 (==) bl' bl then bl else bl'
 
-let map_return_predicate_with_binders g f l p =
-  map_under_context_with_binders g f l p
+let map_return_predicate_with_binders g f l (p, pu) =
+  (map_under_context_with_binders g f l p, pu)
 
 let map_invert f = function
   | NoInvert -> NoInvert
@@ -667,7 +667,7 @@ let map f c = match kind c with
       let iv' = map_invert f iv in
       let p' = map_return_predicate f p in
       let bl' = map_branches f bl in
-      if b'==b && iv'==iv && p'==p && bl'==bl && pms'==pms then c
+      if b'==b && iv'==iv && (fst p')==(fst p) && bl'==bl && pms'==pms then c
       else mkCase (ci, u, pms', p', iv', b', bl')
   | Fix (ln,(lna,tl,bl)) ->
       let tl' = Array.Smart.map f tl in
@@ -704,8 +704,9 @@ let fold_map_branches f accu bl =
   let accu, bl' = Array.Smart.fold_left_map (fold_map_under_context f) accu bl in
   if Array.for_all2 (==) bl' bl then accu, bl else accu, bl'
 
-let fold_map_return_predicate f accu p =
-  fold_map_under_context f accu p
+let fold_map_return_predicate f accu (p, pu) =
+  let accu, p' = fold_map_under_context f accu p in
+  accu, (p', pu)
 
 let fold_map f accu c = match kind c with
   | (Rel _ | Meta _ | Var _   | Sort _ | Const _ | Ind _
@@ -750,7 +751,7 @@ let fold_map f accu c = match kind c with
       let accu, iv' = fold_map_invert f accu iv in
       let accu, b' = f accu b in
       let accu, bl' = fold_map_branches f accu bl in
-      if pms'==pms && p'==p && iv'==iv && b'==b && bl'==bl then accu, c
+      if pms'==pms && (fst p')==(fst p) && iv'==iv && b'==b && bl'==bl then accu, c
       else accu, mkCase (ci, u, pms', p', iv', b', bl')
   | Fix (ln,(lna,tl,bl)) ->
       let accu, tl' = Array.Smart.fold_left_map f accu tl in
@@ -818,7 +819,7 @@ let map_with_binders g f l c0 = match kind c0 with
     let iv' = map_invert (f l) iv in
     let c' = f l c in
     let bl' = map_branches_with_binders g f l bl in
-    if pms' == pms && p' == p && iv' == iv && c' == c && bl' == bl then c0
+    if pms' == pms && (fst p') == (fst p) && iv' == iv && c' == c && bl' == bl then c0
     else mkCase (ci, u, pms', p', iv', c', bl')
   | Fix (ln, (lna, tl, bl)) ->
     let tl' = Array.Fun1.Smart.map f l tl in
@@ -911,8 +912,9 @@ let compare_head_gen_leq_with kind1 kind2 leq_universes leq_sorts eq_evars eq le
   | Ind (c1,u1), Ind (c2,u2) -> Ind.CanOrd.equal c1 c2 && leq_universes (Some (GlobRef.IndRef c1, nargs)) u1 u2
   | Construct (c1,u1), Construct (c2,u2) ->
     Construct.CanOrd.equal c1 c2 && leq_universes (Some (GlobRef.ConstructRef c1, nargs)) u1 u2
-  | Case (ci1,u1,pms1,p1,iv1,c1,bl1), Case (ci2,u2,pms2,p2,iv2,c2,bl2) ->
+  | Case (ci1,u1,pms1,(p1,_),iv1,c1,bl1), Case (ci2,u2,pms2,(p2,_),iv2,c2,bl2) ->
     (** FIXME: what are we doing with u1 = u2 ? *)
+    (** FIXME: should we compare the universes of the return predicates? *)
     Ind.CanOrd.equal ci1.ci_ind ci2.ci_ind && leq_universes (Some (GlobRef.IndRef ci1.ci_ind, 0)) u1 u2 &&
     Array.equal (eq 0) pms1 pms2 && eq_under_context (eq 0) p1 p2 &&
     eq_invert (eq 0) iv1 iv2 &&
@@ -1052,7 +1054,7 @@ let constr_ord_int f t1 t2 =
     | Ind _, _ -> -1 | _, Ind _ -> 1
     | Construct (ct1,_u1), Construct (ct2,_u2) -> Construct.CanOrd.compare ct1 ct2
     | Construct _, _ -> -1 | _, Construct _ -> 1
-    | Case (_,_u1,pms1,p1,iv1,c1,bl1), Case (_,_u2,pms2,p2,iv2,c2,bl2) ->
+    | Case (_,_u1,pms1,(p1,_),iv1,c1,bl1), Case (_,_u2,pms2,(p2,_),iv2,c2,bl2) ->
       let c = Array.compare f pms1 pms2 in
       if Int.equal c 0 then let c = ctx_cmp f p1 p2 in
       if Int.equal c 0 then let c = compare_invert f iv1 iv2 in
@@ -1156,7 +1158,7 @@ let hasheq t1 t2 =
     | Const (c1,u1), Const (c2,u2) -> c1 == c2 && u1 == u2
     | Ind (ind1,u1), Ind (ind2,u2) -> ind1 == ind2 && u1 == u2
     | Construct (cstr1,u1), Construct (cstr2,u2) -> cstr1 == cstr2 && u1 == u2
-    | Case (ci1,u1,pms1,p1,iv1,c1,bl1), Case (ci2,u2,pms2,p2,iv2,c2,bl2) ->
+    | Case (ci1,u1,pms1,(p1,_),iv1,c1,bl1), Case (ci2,u2,pms2,(p2,_),iv2,c2,bl2) ->
       (** FIXME: use deeper equality for contexts *)
       u1 == u2 && array_eqeq pms1 pms2 &&
       ci1 == ci2 && hasheq_ctx p1 p2 &&
@@ -1230,7 +1232,7 @@ let rec hash t =
       combinesmall 10 (combine (Ind.CanOrd.hash ind) (Instance.hash u))
     | Construct (c,u) ->
       combinesmall 11 (combine (Construct.CanOrd.hash c) (Instance.hash u))
-    | Case (_ , u, pms, p, iv, c, bl) ->
+    | Case (_ , u, pms, (p, _), iv, c, bl) ->
       combinesmall 12 (combine (combine (hash c) (combine (hash_invert iv) (combine (hash_term_array pms) (combine (Instance.hash u) (hash_under_context p))))) (hash_branches bl))
     | Fix (_ln ,(_, tl, bl)) ->
       combinesmall 13 (combine (hash_term_array bl) (hash_term_array tl))
@@ -1359,7 +1361,7 @@ let rec hash_term (t : t) =
     let u', hu = Instance.share u in
     (Construct (hcons_construct c, u'),
      combinesmall 11 (combine (Construct.SyntacticOrd.hash c) hu))
-  | Case (ci,u,pms,p,iv,c,bl) ->
+  | Case (ci,u,pms,(p,pu),iv,c,bl) ->
     (** FIXME: use a dedicated hashconsing structure *)
     let hcons_ctx (lna, c) =
       let () = Array.iteri (fun i x -> Array.unsafe_set lna i (hcons_annot x)) lna in
@@ -1370,6 +1372,9 @@ let rec hash_term (t : t) =
     in
     let u, hu = Instance.share u in
     let pms,hpms = hash_term_array pms in
+    (** FIXME: should the universe annotation be hashconsed?
+               should it participate in the hash value? *)
+    let pu, _ = Instance.share pu in
     let p, hp = hcons_ctx p in
     let iv, hiv = sh_invert iv in
     let c, hc = sh_rec c in
@@ -1379,7 +1384,7 @@ let rec hash_term (t : t) =
     in
     let hbl, bl = Array.fold_left_map fold 0 bl in
     let hbl = combine (combine hc (combine hiv (combine hpms (combine hu hp)))) hbl in
-    (Case (hcons_caseinfo ci, u, pms, p, iv, c, bl), combinesmall 12 hbl)
+    (Case (hcons_caseinfo ci, u, pms, (p, pu), iv, c, bl), combinesmall 12 hbl)
   | Fix (ln,(lna,tl,bl)) ->
     let bl,hbl = hash_term_array bl in
     let tl,htl = hash_term_array tl in
@@ -1534,7 +1539,7 @@ let rec debug_print c =
   | Construct (((sp,i),j),u) ->
       str"Constr(" ++ pr_puniverses (MutInd.print sp ++ str"," ++ int i ++ str"," ++ int j) u ++ str")"
   | Proj (p,c) -> str"Proj(" ++ Constant.debug_print (Projection.constant p) ++ str"," ++ bool (Projection.unfolded p) ++ str"," ++ debug_print c ++ str")"
-  | Case (_ci,_u,pms,p,iv,c,bl) ->
+  | Case (_ci,_u,pms,(p,_),iv,c,bl) ->
     let pr_ctx (nas, c) =
       hov 2 (hov 0 (prvect (fun na -> Name.print na.binder_name ++ spc ()) nas ++ str "|-") ++ spc () ++
         debug_print c)

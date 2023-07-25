@@ -164,14 +164,14 @@ val mkRef : GlobRef.t Univ.puniverses -> constr
 type 'constr pcase_branch = Name.t Context.binder_annot array * 'constr
 (** Names of the indices + name of self *)
 
-type 'types pcase_return = Name.t Context.binder_annot array * 'types
+type ('types, 'univs) pcase_return = (Name.t Context.binder_annot array * 'types) * 'univs
 (** Names of the branches *)
 
 type ('constr, 'types, 'univs) pcase =
-  case_info * 'univs * 'constr array * 'types pcase_return * 'constr pcase_invert * 'constr * 'constr pcase_branch array
+  case_info * 'univs * 'constr array * ('types, 'univs) pcase_return * 'constr pcase_invert * 'constr * 'constr pcase_branch array
 
 type case_invert = constr pcase_invert
-type case_return = types pcase_return
+type case_return = (types, Univ.Instance.t) pcase_return
 type case_branch = constr pcase_branch
 type case = (constr, types, Univ.Instance.t) pcase
 
@@ -265,7 +265,7 @@ type ('constr, 'types, 'sort, 'univs) kind_of_term =
   | Construct of (constructor * 'univs)
   (** A constructor of an inductive type defined by [Variant],
      [Inductive] or [Record] Vernacular-commands. *)
-  | Case      of case_info * 'univs * 'constr array * 'types pcase_return * 'constr pcase_invert * 'constr * 'constr pcase_branch array
+  | Case      of case_info * 'univs * 'constr array * ('types, 'univs) pcase_return * 'constr pcase_invert * 'constr * 'constr pcase_branch array
   (** [Case (ci,u,params,p,iv,c,brs)] is a [match c return p with brs]
      expression. [c] lives in inductive [ci.ci_ind] at universe
      instance [u] and parameters [params]. If this match has case
