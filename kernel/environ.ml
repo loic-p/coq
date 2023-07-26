@@ -749,7 +749,7 @@ let add_mind_key kn (mind, _ as mind_key) env =
       Globals.inductives = new_inds; }
   in
   let irr_inds = Array.fold_left_i (fun i irr_inds mip ->
-      if mip.mind_relevance == Sorts.Irrelevant
+      if Sorts.relevance_of_sort mip.mind_predicate_sort == Sorts.Irrelevant
       then Indset_env.add (kn, i) irr_inds
       else irr_inds) env.irr_inds mind.mind_packets
   in

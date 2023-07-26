@@ -333,19 +333,19 @@ Proof.
   case (uint_eq_dec (nzhead (app d d')) Nil).
   { intros->; simpl; intro H; exfalso; revert H; apply Nat.le_ngt.
     now revert Hd'; case d'; [|intros d'' _; apply le_n_S, Nat.le_0_l..]. }
-  set (m := match nzhead _ with Nil => _ | _ => _ end).
+  set (m := match nzhead _ with Nil => _ | _ => _ end : _ : Type).
   intro Ha.
   replace m with (nzhead (app d d')).
   2:{ now unfold m; revert Ha; case nzhead. }
   intro Hn; generalize Hn; rewrite (nzhead_app_l _ _ Hn).
   case (uint_eq_dec (app (nzhead d) d') Nil).
   { intros->; simpl; intro H; exfalso; revert H; apply Nat.le_ngt, Nat.le_0_l. }
-  clear m; set (m := match app _ _ with Nil => _ | _ => _ end).
+  clear m; set (m := match app _ _ with Nil => _ : _ : Type | _ => _  : _ : Type end : _ : Type).
   intro Ha'.
   replace m with (Neg (app (nzhead d) d')); [|now unfold m; revert Ha'; case app].
   case (uint_eq_dec (nzhead d) Nil).
   { intros->; simpl; intro H; exfalso; revert H; apply Nat.lt_irrefl. }
-  clear m; set (m := match nzhead _ with Nil => _ | _ => _ end).
+  clear m; set (m := match nzhead _ with Nil => _ : _ : Type | _ => _ : _ : Type end).
   intro Hd.
   now replace m with (Neg (nzhead d)); [|unfold m; revert Hd; case nzhead].
 Qed.

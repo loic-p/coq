@@ -250,6 +250,8 @@ let get_sort_of ?(polyprop=true) env sigma t =
 let type_of_global_reference_knowing_parameters env sigma c args =
   let _,_,f = retype sigma in anomaly_on_error (f env c) args
 
+let sort_of ?(polyprop=true) env sigma t = ESorts.kind sigma (get_sort_of env sigma t)
+  
 let type_of_global_reference_knowing_conclusion env sigma c conclty =
   match EConstr.kind sigma c with
     | Ind (ind,u) ->
@@ -311,7 +313,7 @@ let relevance_of_term env sigma c =
       | Const (c,_) -> Relevanceops.relevance_of_constant env c
       | Ind _ -> Sorts.Relevant
       | Construct (c,_) -> Relevanceops.relevance_of_constructor env c
-      | Case (ci, _, _, _, _, _, _) -> ci.ci_relevance
+      | Case (ci, _, _, _, _, _, _) -> Sorts.relevance_of_sort ci.ci_sort
       | Fix ((_,i),(lna,_,_)) -> (lna.(i)).binder_relevance
       | CoFix (i,(lna,_,_)) -> (lna.(i)).binder_relevance
       | Proj (p, _) -> Relevanceops.relevance_of_projection env p

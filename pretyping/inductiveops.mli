@@ -206,7 +206,7 @@ val type_case_branches_with_names :
   env -> evar_map -> pinductive * EConstr.constr list -> constr -> constr -> EConstr.types array * types
 
 (** Annotation for cases *)
-val make_case_info : env -> inductive -> Sorts.relevance -> case_style -> case_info
+val make_case_info : env -> inductive -> Sorts.t -> case_style -> case_info
 
 (** Make a case or substitute projections if the inductive type is a record
     with primitive projections.

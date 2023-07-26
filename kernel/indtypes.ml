@@ -160,8 +160,8 @@ let ienv_push_inductive (env, n, ntypes, ra_env) ((mi,u),lrecparams) =
   let specif = (lookup_mind_specif env mi, u) in
   let ty = type_of_inductive specif in
   let env' =
-    let r = (snd (fst specif)).mind_relevance in
-    let anon = Context.make_annot Anonymous r in
+    let r = (snd (fst specif)).mind_predicate_sort in
+    let anon = Context.make_annot Anonymous (Sorts.relevance_of_sort r) in
     let decl = LocalAssum (anon, hnf_prod_applist env ty lrecparams) in
     push_rel decl env in
   let ra_env' =
@@ -501,9 +501,9 @@ let build_inductive env ~sec_univs names prv univs template variance
     let consnrealargs =
       Array.map (fun (d,_) -> Context.Rel.nhyps d)
         splayed_lc in
-    let mind_relevance = match arity with
-      | RegularArity { mind_sort;_ } -> Sorts.relevance_of_sort mind_sort
-      | TemplateArity _ -> Sorts.Relevant
+    let mind_predicate_sort = match arity with
+      | RegularArity { mind_sort;_ } -> mind_sort
+      | TemplateArity { template_level } -> template_level
     in
     (* Assigning VM tags to constructors *)
     let nconst, nblock = ref 0, ref 0 in
@@ -531,7 +531,7 @@ let build_inductive env ~sec_univs names prv univs template variance
         mind_user_lc = lc;
         mind_nf_lc = nf_lc;
         mind_recargs = recarg;
-        mind_relevance;
+        mind_predicate_sort;
         mind_nb_constant = !nconst;
         mind_nb_args = !nblock;
         mind_reloc_tbl = rtbl;

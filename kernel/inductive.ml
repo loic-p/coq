@@ -217,7 +217,7 @@ let instantiate_universes ctx (templ, ar) args =
 
 let relevance_of_inductive env ind =
   let _, mip = lookup_mind_specif env ind in
-  mip.mind_relevance
+  Sorts.relevance_of_sort mip.mind_predicate_sort
 
 let check_instance mib u =
   if not (match mib.mind_universes with
@@ -364,7 +364,8 @@ let check_case_info env (indsp,u) r ci =
     not (Int.equal mib.mind_nparams ci.ci_npar) ||
     not (Array.equal Int.equal mip.mind_consnrealdecls ci.ci_cstr_ndecls) ||
     not (Array.equal Int.equal mip.mind_consnrealargs ci.ci_cstr_nargs) ||
-    not (ci.ci_relevance == r) ||
+    (* we only check relevance compatibility *)
+    not (Sorts.relevance_of_sort ci.ci_sort == r) ||
     is_primitive_record spec
   then raise (TypeError(env,WrongCaseInfo((indsp,u),ci)))
 
@@ -641,7 +642,7 @@ let ienv_push_inductive (env, ra_env) ((mind,u),lpar) =
   let mib = Environ.lookup_mind mind env in
   let ntypes = mib.mind_ntypes in
   let push_ind mip env =
-    let r = mip.mind_relevance in
+    let r = Sorts.relevance_of_sort mip.mind_predicate_sort in
     let anon = Context.make_annot Anonymous r in
     let decl = LocalAssum (anon, hnf_prod_applist env (type_of_inductive ((mib,mip),u)) lpar) in
     push_rel decl env
@@ -1346,7 +1347,7 @@ let inductive_of_mutfix env ((nvect,bodynum),(names,types,bodies as recdef)) =
     let ((ind, _), _) as res = check_occur fixenv 1 def in
     let _, mip = lookup_mind_specif env ind in
     (* recursive sprop means non record with projections -> squashed *)
-    if mip.mind_relevance == Sorts.Irrelevant &&
+    if Sorts.relevance_of_sort mip.mind_predicate_sort == Sorts.Irrelevant &&
        not (Environ.is_type_in_type env (GlobRef.IndRef ind))
     then
       begin

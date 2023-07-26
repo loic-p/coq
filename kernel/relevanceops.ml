@@ -32,7 +32,7 @@ let relevance_of_constant env c =
 let relevance_of_constructor env ((mi,i),_) =
   let decl = lookup_mind mi env in
   let packet = decl.mind_packets.(i) in
-  packet.mind_relevance
+  Sorts.relevance_of_sort packet.mind_predicate_sort
 
 let relevance_of_projection env p =
   let mind = Projection.mind p in
@@ -54,7 +54,7 @@ let rec relevance_of_term_extra env extra lft c =
   | App (c, _) -> relevance_of_term_extra env extra lft c
   | Const (c,_) -> relevance_of_constant env c
   | Construct (c,_) -> relevance_of_constructor env c
-  | Case (ci, _, _, _, _, _, _) -> ci.ci_relevance
+  | Case (ci, _, _, _, _, _, _) -> Sorts.relevance_of_sort ci.ci_sort
   | Fix ((_,i),(lna,_,_)) -> (lna.(i)).binder_relevance
   | CoFix (i,(lna,_,_)) -> (lna.(i)).binder_relevance
   | Proj (p, _) -> relevance_of_projection env p

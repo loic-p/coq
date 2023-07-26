@@ -459,9 +459,9 @@ let check_branch_types env (_mib, mip) ci u pms c _ct lft (pctx, p) =
     error_ill_formed_branch env c ((ci.ci_ind, i + 1), u) brt expbrt
 
 let should_invert_case env ci =
-  ci.ci_relevance == Sorts.Relevant &&
+  Sorts.relevance_of_sort ci.ci_sort == Sorts.Relevant &&
   let mib,mip = lookup_mind_specif env ci.ci_ind in
-  mip.mind_relevance == Sorts.Irrelevant &&
+  Sorts.relevance_of_sort mip.mind_predicate_sort == Sorts.Irrelevant &&
   (* NB: it's possible to have 2 ctors or arguments to 1 ctor by unsetting univ checks
      but we don't do special reduction in such cases
 
@@ -496,10 +496,10 @@ let type_of_case env (mib, mip) ci u pms (pctx, p, pt) iv c ct _lf lft =
     error_elim_arity env (ind, u') c None
   in
   let rp = Sorts.relevance_of_sort sp in
-  let ci = if ci.ci_relevance == rp then ci
-    else (warn_bad_relevance_ci (); {ci with ci_relevance=rp})
+  let ci = if Sorts.relevance_of_sort ci.ci_sort == rp then ci
+    else (warn_bad_relevance_ci (); {ci with ci_sort=sp})
   in
-  let () = match ci.ci_relevance with
+  let () = match Sorts.relevance_of_sort ci.ci_sort with
   | Sorts.Relevant | Sorts.Irrelevant -> ()
   | Sorts.RelevanceVar _ -> anomaly Pp.(str "the kernel does not support sort variables")
   in
@@ -703,7 +703,7 @@ let rec execute env cstr =
             let inst = Instance.of_array (Array.init (Instance.length u) Level.var) in
             mkApp (mkIndU (ci.ci_ind, inst), args)
           in
-          let realdecls = LocalAssum (Context.make_annot Anonymous mip.mind_relevance, self) :: realdecls in
+          let realdecls = LocalAssum (Context.make_annot Anonymous (Sorts.relevance_of_sort mip.mind_predicate_sort), self) :: realdecls in
           let realdecls =
             try instantiate_context u paramsubst nas realdecls
             with ArgumentsMismatch -> error_elim_arity env (ci.ci_ind, u) c' None

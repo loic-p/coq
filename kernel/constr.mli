@@ -45,7 +45,7 @@ type case_info =
                                        in addition to the parameters of the related inductive type
                                        NOTE: "lets" are therefore excluded from the count
                                        NOTE: parameters of the inductive type are also excluded from the count *)
-    ci_relevance : Sorts.relevance; (* relevance of the predicate (not of the inductive!) *)
+    ci_sort : Sorts.t; (* relevance of the predicate (not of the inductive!) *)
     ci_pp_info    : case_printing   (* not interpreted by the kernel *)
   }
 

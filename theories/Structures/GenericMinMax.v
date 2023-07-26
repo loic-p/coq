@@ -32,9 +32,9 @@ Module Type HasMinMax (E:EqLe) := HasMax E <+ HasMin E.
 (** ** Any [OrderedTypeFull] can be equipped by [max] and [min]
     based on the compare function. *)
 
-Definition gmax {A} (cmp : A->A->comparison) x y :=
+Definition gmax {A:Type} (cmp : A->A->comparison) x y : A :=
  match cmp x y with Lt => y | _ => x end.
-Definition gmin {A} (cmp : A->A->comparison) x y :=
+Definition gmin {A:Type} (cmp : A->A->comparison) x y : A :=
  match cmp x y with Gt => y | _ => x end.
 
 Module GenericMinMax (Import O:OrderedTypeFull') <: HasMinMax O.

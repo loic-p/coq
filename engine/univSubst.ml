@@ -232,8 +232,8 @@ let nf_evars_and_universes_opt_subst fevar flevel fsort frel c =
     | Case (ci,u,pms,p,iv,t,br) ->
       let u' = subst_instance flevel u in
       let ci' =
-        let rel' = frel ci.ci_relevance in
-        if rel' == ci.ci_relevance then ci else { ci with ci_relevance = rel' }
+        let rel' = fsort ci.ci_sort in
+        if rel' == ci.ci_sort then ci else { ci with ci_sort = rel' }
       in
       let pms' = Array.Smart.map aux pms in
       let p' = aux_ctx p in

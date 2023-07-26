@@ -885,7 +885,7 @@ assert (cc : compat_opL (fun x => plus (if f x then 1 else 0))). {
 }
 assert (ct : transposeL (fun x => plus (if f x then 1 else 0))). {
  red; intros.
- set (a := if f x then _ else _).
+ set (a := if f x then _ else _ : _ : Type).
  rewrite PeanoNat.Nat.add_comm.
  rewrite <- !PeanoNat.Nat.add_assoc. f_equal.
  apply PeanoNat.Nat.add_comm.

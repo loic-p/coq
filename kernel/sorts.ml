@@ -174,6 +174,11 @@ let relevance_of_sort = function
   | Prop | Set | Type _ -> Relevant
   | QSort (q, _) -> RelevanceVar q
 
+let sort_of_relevance = function
+  | Irrelevant -> SProp
+  | Relevant -> Set
+  | RelevanceVar _ -> assert false (* fixme QSort (q , _)  *)
+
 let debug_print = function
   | SProp -> Pp.(str "SProp")
   | Prop -> Pp.(str "Prop")
@@ -186,4 +191,4 @@ let pr_sort_family = function
   | InProp -> Pp.(str "Prop")
   | InSet -> Pp.(str "Set")
   | InType -> Pp.(str "Type")
-  | InQSort -> Pp.(str "Type") (* FIXME? *)
+  | InQSort -> Pp.(str "QType") (* FIXME? *)

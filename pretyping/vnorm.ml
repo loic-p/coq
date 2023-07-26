@@ -8,13 +8,13 @@
 (*         *     (see LICENSE file for the text of the license)         *)
 (************************************************************************)
 
+open Vars
 open Util
 open Names
 open Declarations
 open Term
 open Constr
 open Context
-open Vars
 open Environ
 open Inductive
 open Reduction
@@ -351,8 +351,8 @@ and nf_predicate env sigma ind mip params pctx v pT =
       let decl = LocalAssum (name, dom) in
       let env = push_rel decl env in
       let body = nf_vtype env sigma vb in
-      let rel = Retyping.relevance_of_type env sigma (EConstr.of_constr body) in
-      decl :: pctx, body, rel
+      let sort = Retyping.sort_of env sigma (EConstr.of_constr body) in
+      decl :: pctx, body, sort
     | _ -> assert false
 
 and nf_args env sigma vargs ?from:(f=0) t =

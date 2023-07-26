@@ -122,7 +122,7 @@ let eq_in_context (ctx1, t1) (ctx2, t2) =
 let check_packet env mind ind
     { mind_typename; mind_arity_ctxt; mind_arity; mind_consnames; mind_user_lc;
       mind_nrealargs; mind_nrealdecls; mind_kelim; mind_nf_lc;
-      mind_consnrealargs; mind_consnrealdecls; mind_recargs; mind_relevance;
+      mind_consnrealargs; mind_consnrealdecls; mind_recargs; mind_predicate_sort;
       mind_nb_constant; mind_nb_args; mind_reloc_tbl } =
   let check = check mind in
 
@@ -144,7 +144,7 @@ let check_packet env mind ind
 
   check "mind_recargs" (Rtree.equal eq_recarg ind.mind_recargs mind_recargs);
 
-  check "mind_relevant" (Sorts.relevance_equal ind.mind_relevance mind_relevance);
+  check "mind_relevant" (Sorts.relevance_equal (Sorts.relevance_of_sort ind.mind_predicate_sort) (Sorts.relevance_of_sort mind_predicate_sort));
 
   check "mind_nb_args" Int.(equal ind.mind_nb_args mind_nb_args);
   check "mind_nb_constant" Int.(equal ind.mind_nb_constant mind_nb_constant);

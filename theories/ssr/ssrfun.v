@@ -343,7 +343,7 @@ Definition all_pair I T U (w : forall i : I, T i * U i) :=
 
 Module Option.
 
-Definition apply aT rT (f : aT -> rT) x u := if u is Some y then f y else x.
+Definition apply aT (rT:Type) (f : aT -> rT) x u := if u is Some y then f y else x.
 
 Definition default T := apply (fun x : T => x).
 
@@ -529,7 +529,7 @@ End OptionTheory.
 
 Notation void := Empty_set.
 
-Definition of_void T (x : void) : T := match x with end.
+Definition of_void (T:Type) (x : void) : T := match x with end.
 
 (**  Strong sigma types.  **)
 

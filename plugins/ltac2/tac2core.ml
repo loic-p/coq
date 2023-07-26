@@ -767,7 +767,7 @@ end
 let () = define1 "constr_case" (repr_ext val_inductive) begin fun ind ->
   Proofview.tclENV >>= fun env ->
   try
-    let ans = Inductiveops.make_case_info env ind Sorts.Relevant Constr.RegularStyle in
+    let ans = Inductiveops.make_case_info env ind (Sorts.sort_of_relevance Sorts.Relevant) Constr.RegularStyle in
     return (Value.of_ext Value.val_case ans)
   with e when CErrors.noncritical e ->
     throw err_notfound
@@ -886,7 +886,7 @@ let () = define_equality "meta_equal" int Int.equal
 
 let () = define_equality "constant_equal" constant Constant.UserOrd.equal
 let () = define_equality "constr_case_equal" (repr_ext val_case) begin fun x y ->
-    Ind.UserOrd.equal x.ci_ind y.ci_ind && Sorts.relevance_equal x.ci_relevance y.ci_relevance
+    Ind.UserOrd.equal x.ci_ind y.ci_ind && (Sorts.relevance_equal (Sorts.relevance_of_sort x.ci_sort) (Sorts.relevance_of_sort y.ci_sort))
 end
 let () = define_equality "constructor_equal" (repr_ext val_constructor) Construct.UserOrd.equal
 let () = define_equality "projection_equal" (repr_ext val_projection) Projection.UserOrd.equal

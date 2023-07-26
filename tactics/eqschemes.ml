@@ -211,7 +211,7 @@ let build_sym_scheme env _handle ind =
   let realsign_ind =
     name_context env ((LocalAssum (make_annot (Name varH) indr,applied_ind))::realsign) in
   let rci = Sorts.Relevant in (* TODO relevance *)
-  let ci = make_case_info env ind rci RegularStyle in
+  let ci = make_case_info env ind (Sorts.sort_of_relevance rci) RegularStyle in
   let c =
   (my_it_mkLambda_or_LetIn paramsctxt
   (my_it_mkLambda_or_LetIn_name env realsign_ind
@@ -272,7 +272,7 @@ let build_sym_involutive_scheme env handle ind =
   let realsign_ind =
     name_context env ((LocalAssum (make_annot (Name varH) indr,applied_ind))::realsign) in
   let rci = Sorts.Relevant in (* TODO relevance *)
-  let ci = make_case_info env ind rci RegularStyle in
+  let ci = make_case_info env ind (Sorts.sort_of_relevance rci) RegularStyle in
   let c =
     (my_it_mkLambda_or_LetIn paramsctxt
      (my_it_mkLambda_or_LetIn_name env realsign_ind
@@ -411,8 +411,8 @@ let build_l2r_rew_scheme dep env handle ind kind =
   let ctx = Univ.ContextSet.union ctx ctx' in
   let s = mkSort s in
   let rci = Sorts.Relevant in (* TODO relevance *)
-  let ci = make_case_info env ind rci RegularStyle in
-  let cieq = make_case_info env (fst (destInd eq)) rci RegularStyle in
+  let ci = make_case_info env ind (Sorts.sort_of_relevance rci) RegularStyle in
+  let cieq = make_case_info env (fst (destInd eq)) (Sorts.sort_of_relevance rci) RegularStyle in
   let applied_PC =
     mkApp (mkVar varP,Array.append (Context.Rel.instance mkRel 1 realsign)
            (if dep then [|cstr (2*nrealargs+1) 1|] else [||])) in
@@ -519,7 +519,7 @@ let build_l2r_forward_rew_scheme dep env ind kind =
   let ctx = Univ.ContextSet.union ctx ctx' in
   let s = mkSort s in
   let rci = Sorts.Relevant in
-  let ci = make_case_info env ind rci RegularStyle in
+  let ci = make_case_info env ind (Sorts.sort_of_relevance rci) RegularStyle in
   let applied_PC =
     mkApp (mkVar varP,Array.append
            (rel_vect (nrealargs*2+3) nrealargs)
@@ -601,7 +601,7 @@ let build_r2l_forward_rew_scheme dep env ind kind =
   let ctx = Univ.ContextSet.union ctx ctx' in
   let s = mkSort s in
   let rci = Sorts.Relevant in (* TODO relevance *)
-  let ci = make_case_info env ind rci RegularStyle in
+  let ci = make_case_info env ind (Sorts.sort_of_relevance rci) RegularStyle in
   let applied_PC =
     applist (mkVar varP,if dep then constrargs_cstr else constrargs) in
   let applied_PG =
@@ -808,7 +808,7 @@ let build_congr env (eq,refl,ctx) ind =
   let varH,avoid = fresh env (Id.of_string "H") avoid in
   let varf,avoid = fresh env (Id.of_string "f") avoid in
   let rci = Sorts.Relevant in (* TODO relevance *)
-  let ci = make_case_info env ind rci RegularStyle in
+  let ci = make_case_info env ind (Sorts.sort_of_relevance rci) RegularStyle in
   let uni, ctx = Univ.extend_in_context_set (UnivGen.new_global_univ ()) ctx in
   let ctx = (fst ctx, UnivSubst.enforce_leq uni (univ_of_eq env eq) (snd ctx)) in
   let c =

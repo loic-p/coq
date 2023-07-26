@@ -288,7 +288,7 @@ let make_case_info env ind r style =
     ci_npar    = mib.mind_nparams;
     ci_cstr_ndecls = mip.mind_consnrealdecls;
     ci_cstr_nargs = mip.mind_consnrealargs;
-    ci_relevance = r;
+    ci_sort = r;
     ci_pp_info = print_info }
 
 (*s Useful functions *)
@@ -480,7 +480,7 @@ let compute_projections env (kn, i as ind) =
     anomaly Pp.(str "Trying to build primitive projections for a non-primitive record")
   | PrimRecord info ->
     let id, _, _, _ = info.(i) in
-    make_annot (Name id) mib.mind_packets.(i).mind_relevance
+    make_annot (Name id) (Sorts.relevance_of_sort mib.mind_packets.(i).mind_predicate_sort)
   in
   let pkt = mib.mind_packets.(i) in
   let { mind_nparams = nparamargs; mind_params_ctxt = params } = mib in

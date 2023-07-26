@@ -379,7 +379,7 @@ let build_named_proj ~primitive ~flags ~poly ~univs ~uinstance ~kind env paramde
         let ccl' = liftn 1 2 ccl in
         let p = mkLambda (x, lift 1 rp, ccl') in
         let branch = it_mkLambda_or_LetIn (mkRel nfi) lifted_fields in
-        let ci = Inductiveops.make_case_info env indsp rci LetStyle in
+        let ci = Inductiveops.make_case_info env indsp (Sorts.sort_of_relevance rci) LetStyle in
         (* Record projections are always NoInvert because they're at
            constant relevance *)
         mkCase (Inductive.contract_case env (ci, p, NoInvert, mkRel 1, [|branch|])), None
@@ -455,7 +455,7 @@ let declare_projections indsp univs ?(kind=Decls.StructureComponent) inhabitant_
   let r = mkIndU (indsp,uinstance) in
   let rp = applist (r, Context.Rel.instance_list mkRel 0 paramdecls) in
   let paramargs = Context.Rel.instance_list mkRel 1 paramdecls in (*def in [[params;x:rp]]*)
-  let x = make_annot (Name inhabitant_id) mip.mind_relevance in
+  let x = make_annot (Name inhabitant_id) (Sorts.relevance_of_sort mip.mind_predicate_sort) in
   let fields = instantiate_possibly_recursive_type (fst indsp) uinstance mib.mind_ntypes paramdecls fields in
   let lifted_fields = Vars.lift_rel_context 1 fields in
   let primitive =
@@ -947,11 +947,11 @@ let add_inductive_class ind =
     let univs = Declareops.inductive_polymorphic_context mind in
     let inst = Univ.make_abstract_instance univs in
     let ty = Inductive.type_of_inductive ((mind, oneind), inst) in
-    let r = oneind.mind_relevance in
+    let r = oneind.mind_predicate_sort in
       { cl_univs = univs;
         cl_impl = GlobRef.IndRef ind;
         cl_context = ctx;
-        cl_props = [LocalAssum (make_annot Anonymous r, ty)];
+        cl_props = [LocalAssum (make_annot Anonymous (Sorts.relevance_of_sort r), ty)];
         cl_projs = [];
         cl_strict = typeclasses_strict ();
         cl_unique = typeclasses_unique () }

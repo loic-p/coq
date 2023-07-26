@@ -506,7 +506,7 @@ Definition notblack t :=
 Definition notred t :=
  match t with Rd _ _ _ => False | _ => True end.
 
-Definition rcase {A} f g t : A :=
+Definition rcase {A:Type} f g t : A :=
  match t with
  | Rd a x b => f a x b
  | _ => g t
@@ -521,7 +521,7 @@ Proof.
 destruct t as [|[|] l x r]; simpl; now constructor.
 Qed.
 
-Definition rrcase {A} f g t : A :=
+Definition rrcase {A:Type} f g t : A :=
  match t with
  | Rd (Rd a x b) y c => f a x b y c
  | Rd a x (Rd b y c) => f a x b y c
@@ -541,7 +541,7 @@ destruct t as [|[|] l x r]; simpl; try now constructor.
 destruct l as [|[|] ll lx lr], r as [|[|] rl rx rr]; now constructor.
 Qed.
 
-Definition rrcase' {A} f g t : A :=
+Definition rrcase' {A:Type} f g t : A :=
  match t with
  | Rd a x (Rd b y c) => f a x b y c
  | Rd (Rd a x b) y c => f a x b y c

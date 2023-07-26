@@ -771,7 +771,7 @@ let build_beq_scheme env handle kn =
         make_andb_list eqs
       | None ->
         (* An inductive type *)
-        let ci = make_case_info env ind rci MatchStyle in
+        let ci = make_case_info env ind (Sorts.sort_of_relevance rci) MatchStyle in
         let nconstr = Array.length constrs in
         let ar =
           Array.init nconstr (fun i ->

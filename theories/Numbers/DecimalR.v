@@ -42,7 +42,7 @@ Proof.
       now intro H; simpl; apply Nat.lt_succ_r, Nat.le_sub_l.
     - apply nb_digits_n0.
       now rewrite nb_digits_iter_D0, Nat.sub_add. }
-  replace (match den with 1%positive => _ | _ => _ end)
+  replace (match den with 1%positive => _ | _ => _ end: _ : Type)
     with (QArith_base.IQmake_to_decimal num den); [|now revert Hden; case den].
   generalize (of_IQmake_to_decimal num den).
   case QArith_base.IQmake_to_decimal as [d'|]; [|now simpl].
@@ -96,7 +96,7 @@ Proof.
       case d' as [i f|]; [|now simpl].
       intros H; injection 1 as <-.
       unfold of_decimal; simpl.
-      change (match f with Nil => _ | _ => _ end) with (of_decimal (Decimal i f)).
+      change (match f with Nil => _ | _ => _ end: _ : Type) with (of_decimal (Decimal i f)).
       rewrite H; clear H.
       now unfold Z.of_uint; rewrite Unsigned.of_to.
   - case r as [z|q| |]; [|case q as[num den]|now simpl..];
@@ -125,7 +125,7 @@ Proof.
       case d' as [i f|]; [|now simpl].
       intros H; injection 1 as <-.
       unfold of_decimal; simpl.
-      change (match f with Nil => _ | _ => _ end) with (of_decimal (Decimal i f)).
+      change (match f with Nil => _ | _ => _ end: _ : Type) with (of_decimal (Decimal i f)).
       rewrite H; clear H.
       now unfold Z.of_uint; rewrite Unsigned.of_to.
 Qed.
@@ -143,7 +143,7 @@ Proof.
       case (uint_eq_dec (nzhead i) Nil); [now intros->|intro Hi].
       now rewrite (unorm_nzhead _ Hi); revert Hi; case nzhead.
     + set (r := IRQ _).
-      set (m := match f with Nil => _ | _ => _ end).
+      set (m := match f with Nil => _ | _ => _ end: _ : Type).
       replace m with r; [unfold r|now unfold m; revert Hf; case f].
       unfold to_decimal; simpl.
       unfold IQmake_to_decimal; simpl.
@@ -151,13 +151,13 @@ Proof.
       case (Pos.eq_dec n 1); intro Hn.
       { exfalso; apply Hf.
         now apply nb_digits_0; revert Hn; unfold n; case nb_digits. }
-      clear m; set (m := match n with 1%positive | _ => _ end).
+      clear m; set (m := match n with 1%positive | _ => _ end: _ : Type).
       replace m with (QArith_base.IQmake_to_decimal (Z.of_int (app_int i f)) n).
       2:{ now unfold m; revert Hn; case n. }
       unfold QArith_base.IQmake_to_decimal, n; simpl.
       rewrite nztail_to_uint_pow10.
       clear r; set (r := if _ <? _ then Some (Decimal _ _) else Some _).
-      clear m; set (m := match nb_digits f with 0 => _ | _ => _ end).
+      clear m; set (m := match nb_digits f with 0 => _ | _ => _ end: _ : Type).
       replace m with r; [unfold r|now unfold m; revert Hf; case f].
       rewrite DecimalZ.to_of, abs_norm, abs_app_int.
       case Nat.ltb_spec; intro Hnf.
@@ -179,7 +179,7 @@ Proof.
         case (uint_eq_dec (nzhead i) Nil); [now intros->|intro Hi].
         now rewrite (unorm_nzhead _ Hi); revert Hi; case nzhead.
       * set (r := IRQ _).
-        set (m := match f with Nil => _ | _ => _ end).
+        set (m := match f with Nil => _ | _ => _ end: _ : Type).
         replace m with r; [unfold r|now unfold m; revert Hf; case f].
         unfold to_decimal; simpl.
         unfold IQmake_to_decimal; simpl.
@@ -187,13 +187,13 @@ Proof.
         case (Pos.eq_dec n 1); intro Hn.
         { exfalso; apply Hf.
           now apply nb_digits_0; revert Hn; unfold n; case nb_digits. }
-        clear m; set (m := match n with 1%positive | _ => _ end).
+        clear m; set (m := match n with 1%positive | _ => _ end: _ : Type).
         replace m with (QArith_base.IQmake_to_decimal (Z.of_int (app_int i f)) n).
         2:{ now unfold m; revert Hn; case n. }
         unfold QArith_base.IQmake_to_decimal, n; simpl.
         rewrite nztail_to_uint_pow10.
         clear r; set (r := if _ <? _ then Some (Decimal _ _) else Some _).
-        clear m; set (m := match nb_digits f with 0 => _ | _ => _ end).
+        clear m; set (m := match nb_digits f with 0 => _ | _ => _ end: _ : Type).
         replace m with r; [unfold r|now unfold m; revert Hf; case f].
         rewrite DecimalZ.to_of, abs_norm, abs_app_int.
         case Nat.ltb_spec; intro Hnf.
@@ -203,8 +203,8 @@ Proof.
         -- rewrite (unorm_app_r _ _ Hnf).
            rewrite (iter_D0_unorm _ Hf).
            now rewrite dnorm_i_exact'.
-    + set (i' := match i with Pos _ => _ | _ => _ end).
-      set (m := match Pos.to_uint e with Nil => _ | _ => _ end).
+    + set (i' := match i with Pos _ => _ | _ => _ end: _ : Type).
+      set (m := match Pos.to_uint e with Nil => _ | _ => _ end: _ : Type).
       replace m with (DecimalExp i' f (Pos (Pos.to_uint e))).
       2:{ unfold m; generalize (Unsigned.to_uint_nonzero e).
           now case Pos.to_uint; [|intro u; case u|..]. }
@@ -218,7 +218,7 @@ Proof.
         case (uint_eq_dec (nzhead i) Nil); [now intros->|intro Hi].
         now rewrite (unorm_nzhead _ Hi); revert Hi; case nzhead.
       * set (r := IRQ _).
-        set (m := match f with Nil => _ | _ => _ end).
+        set (m := match f with Nil => _ | _ => _ end: _ : Type).
         replace m with r; [unfold r|now unfold m; revert Hf; case f].
         unfold to_decimal; simpl.
         unfold IQmake_to_decimal; simpl.
@@ -226,13 +226,13 @@ Proof.
         case (Pos.eq_dec n 1); intro Hn.
         { exfalso; apply Hf.
           now apply nb_digits_0; revert Hn; unfold n; case nb_digits. }
-        clear m; set (m := match n with 1%positive | _ => _ end).
+        clear m; set (m := match n with 1%positive | _ => _ end: _ : Type).
         replace m with (QArith_base.IQmake_to_decimal (Z.of_int (app_int i f)) n).
         2:{ now unfold m; revert Hn; case n. }
         unfold QArith_base.IQmake_to_decimal, n; simpl.
         rewrite nztail_to_uint_pow10.
         clear r; set (r := if _ <? _ then Some (Decimal _ _) else Some _).
-        clear m; set (m := match nb_digits f with 0 => _ | _ => _ end).
+        clear m; set (m := match nb_digits f with 0 => _ | _ => _ end: _ : Type).
         replace m with r; [unfold r|now unfold m; revert Hf; case f].
         rewrite DecimalZ.to_of, abs_norm, abs_app_int.
         case Nat.ltb_spec; intro Hnf.
@@ -251,7 +251,7 @@ Proof.
         case (uint_eq_dec (nzhead i) Nil); [now intros->|intro Hi].
         now rewrite (unorm_nzhead _ Hi); revert Hi; case nzhead.
       * set (r := IRQ _).
-        set (m := match f with Nil => _ | _ => _ end).
+        set (m := match f with Nil => _ | _ => _ end: _ : Type).
         replace m with r; [unfold r|now unfold m; revert Hf; case f].
         unfold to_decimal; simpl.
         unfold IQmake_to_decimal; simpl.
@@ -259,13 +259,13 @@ Proof.
         case (Pos.eq_dec n 1); intro Hn.
         { exfalso; apply Hf.
           now apply nb_digits_0; revert Hn; unfold n; case nb_digits. }
-        clear m; set (m := match n with 1%positive | _ => _ end).
+        clear m; set (m := match n with 1%positive | _ => _ end: _ : Type).
         replace m with (QArith_base.IQmake_to_decimal (Z.of_int (app_int i f)) n).
         2:{ now unfold m; revert Hn; case n. }
         unfold QArith_base.IQmake_to_decimal, n; simpl.
         rewrite nztail_to_uint_pow10.
         clear r; set (r := if _ <? _ then Some (Decimal _ _) else Some _).
-        clear m; set (m := match nb_digits f with 0 => _ | _ => _ end).
+        clear m; set (m := match nb_digits f with 0 => _ | _ => _ end: _ : Type).
         replace m with r; [unfold r|now unfold m; revert Hf; case f].
         rewrite DecimalZ.to_of, abs_norm, abs_app_int.
         case Nat.ltb_spec; intro Hnf.

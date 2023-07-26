@@ -39,7 +39,7 @@ val solve_evars : env -> evar_map -> constr -> evar_map * constr
 (** Raise an error message if incorrect elimination for this inductive
     (first constr is term to match, second is return predicate) *)
 val check_allowed_sort : env -> evar_map -> pinductive -> constr -> constr ->
-  Sorts.relevance
+  Sorts.t
 
 (** Raise an error message if bodies have types not unifiable with the
     expected ones *)

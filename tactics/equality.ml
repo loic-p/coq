@@ -908,7 +908,7 @@ let descend_then env sigma head dirn =
         List.map build_branch
           (List.interval 1 (Array.length mip.mind_consnames)) in
       let rci = Sorts.Relevant in (* TODO relevance *)
-      let ci = make_case_info env ind rci RegularStyle in
+      let ci = make_case_info env ind (Sorts.sort_of_relevance rci) RegularStyle in
       Inductiveops.make_case_or_project env sigma indt ci p head (Array.of_list brl)))
 
 (* Now we need to construct the discriminator, given a discriminable
@@ -954,7 +954,7 @@ let build_selector env sigma dirn c ind special default =
   let brl =
     List.map build_branch(List.interval 1 (Array.length mip.mind_consnames)) in
   let rci = Sorts.Relevant in (* TODO relevance *)
-  let ci = make_case_info env ind rci RegularStyle in
+  let ci = make_case_info env ind (Sorts.sort_of_relevance rci) RegularStyle in
   let ans = Inductiveops.make_case_or_project env sigma indt ci p c (Array.of_list brl) in
   ans
 

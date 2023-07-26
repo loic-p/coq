@@ -154,7 +154,7 @@ let mis_make_case_com dep env sigma (ind, u as pind) (mib,mip as specif) kind =
     let deparsign = LocalAssum (make_annot Anonymous r,depind)::arsign in
 
     let rci = relevance in
-    let ci = make_case_info env (fst pind) rci RegularStyle in
+    let ci = make_case_info env (fst pind) (Sorts.sort_of_relevance rci) RegularStyle in
     let pbody =
       appvect
         (mkRel (ndepar + nbprod),
@@ -459,7 +459,7 @@ let mis_make_indrec env sigma ?(force_mutual=false) listdepkind mib u =
             let target_relevance = Sorts.relevance_of_sort_family target_sort in
             let deftyi =
               let rci = target_relevance in
-              let ci = make_case_info env indi rci RegularStyle in
+              let ci = make_case_info env indi (Sorts.sort_of_relevance rci) RegularStyle in
               let concl = applist (mkRel (dect+j+ndepar),pargs) in
               let pred =
                 it_mkLambda_or_LetIn_name env

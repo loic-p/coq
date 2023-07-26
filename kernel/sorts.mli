@@ -67,6 +67,9 @@ val relevance_hash : relevance -> int
 val relevance_equal : relevance -> relevance -> bool
 
 val relevance_of_sort : t -> relevance
+
+val sort_of_relevance : relevance -> t
+
 val relevance_of_sort_family : family -> relevance
 
 val debug_print : t -> Pp.t

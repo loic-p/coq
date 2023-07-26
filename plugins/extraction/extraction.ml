@@ -1047,7 +1047,7 @@ let fake_match_projection env p =
     ci_npar = mib.mind_nparams;
     ci_cstr_ndecls = mip.mind_consnrealdecls;
     ci_cstr_nargs = mip.mind_consnrealargs;
-    ci_relevance = Declareops.relevance_of_projection_repr mib p;
+    ci_sort = Sorts.sort_of_relevance (Declareops.relevance_of_projection_repr mib p);
     ci_pp_info;
   }
   in
@@ -1055,7 +1055,7 @@ let fake_match_projection env p =
     | NotRecord | FakeRecord -> assert false
     | PrimRecord info ->
       let x, _, _, _ = info.(snd ind) in
-      make_annot (Name x) mip.mind_relevance
+      make_annot (Name x) (Sorts.relevance_of_sort mip.mind_predicate_sort)
   in
   let indty = mkApp (indu, Context.Rel.instance mkRel 0 paramslet) in
   let rec fold arg j subst = function

@@ -1358,7 +1358,7 @@ let rec skip_irrelevant_stack info stk = match stk with
   (* Typing rules ensure that fix / proj over SProp is irrelevant *)
   skip_irrelevant_stack info s
 | ZcaseT (ci, _, _, _, _, _) :: s ->
-  if is_irrelevant info ci.ci_relevance then skip_irrelevant_stack info s
+  if is_irrelevant info (Sorts.relevance_of_sort ci.ci_sort) then skip_irrelevant_stack info s
   else stk
 | Zprimitive _ :: _ -> assert false (* no irrelevant primitives so far *)
 | Zupdate m :: s ->
@@ -1386,7 +1386,7 @@ let rec knh info m stk =
     | FLOCKED -> assert false
     | FApp(a,b) -> knh info a (append_stack b (zupdate info m stk))
     | FCaseT(ci,u,pms,p,t,br,e) ->
-      if is_irrelevant info ci.ci_relevance then
+      if is_irrelevant info (Sorts.relevance_of_sort ci.ci_sort) then
         (mk_irrelevant, skip_irrelevant_stack info stk)
       else
         knh info t (ZcaseT(ci,u,pms,p,br,e)::zupdate info m stk)
@@ -1416,12 +1416,12 @@ and knht info e t stk =
     | App(a,b) ->
         knht info e a (append_stack (mk_clos_vect e b) stk)
     | Case(ci,u,pms,p,NoInvert,t,br) ->
-      if is_irrelevant info ci.ci_relevance then
+      if is_irrelevant info (Sorts.relevance_of_sort ci.ci_sort) then
         (mk_irrelevant, skip_irrelevant_stack info stk)
       else
         knht info e t (ZcaseT(ci, u, pms, p, br, e)::stk)
     | Case(ci,u,pms,p,CaseInvert{indices},t,br) ->
-      if is_irrelevant info ci.ci_relevance then
+      if is_irrelevant info (Sorts.relevance_of_sort ci.ci_sort) then
         (mk_irrelevant, skip_irrelevant_stack info stk)
       else
         let term = FCaseInvert (ci, u, pms, p, (Array.map (mk_clos e) indices), mk_clos e t, br, e) in

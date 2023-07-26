@@ -326,7 +326,7 @@ let declare_one_inductive_obs_eqs ind =
   let sigma = Evd.from_env env in
   let sigma, pind = Evd.fresh_inductive_instance ~rigid:UState.univ_rigid env sigma ind in
   let (mib,mip) = Global.lookup_inductive (fst pind) in
-  match mip.mind_relevance with
+  match Sorts.relevance_of_sort mip.mind_predicate_sort with
   | Sorts.Relevant ->
      (* u is the universe instance that maps universe variables in the inductive to universes in the evd *)
      let u = snd pind in

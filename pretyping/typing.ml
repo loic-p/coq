@@ -191,7 +191,7 @@ let type_case_branches env sigma (ind,largs) pj c =
   let lc = Array.map EConstr.of_constr lc in
   let n = (snd specif).Declarations.mind_nrealdecls in
   let ty = whd_betaiota env sigma (lambda_applist_decls sigma (n+1) p (realargs@[c])) in
-  sigma, (lc, ty, ESorts.relevance_of_sort sigma ps)
+  sigma, (lc, ty, ESorts.kind sigma ps)
 
 let judge_of_case env sigma case ci pj iv cj lfj =
   let ((ind, u), spec) =
@@ -199,7 +199,7 @@ let judge_of_case env sigma case ci pj iv cj lfj =
     with Not_found -> error_case_not_inductive env sigma cj in
   let indspec = ((ind, EInstance.kind sigma u), spec) in
   let sigma, (bty,rslty,rci) = type_case_branches env sigma indspec pj cj.uj_val in
-  let () = check_case_info env (fst indspec) rci ci in
+  let () = check_case_info env (fst indspec) (Sorts.relevance_of_sort rci) ci in
   let sigma = check_branch_types env sigma (fst indspec) cj (lfj,bty) in
   let () = if (match iv with | NoInvert -> false | CaseInvert _ -> true) != should_invert_case env ci
     then Type_errors.error_bad_invert env
@@ -228,15 +228,16 @@ let check_allowed_sort env sigma ind c p =
   let ksort = match EConstr.kind sigma s with
   | Sort s ->
     begin match ESorts.family sigma s with
-    | InType | InSProp | InSet | InProp as f -> f
-    | InQSort -> InType (* FIXME *)
+    | InType | InSProp | InSet | InProp -> s
+    | InQSort -> s (* FIXME *)
     end
   | _ -> error_elim_arity env sigma ind c None in
-  if not (Sorts.family_leq ksort sorts) then
+  let rel_ksort = ESorts.family sigma ksort in
+  if not (Sorts.family_leq rel_ksort sorts) then
     let s = inductive_sort_family (snd specif) in
-    error_elim_arity env sigma ind c (Some (pj, sorts, ksort, s))
+    error_elim_arity env sigma ind c (Some (pj, sorts, rel_ksort, s))
   else
-    Sorts.relevance_of_sort_family ksort
+    ESorts.kind sigma ksort
 
 let check_actual_type env sigma cj t =
   try Evarconv.unify_leq_delay env sigma cj.uj_type t

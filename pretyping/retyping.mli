@@ -37,7 +37,10 @@ val get_type_of_constr : ?polyprop:bool -> ?lax:bool
 val get_sort_of :
   ?polyprop:bool -> env -> evar_map -> types -> ESorts.t
 
-val get_sort_family_of :
+val sort_of :
+  ?polyprop:bool -> env -> evar_map -> types -> Sorts.t
+
+  val get_sort_family_of :
   ?polyprop:bool -> env -> evar_map -> types -> Sorts.family
 
 (** Makes an unsafe judgment from a constr *)

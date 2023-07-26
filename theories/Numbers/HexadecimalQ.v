@@ -50,7 +50,7 @@ Proof.
       * case (uint_eq_dec (nzhead num) Nil); [|intro Hn].
         { intros->; simpl; unfold app; simpl.
           now rewrite unorm_D0, unorm_iter_D0. }
-        replace (match nzhead num with Nil => _ | _ => _ end)
+        replace (match nzhead num with Nil => _ | _ => _ end : _ : Type)
           with (Neg (nzhead num)); [|now revert Hn; case nzhead].
         simpl.
         rewrite nzhead_iter_D0, nzhead_involutive.
@@ -159,8 +159,8 @@ Proof.
   - simpl; case (Decimal.norm e); clear e; intro e; [|now simpl].
     now case e; clear e; [|intro e..]; [|case e|..].
   - simpl.
-    set (m := match nzhead _ with Nil => _ | _ => _ end).
-    set (m' := match _ with Hexadecimal _ _ => _ | _ => _ end).
+    set (m := match nzhead _ with Nil => _ : _ : Type | _ => _ : _ : Type end).
+    set (m' := match _ with Hexadecimal _ _ => _ | _ => _ end : _ : Type).
     replace m' with m.
     2:{ unfold m'; case (Decimal.norm e); clear m' e; intro e; [|now simpl].
       now case e; clear e; [|intro e..]; [|case e|..]. }
@@ -182,8 +182,8 @@ Lemma dnorm_spec_f d :
 Proof.
   case d as [i f|i f e]; [now simpl|].
   simpl; case (Decimal.int_eq_dec (Decimal.norm e) (Decimal.Pos Decimal.zero)); [now intros->|intro He].
-  set (i' := match i with Pos _ => _ | _ => _ end).
-  set (m := match Decimal.norm e with Decimal.Pos _ => _ | _ => _ end).
+  set (i' := match i with Pos _ => _ | _ => _ end : _ : Type).
+  set (m := match Decimal.norm e with Decimal.Pos _ => _ | _ => _ end : _ : Type).
   replace m with (HexadecimalExp i' f (Decimal.norm e)); [now simpl|].
   unfold m; revert He; case (Decimal.norm e); clear m e; intro e; [|now simpl].
   now case e; clear e; [|intro e; case e|..].
@@ -201,8 +201,8 @@ Lemma dnorm_spec_e d :
 Proof.
   case d as [i f|i f e]; [now simpl|].
   simpl; case (Decimal.int_eq_dec (Decimal.norm e) (Decimal.Pos Decimal.zero)); [now intros->|intro He].
-  set (i' := match i with Pos _ => _ | _ => _ end).
-  set (m := match Decimal.norm e with Decimal.Pos _ => _ | _ => _ end).
+  set (i' := match i with Pos _ => _ | _ => _ end : _ : Type).
+  set (m := match Decimal.norm e with Decimal.Pos _ => _ | _ => _ end : _ : Type).
   replace m with (HexadecimalExp i' f (Decimal.norm e)); [now simpl|].
   unfold m; revert He; case (Decimal.norm e); clear m e; intro e; [|now simpl].
   now case e; clear e; [|intro e; case e|..].
@@ -213,7 +213,7 @@ Proof.
   case d as [i f|i f e]; case i as [i|i].
   - now simpl; rewrite unorm_involutive.
   - simpl; case (uint_eq_dec (nzhead (app i f)) Nil); [now intros->|intro Ha].
-    set (m := match nzhead _ with Nil =>_ | _ => _ end).
+    set (m := match nzhead _ with Nil =>_ | _ => _ end : _ : Type).
     replace m with (Neg (unorm i)).
     2:{ now unfold m; revert Ha; case nzhead. }
     case (uint_eq_dec (nzhead i) Nil); intro Hi.
@@ -226,7 +226,7 @@ Proof.
       now revert Ha; case nzhead.
   - simpl; case (Decimal.int_eq_dec (Decimal.norm e) (Decimal.Pos Decimal.zero)); intro He.
     + now rewrite He; simpl; rewrite unorm_involutive.
-    + set (m := match Decimal.norm e with Decimal.Pos _ => _ | _ => _ end).
+    + set (m := match Decimal.norm e with Decimal.Pos _ => _ | _ => _ end: _ : Type).
       replace m with (HexadecimalExp (Pos (unorm i)) f (Decimal.norm e)).
       2:{ unfold m; revert He; case (Decimal.norm e); clear m e; intro e; [|now simpl].
         now case e; clear e; [|intro e; case e|..]. }
@@ -236,7 +236,7 @@ Proof.
   - simpl; case (Decimal.int_eq_dec (Decimal.norm e) (Decimal.Pos Decimal.zero)); intro He.
     + rewrite He; simpl.
       case (uint_eq_dec (nzhead (app i f)) Nil); [now intros->|intro Ha].
-      set (m := match nzhead _ with Nil =>_ | _ => _ end).
+      set (m := match nzhead _ with Nil =>_ | _ => _ end : _ : Type).
       replace m with (Neg (unorm i)).
       2:{ now unfold m; revert Ha; case nzhead. }
       case (uint_eq_dec (nzhead i) Nil); intro Hi.
@@ -247,14 +247,14 @@ Proof.
         -- now case nzhead.
       * rewrite unorm_involutive, (unorm_nzhead _ Hi), nzhead_app_nzhead.
         now revert Ha; case nzhead.
-    + set (m := match Decimal.norm e with Decimal.Pos _ => _ | _ => _ end).
-      pose (i' := match nzhead (app i f) with Nil => Pos zero | _ => Neg (unorm i) end).
+    + set (m := match Decimal.norm e with Decimal.Pos _ => _ | _ => _ end: _ : Type).
+      pose (i' := match nzhead (app i f) with Nil => Pos zero | _ => Neg (unorm i) end: _ : Type).
       replace m with (HexadecimalExp i' f (Decimal.norm e)).
       2:{ unfold m; revert He; case (Decimal.norm e); clear m e; intro e; [|now simpl].
         now case e; clear e; [|intro e; case e|..]. }
       simpl; rewrite DecimalFacts.norm_involutive.
-      set (i'' := match i' with Pos _ => _ | _ => _ end).
-      clear m; set (m := match Decimal.norm e with Decimal.Pos _ => _ | _ => _ end).
+      set (i'' := match i' with Pos _ => _ | _ => _ end: _ : Type).
+      clear m; set (m := match Decimal.norm e with Decimal.Pos _ => _ | _ => _ end: _ : Type).
       replace m with (HexadecimalExp i'' f (Decimal.norm e)).
       2:{ unfold m; revert He; case (Decimal.norm e); clear m e; intro e; [|now simpl].
         now case e; clear e; [|intro e; case e|..]. }
@@ -290,12 +290,12 @@ Proof.
   case (uint_eq_dec (nzhead (app ni f)) Nil); intro Ha.
   { now rewrite Ha, (nzhead_app_nil_l _ _ Ha). }
   rewrite (unorm_nzhead _ Ha).
-  set (m := match nzhead _ with Nil => _ | _ => _ end).
+  set (m := match nzhead _ with Nil => _ | _ => _ end: _ : Type).
   replace m with (Neg (unorm ni)); [|now unfold m; revert Ha; case nzhead].
   case (uint_eq_dec (nzhead ni) Nil); intro Hni.
   { rewrite <-nzhead_app_nzhead, Hni, app_nil_l.
     intro H; exfalso; revert H; apply Nat.le_ngt, nb_digits_nzhead. }
-  clear m; set (m := match nzhead ni with Nil => _ | _ => _ end).
+  clear m; set (m := match nzhead ni with Nil => _ | _ => _ end: _ : Type).
   replace m with (Neg (nzhead ni)); [|now unfold m; revert Hni; case nzhead].
   now rewrite (unorm_nzhead _ Hni).
 Qed.
@@ -320,13 +320,13 @@ Proof.
   unfold unorm.
   case (uint_eq_dec (nzhead (app ni f)) Nil); intro Hn.
   { now rewrite Hn. }
-  set (m := match nzhead _ with Nil => _ | _ => _ end).
+  set (m := match nzhead _ with Nil => _ | _ => _ end: _ : Type).
   replace m with (nzhead (app ni f)).
   2:{ now unfold m; revert Hn; case nzhead. }
-  clear m; set (m := match nzhead _ with Nil => _ | _ => _ end).
+  clear m; set (m := match nzhead _ with Nil => _ | _ => _ end: _ : Type).
   replace m with (Neg (unorm ni)).
   2:{ now unfold m, unorm; revert Hn; case nzhead. }
-  clear m; set (m := match nzhead _ with Nil => _ | _ => _ end).
+  clear m; set (m := match nzhead _ with Nil => _ | _ => _ end: _ : Type).
   replace m with (Neg (nzhead (app ni f))).
   2:{ now unfold m; revert Hn; case nzhead. }
   rewrite <-(unorm_nzhead _ Hn).
@@ -383,8 +383,8 @@ Proof.
       change (fun _ : positive => _) with (Pos.mul 16).
       rewrite nztail_to_hex_uint_pow16, to_of.
       generalize (DecimalPos.Unsigned.to_uint_nonzero e); intro He.
-      set (dnorm_i := match i with Pos _ => _ | _ => _ end).
-      set (m := match Pos.to_uint e with Decimal.Nil => _ | _ => _ end).
+      set (dnorm_i := match i with Pos _ => _ | _ => _ end: _ : Type).
+      set (m := match Pos.to_uint e with Decimal.Nil => _ | _ => _ end: _ : Type).
       replace m with (HexadecimalExp dnorm_i f (Decimal.Pos (Pos.to_uint e))).
       2:{ now unfold m; revert He; case (Pos.to_uint e); [|intro u; case u|..]. }
       clear m; unfold dnorm_i.

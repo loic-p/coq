@@ -199,7 +199,7 @@ Infix "*" := mul : positive_scope.
 
 (** ** Iteration over a positive number *)
 
-Definition iter {A} (f:A -> A) : A -> positive -> A :=
+Definition iter {A:Type} (f:A -> A) : A -> positive -> A :=
   fix iter_fix x n := match n with
     | xH => f x
     | xO n' => iter_fix (iter_fix x n') n'
@@ -532,7 +532,7 @@ Fixpoint testbit (p:positive)(n:N) :=
 
 (** ** From binary positive numbers to Peano natural numbers *)
 
-Definition iter_op {A}(op:A->A->A) :=
+Definition iter_op {A:Type}(op:A->A->A) :=
   fix iter (p:positive)(a:A) : A :=
   match p with
     | 1 => a

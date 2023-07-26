@@ -398,7 +398,7 @@ Notation "=^~ r" := (ssr_converse r) : form_scope.
 Notation nosimpl t := (let: tt := tt in t).
 
 Lemma master_key : unit. Proof. exact tt. Qed.
-Definition locked A := let: tt := master_key in fun x : A => x.
+Definition locked (A:Type) := let: tt := master_key in fun x : A => x.
 
 Register master_key as plugins.ssreflect.master_key.
 Register locked as plugins.ssreflect.locked.
@@ -439,7 +439,7 @@ Notation "[ 'unlockable' 'fun' C ]" :=
 (**  Generic keyed constant locking.  **)
 
 (**  The argument order ensures that k is always compared before T.  **)
-Definition locked_with k := let: tt := k in fun T x => x : T.
+Definition locked_with k := let: tt := k in fun (T:Type) x => x : T.
 
 (**
  This can be used as a cheap alternative to cloning the unlockable instance
