@@ -280,7 +280,7 @@ let expand_arity (mib, mip) (ind, u) params nas =
   let params = Vars.subst_of_rel_context_instance paramdecl params in
   let realdecls, _ = List.chop mip.mind_nrealdecls mip.mind_arity_ctxt in
   let self =
-    let u = UVars.Instance.abstract_instance (UVars.Instance.length u) in
+    let u = UVars.Instance.of_level_instance @@ UVars.LevelInstance.abstract_instance (UVars.Instance.length u) in
     let args = Context.Rel.instance mkRel 0 mip.mind_arity_ctxt in
     mkApp (mkIndU (ind, u), args)
   in
@@ -448,7 +448,7 @@ let check_constraints c env =
   UGraph.check_constraints c env.env_universes
 
 let add_universes ~lbound ~strict ctx g =
-  let _qs, us = UVars.Instance.to_array (UVars.UContext.instance ctx) in
+  let _qs, us = UVars.LevelInstance.to_array (UVars.UContext.instance ctx) in
   let g = Array.fold_left
       (fun g v -> UGraph.add_universe ~lbound ~strict v g)
       g us

@@ -908,10 +908,15 @@ let extern_glob_sort uvars = function
   | UNamed _ when not !print_universes -> UAnonymous {rigid=UnivRigid}
   | UNamed _ | UAnonymous _ as u -> extern_glob_sort uvars u
 
+
+let extern_glob_level uvars u =
+  let map l = List.map (on_fst (extern_glob_sort_name uvars)) l in
+  map_glob_sort_gen map u
+
 let extern_instance uvars = function
   | Some (ql,ul) when !print_universes ->
     let ql = List.map extern_glob_quality ql in
-    let ul = List.map (map_glob_sort_gen (extern_glob_sort_name uvars)) ul in
+    let ul = List.map (extern_glob_level uvars) ul in
     Some (ql,ul)
   | _ -> None
 

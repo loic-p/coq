@@ -600,6 +600,7 @@ let check_inductive env ~sec_univs kn mie =
       env_ar_par paramsctxt mie.mind_entry_finite
       (Array.map (fun ((_,lc),(indices,_),_) -> Context.Rel.nhyps indices,lc) inds)
   in
+  let sec_univs = Option.map (fun x -> Univ.Instance.to_array @@ Univ.Instance.of_level_instance @@ Univ.LevelInstance.of_array x) sec_univs in
   (* Build the inductive packets *)
     build_inductive env ~sec_univs names mie.mind_entry_private univs template variance
       paramsctxt kn record mie.mind_entry_finite

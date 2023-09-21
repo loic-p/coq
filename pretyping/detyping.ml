@@ -810,6 +810,11 @@ type binder_kind = BProd | BLambda | BLetIn
 (**********************************************************************)
 (* Main detyping function                                             *)
 
+let detype_instance_univ sigma u =
+  (if !print_universes
+    then UNamed (detype_universe sigma u)
+    else UAnonymous {rigid=UnivRigid})
+
 let detype_instance sigma l =
   if not !print_universes then None
   else
@@ -818,7 +823,7 @@ let detype_instance sigma l =
     else
       let qs, us = UVars.Instance.to_array l in
       let qs = List.map (detype_quality sigma) (Array.to_list qs) in
-      let us = List.map (detype_level sigma) (Array.to_list us) in
+      let us = List.map (detype_instance_univ sigma) (Array.to_list us) in
       Some (qs, us)
 
 let delay (type a) (d : a delay) (f : a delay -> _ -> _ -> _ -> _ -> _ -> a glob_constr_r) flags env avoid sigma t : a glob_constr_g =

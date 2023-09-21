@@ -107,9 +107,11 @@ end
 open Inf
 
 let infer_generic_instance_eq variances u =
-  Array.fold_left (fun variances u -> infer_level_eq u variances)
-    variances
-    u
+  Array.fold_left (fun variances u ->
+    match Universe.level u with
+    | Some l -> infer_level_eq l variances
+    | None -> variances)
+    variances (Instance.to_array u)
 
 (* no variance for qualities *)
 let instance_univs u = snd (Instance.to_array u)
@@ -127,12 +129,14 @@ let extended_mind_variance mind =
   | None, Some _ -> assert false
   | Some variance, Some sec_variance -> Some (Array.append sec_variance variance)
 
+(* todo check correctness. MS *)
 let infer_cumulative_ind_instance cv_pb mind_variance variances u =
   Array.fold_left2 (fun variances varu u ->
-      match cv_pb, varu with
-      | _, Irrelevant -> variances
-      | _, Invariant | CONV, Covariant -> infer_level_eq u variances
-      | CUMUL, Covariant -> infer_level_leq u variances)
+      match cv_pb, varu, Universe.level u with
+      | _, Irrelevant, _ -> variances
+      | _, Invariant, Some u | CONV, Covariant, Some u -> infer_level_eq u variances
+      | CUMUL, Covariant, Some u -> infer_level_leq u variances
+      | _, _, _ -> variances)
     variances
     mind_variance
     u

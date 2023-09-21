@@ -788,7 +788,7 @@ let rec apply_rules whrec env sigma u r stk =
       let psubst, stk = apply_rule whrec env sigma [] psubst elims stk in
       let subst, qsubst, usubst = Partial_subst.to_arrays psubst in
       let usubst = UVars.Instance.of_array (qsubst, usubst) in
-      let rhsu = subst_instance_constr (EConstr.EInstance.make usubst) (EConstr.of_constr rhs) in
+      let rhsu = subst_instance_constr  (EConstr.EInstance.make usubst) (EConstr.of_constr rhs) in
       let rhs' = substl (Array.to_list subst) rhsu in
       (rhs', stk)
     with PatternFailure -> apply_rules whrec env sigma u rs stk
@@ -1663,8 +1663,8 @@ let infer_eq (univs, cstrs as cuniv) u u' =
 let infer_leq (univs, cstrs as cuniv) u u' =
   if UGraph.check_leq_sort univs u u' then cuniv
   else
-    let cstrs', univs = UnivSubst.enforce_leq_alg_sort u u' univs in
-    univs, Univ.Constraints.union cstrs cstrs'
+    let cstrs' = UnivSubst.enforce_leq_sort u u' Constraints.empty in
+    UGraph.merge_constraints cstrs' univs, Univ.Constraints.union cstrs cstrs'
 
 let infer_cmp_universes _env pb s0 s1 univs =
   match pb with

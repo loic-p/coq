@@ -11,16 +11,7 @@
 open Univ
 open UVars
 
-module G = Loop_checking.Make(struct
-    type t = Level.t
-    module Set = Level.Set
-    module Map = Level.Map
-
-    let equal = Level.equal
-    let compare = Level.compare
-    let is_source = Level.is_set
-    let pr = Level.raw_pr
-  end) [@@inlined] (* without inline, +1% ish on HoTT, compcert. See jenkins 594 vs 596 *)
+module G = Loop_checking
 (* Do not include G to make it easier to control universe specific
    code (eg add_universe with a constraint vs G.add with no
    constraint) *)
@@ -50,12 +41,7 @@ let set_type_in_type b g = {g with type_in_type=b}
 let type_in_type g = g.type_in_type
 
 let check_smaller_expr g (u,n) (v,m) =
-  let diff = n - m in
-    match diff with
-    | 0 -> G.check_leq g.graph u v
-    | 1 -> G.check_lt g.graph u v
-    | x when x < 0 -> G.check_leq g.graph u v
-    | _ -> false
+  G.check_leq g.graph (Universe.of_list [(u,n)]) (Universe.of_list [(v,m)])
 
 let exists_bigger g ul l =
   Universe.exists (fun ul' ->
@@ -72,7 +58,7 @@ let check_eq g u v =
     (real_check_leq g u v && real_check_leq g v u)
 
 let check_eq_level g u v =
-  u == v || type_in_type g || G.check_eq g.graph u v
+  u == v || type_in_type g || G.check_eq_level g.graph u v
 
 let empty_universes = {graph=G.empty; type_in_type=false}
 
@@ -87,7 +73,6 @@ let initial_universes_with g = {g with graph=initial_universes.graph}
 let enforce_constraint (u,d,v) g =
   match d with
   | Le -> G.enforce_leq u v g
-  | Lt -> G.enforce_lt u v g
   | Eq -> G.enforce_eq u v g
 
 let enforce_constraint0 cst g = match enforce_constraint cst g.graph with
@@ -101,7 +86,7 @@ let enforce_constraint cst g = match enforce_constraint0 cst g with
   if not (type_in_type g) then
     let (u, c, v) = cst in
     let e = lazy (G.get_explanation cst g.graph) in
-    let mk u = Sorts.sort_of_univ @@ Universe.make u in
+    let mk u = Sorts.sort_of_univ u in
     raise (UniverseInconsistency (c, mk u, mk v, Some (Path e)))
   else g
 | Some g -> g
@@ -112,48 +97,9 @@ let check_constraint { graph = g; type_in_type } (u,d,v) =
   type_in_type
   || match d with
   | Le -> G.check_leq g u v
-  | Lt -> G.check_lt g u v
   | Eq -> G.check_eq g u v
 
 let check_constraints csts g = Constraints.for_all (check_constraint g) csts
-
-let leq_expr (u,m) (v,n) =
-  let d = match m - n with
-    | 1 -> Lt
-    | diff -> assert (diff <= 0); Le
-  in
-  (u,d,v)
-
-let enforce_leq_alg u v g =
-  let open Util in
-  let enforce_one (u,v) = function
-    | Inr _ as orig -> orig
-    | Inl (cstrs,g) as orig ->
-      if check_smaller_expr g u v then orig
-      else
-        (let c = leq_expr u v in
-         match enforce_constraint0 c g with
-         | Some g -> Inl (Constraints.add c cstrs,g)
-         | None -> Inr (c, g))
-  in
-  (* max(us) <= max(vs) <-> forall u in us, exists v in vs, u <= v *)
-  let c = List.map (fun u -> List.map (fun v -> (u,v)) (Universe.repr v)) (Universe.repr u) in
-  let c = List.cartesians enforce_one (Inl (Constraints.empty,g)) c in
-  (* We pick a best constraint: smallest number of constraints, not an error if possible. *)
-  let order x y = match x, y with
-    | Inr _, Inr _ -> 0
-    | Inl _, Inr _ -> -1
-    | Inr _, Inl _ -> 1
-    | Inl (c,_), Inl (c',_) ->
-      Int.compare (Constraints.cardinal c) (Constraints.cardinal c')
-  in
-  match List.min order c with
-  | Inl x -> x
-  | Inr ((u, c, v), g) ->
-    let e = lazy (G.get_explanation (u, c, v) g.graph) in
-    let mk u = Sorts.sort_of_univ @@ Universe.make u in
-    let e = UniverseInconsistency (c, mk u, mk v, Some (Path e)) in
-    raise e
 
 module Bound =
 struct
@@ -164,8 +110,8 @@ exception AlreadyDeclared = G.AlreadyDeclared
 let add_universe u ~lbound ~strict g = match lbound with
 | Bound.Set ->
   let graph = G.add u g.graph in
-  let d = if strict then Lt else Le in
-  enforce_constraint (Level.set, d, u) { g with graph }
+  let b = if strict then Universe.type1 else Universe.type0 in
+  enforce_constraint (b, Le, Universe.make u) { g with graph }
 | Bound.Prop ->
   (* Do not actually add any constraint. This is a hack for template. *)
   { g with graph = G.add u g.graph }
@@ -191,7 +137,7 @@ let check_subtype univs ctxT ctx =
     let cst = UContext.constraints uctx in
     let cstT = UContext.constraints (AbstractContext.repr ctxT) in
     let push accu v = add_universe v ~lbound:Bound.Set ~strict:false accu in
-    let univs = Array.fold_left push univs (snd (Instance.to_array inst)) in
+    let univs = Array.fold_left push univs (snd (LevelInstance.to_array inst)) in
     let univs = merge_constraints cstT univs in
     check_constraints cst univs
   else false
@@ -202,7 +148,7 @@ let check_eq_instances g t1 t2 =
   let qt1, ut1 = Instance.to_array t1 in
   let qt2, ut2 = Instance.to_array t2 in
   CArray.equal Sorts.Quality.equal qt1 qt2
-  && CArray.equal (check_eq_level g) ut1 ut2
+  && CArray.equal (check_eq g) ut1 ut2
 
 let domain g = G.domain g.graph
 let choose p g u = G.choose p g.graph u
@@ -284,7 +230,7 @@ let explain_universe_inconsistency prq prl (o,u,v,p : univ_inconsistency) =
   | Sorts.QSort (q, u) -> str "Type@{" ++ prq q ++ str " | " ++ Universe.pr prl u ++ str"}"
   in
   let pr_rel = function
-    | Eq -> str"=" | Lt -> str"<" | Le -> str"<="
+    | Eq -> str"=" | Le -> str"<="
   in
   let reason = match p with
     | None -> mt()

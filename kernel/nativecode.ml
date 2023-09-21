@@ -1136,8 +1136,9 @@ let cast_to_int v =
   | MLint _ -> v
   | _ -> MLprimitive (Val_to_int, [|v|])
 
+(* todo check: probably broken by change of repr (MS) *)
 let ml_of_instance instance u =
-  if UVars.Instance.is_empty u then [||]
+  (* if UVars.Instance.is_empty u then [||]
   else
     let i = push_symbol (SymbInstance u) in
     let u_code = get_instance_code i in
@@ -1153,7 +1154,24 @@ let ml_of_instance instance u =
         MLprimitive (MLsubst_instance_instance, [|univ; u_code|])
       else u_code
     in
-    [|MLprimitive (MLmagic, [|u_code|])|]
+    [|MLprimitive (MLmagic, [|u_code|])|] *)
+  let ml_of_universe l =
+    match Univ.Universe.level l with
+    | Some l ->
+      (match Univ.Level.var_index l with
+      | Some i ->
+        (* FIXME: use a proper cast function *)
+        let univ = MLprimitive (MLmagic, [|MLlocal (Option.get instance)|]) in
+        MLprimitive (MLarrayget, [|univ; MLint i|])
+      | None -> let i = push_symbol (SymbLevel l) in get_level_code i)
+    | None ->
+      let i = push_symbol (SymbSort (Sorts.sort_of_univ l)) in get_sort_code i
+  in
+  let u = Univ.Instance.to_array u in
+  if Array.is_empty u then [||]
+  else let u = Array.map ml_of_universe u in
+      (* FIXME: use a proper cast function *)
+       [|MLprimitive (MLmagic, [|MLarray u|])|]
 
 let compile_prim env decl cond paux =
 

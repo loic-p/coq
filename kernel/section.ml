@@ -60,17 +60,19 @@ let push_local_universe_context ctx sec =
   else
     let sctx = sec.poly_universes in
     let poly_universes = UContext.union sctx ctx in
-    let all_poly_univs = Instance.append sec.all_poly_univs (UContext.instance ctx) in
+    let all_poly_univs = LevelInstance.append sec.all_poly_univs (UContext.instance ctx) in
     { sec with poly_universes; all_poly_univs; has_poly_univs = true }
 
 let is_polymorphic_univ u sec =
-  let _, us = Instance.to_array sec.all_poly_univs in
+  let _, us = LevelInstance.to_array sec.all_poly_univs in
   Array.exists (fun u' -> Level.equal u u') us
 
 let push_constraints uctx sec =
   if sec.has_poly_univs &&
      Constraints.exists
-       (fun (l,_,r) -> is_polymorphic_univ l sec || is_polymorphic_univ r sec)
+       (fun (l,_,r) ->
+        Universe.exists (fun (l, _) -> is_polymorphic_univ l sec) l ||
+        Universe.exists (fun (l, _) -> is_polymorphic_univ l sec) r)
        (snd uctx)
   then CErrors.user_err
       Pp.(str "Cannot add monomorphic constraints which refer to section polymorphic universes.");

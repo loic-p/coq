@@ -325,6 +325,10 @@ GRAMMAR EXTEND Gram
       | "Type" -> { Type }
       | "_" -> { Anon loc }
       | id = global -> { Global id } ] ]
+  universe_level:
+    [ [ "Type" -> { UAnonymous {rigid=UnivRigid} }
+      | "_" -> { UAnonymous {rigid=UnivFlexible false} }
+      | u = universe -> { UNamed u } ] ]
   ;
   fix_decls:
     [ [ dcl = fix_decl -> { let (id,_,_,_,_,_) = dcl.CAst.v in (id,[dcl.CAst.v]) }

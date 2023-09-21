@@ -655,7 +655,8 @@ val universe_binders : evar_map -> UnivNames.universe_binders
 
 val new_univ_level_variable : ?loc:Loc.t -> ?name:Id.t -> rigid -> evar_map -> evar_map * Univ.Level.t
 val new_quality_variable : ?loc:Loc.t -> ?name:Id.t -> evar_map -> evar_map * Sorts.QVar.t
-val new_sort_variable : ?loc:Loc.t -> rigid -> evar_map -> evar_map * esorts
+val new_univ_variable : ?loc:Loc.t -> ?name:Id.t -> rigid -> evar_map -> evar_map * Univ.Universe.t
+val new_sort_variable : ?loc:Loc.t -> ?name:Id.t -> rigid -> evar_map -> evar_map * esorts
 
 val add_global_univ : evar_map -> Univ.Level.t -> evar_map
 
@@ -670,8 +671,8 @@ val normalize_universe_instance : evar_map -> UVars.Instance.t -> UVars.Instance
 
 val set_leq_sort : env -> evar_map -> esorts -> esorts -> evar_map
 val set_eq_sort : env -> evar_map -> esorts -> esorts -> evar_map
-val set_eq_level : evar_map -> Univ.Level.t -> Univ.Level.t -> evar_map
-val set_leq_level : evar_map -> Univ.Level.t -> Univ.Level.t -> evar_map
+val set_eq_univ : evar_map -> Univ.Universe.t -> Univ.Universe.t -> evar_map
+val set_leq_univ : evar_map -> Univ.Universe.t -> Univ.Universe.t -> evar_map
 val set_eq_instances : ?flex:bool ->
   evar_map -> UVars.Instance.t -> UVars.Instance.t -> evar_map
 

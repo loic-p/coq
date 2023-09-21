@@ -228,13 +228,9 @@ let tag_var = tag Tag.variable
     | UNamed u -> hov 0 (tag_type (str "Type") ++ pr_univ_annot pr_quality_univ u)
 
   let pr_univ_level_expr = function
-    | UNamed CSProp -> tag_type (str "SProp")
-    | UNamed CProp -> tag_type (str "Prop")
-    | UNamed CSet -> tag_type (str "Set")
     | UAnonymous {rigid=UnivRigid} -> tag_type (str "Type")
     | UAnonymous {rigid=UnivFlexible b} -> assert (not b); tag_type (str "_")
-    | UNamed (CType u) -> tag_type (pr_qualid u)
-    | UNamed (CRawType s) -> tag_type (Univ.Level.raw_pr s)
+    | UNamed u -> tag_type (pr_univ u)
 
   let pr_qualid sp =
     let (sl, id) = repr_qualid sp in

@@ -10,83 +10,62 @@
 
 (** Graphs representing strict orders *)
 
-type constraint_type = Lt | Le | Eq
+open Univ
 
-module type Point = sig
-  type t
+type t
 
-  module Set : CSig.SetS with type elt = t
-  module Map : CMap.ExtS with type key = t and module Set := Set
+val empty : t
 
-  val equal : t -> t -> bool
-  val compare : t -> t -> int
+val check_invariants : required_canonical:(Level.t -> bool) -> t -> unit
 
-  val is_source : t -> bool
+exception AlreadyDeclared
+val add : ?rank:int -> Level.t -> t -> t
+(** All points must be pre-declared through this function before
+    they can be mentioned in the others. NB: use a large [rank] to
+    keep the node canonical *)
 
-  val pr : t -> Pp.t
-end
+exception Undeclared of Level.t
+val check_declared : t -> Level.Set.t -> unit
+(** @raise Undeclared if one of the points is not present in the graph. *)
 
-module Make (Point:Point) : sig
+type 'a check_function = t -> 'a -> 'a -> bool
 
-  type t
+val check_eq : Universe.t check_function
+val check_leq : Universe.t check_function
 
-  val empty : t
+val check_eq_level : Level.t check_function
+val check_leq_level : Level.t check_function
 
-  val check_invariants : required_canonical:(Point.t -> bool) -> t -> unit
+val enforce_eq : Universe.t -> Universe.t -> t -> t option
+val enforce_leq : Universe.t -> Universe.t -> t -> t option
+val enforce_lt : Universe.t -> Universe.t -> t -> t option
+val enforce_constraint : univ_constraint -> t -> t option
 
-  exception AlreadyDeclared
-  val add : ?rank:int -> Point.t -> t -> t
-  (** All points must be pre-declared through this function before
-     they can be mentioned in the others. NB: use a large [rank] to
-     keep the node canonical *)
+type explanation = Level.t * (constraint_type * Level.t) list
 
-  exception Undeclared of Point.t
-  val check_declared : t -> Point.Set.t -> unit
-  (** @raise Undeclared if one of the points is not present in the graph. *)
+val get_explanation : univ_constraint -> t -> explanation
+(** Assuming that the corresponding call to [enforce_*] returned [None], this
+    will give a trace for the failure. *)
 
-  type 'a check_function = t -> 'a -> 'a -> bool
+type 'a constraint_fold = univ_constraint -> 'a -> 'a
 
-  val check_eq : Point.t check_function
-  val check_leq : Point.t check_function
-  val check_lt : Point.t check_function
+val constraints_of : t -> 'a constraint_fold -> 'a -> 'a * Level.Set.t list
 
-  val enforce_eq : Point.t -> Point.t -> t -> t option
-  val enforce_leq : Point.t -> Point.t -> t -> t option
-  val enforce_lt : Point.t -> Point.t -> t -> t option
+val constraints_for : kept:Level.Set.t -> t -> 'a constraint_fold -> 'a -> 'a
 
-  type explanation = Point.t * (constraint_type * Point.t) list
+val domain : t -> Level.Set.t
 
-  val get_explanation : (Point.t * constraint_type * Point.t) -> t -> explanation
-  (** Assuming that the corresponding call to [enforce_*] returned [None], this
-      will give a trace for the failure. *)
+val choose : (Level.t -> bool) -> t -> Level.t -> Level.t option
 
-  type 'a constraint_fold = Point.t * constraint_type * Point.t -> 'a -> 'a
+(** {5 High-level representation} *)
 
-  val constraints_of : t -> 'a constraint_fold -> 'a -> 'a * Point.Set.t list
+type node =
+| Alias of Level.t
+| Node of bool Level.Map.t (** Nodes v s.t. u < v (true) or u <= v (false) *)
+type repr = node Level.Map.t
+val repr : t -> repr
 
-  val constraints_for : kept:Point.Set.t -> t -> 'a constraint_fold -> 'a -> 'a
+(* New functions *)
+val pr_model : t -> Pp.t
 
-  val domain : t -> Point.Set.t
-
-  val choose : (Point.t -> bool) -> t -> Point.t -> Point.t option
-
-  (** {5 High-level representation} *)
-
-  type node =
-  | Alias of Point.t
-  | Node of bool Point.Map.t (** Nodes v s.t. u < v (true) or u <= v (false) *)
-  type repr = node Point.Map.t
-  val repr : t -> repr
-
-  (* New functions *)
-  val pr_model : t -> Pp.t
-
-  val valuation : t -> int Point.Map.t
-
-  (* Enforcing max constraints *)
-
-  type lub = (Point.t * int) list
-
-  val enforce_constraint : lub -> constraint_type -> lub -> t -> t option
-
-end
+val valuation : t -> int Level.Map.t

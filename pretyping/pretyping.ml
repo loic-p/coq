@@ -480,18 +480,55 @@ let pretype_id pretype loc env sigma id =
 (*************************************************************************)
 (* Main pretyping function                                               *)
 
+let universe_info ?loc sigma l = match l with
+| [] -> assert false
+| [GSProp, 0] | [GProp, 0] ->
+    user_err ?loc
+    (str "Non-Set small universes cannot be used in universe instances.")
+| (u, n) :: us ->
+  let open Pp in
+  let get_level sigma u n = match level_name sigma u with
+  | None ->
+    user_err ?loc
+      (str "Non-Set small universes cannot be used in algebraic expressions.")
+  | Some (sigma, u) ->
+    let u = Univ.Universe.make u in
+    let u = match n with
+    | 0 -> u
+    | 1 -> Univ.Universe.super u
+    | n ->
+      user_err ?loc
+        (str "Cannot interpret universe increment +" ++ int n ++ str ".")
+    in
+    (sigma, u)
+  in
+  let fold (sigma, u) (l, n) =
+    let sigma, u' = get_level sigma l n in
+    (sigma, Univ.Universe.sup u u')
+  in
+  let (sigma, u) = get_level sigma u n in
+  let (sigma, u) = List.fold_left fold (sigma, u) us in
+  sigma, u
+
+let glob_univ ?loc evd : glob_univ -> _ = function
+  | UAnonymous {rigid} ->
+    assert (rigid <> UnivFlexible true);
+    let evd, l = new_univ_level_variable ?loc rigid evd in
+    evd, Univ.Universe.make l
+  | UNamed s -> universe_info ?loc evd s
+
 let instance ?loc evd (ql,ul) =
   let evd, ql' =
     List.fold_left
       (fun (evd, quals) l ->
-         let evd, l = glob_quality ?loc evd l in
-         (evd, l :: quals)) (evd, [])
+          let evd, l = glob_quality ?loc evd l in
+          (evd, l :: quals)) (evd, [])
       ql
   in
   let evd, ul' =
     List.fold_left
       (fun (evd, univs) l ->
-         let evd, l = glob_level ?loc evd l in
+         let evd, l = glob_univ ?loc evd l in
          (evd, l :: univs)) (evd, [])
       ul
   in
@@ -1400,7 +1437,7 @@ let pretype_type self c ?loc ~flags valcon (env : GlobEnv.t) sigma = match DAst.
     let sigma, u = match u with
       | None -> sigma, None
       | Some ([],[u]) ->
-        let sigma, u = glob_level ?loc sigma u in
+        let sigma, u = glob_univ ?loc sigma u in
         sigma, Some u
       | Some (qs,us) ->
           let open UnivGen in
@@ -1416,7 +1453,7 @@ let pretype_type self c ?loc ~flags valcon (env : GlobEnv.t) sigma = match DAst.
     let sigma, jt = Array.fold_left_map pretype_elem sigma t in
     let sigma, u = match u with
       | Some u -> sigma, u
-      | None -> Evd.new_univ_level_variable UState.univ_flexible sigma
+      | None -> Evd.new_univ_variable UState.univ_flexible sigma
     in
     let sigma = Evd.set_leq_sort !!env sigma
         (* we retype because it may be an evar which has been defined, resulting in a lower sort

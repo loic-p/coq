@@ -1,4 +1,4 @@
-type constraint_type = Lt | Le | Eq
+open Univ
 
 let debug_loop_checking_invariants, debug_invariants = CDebug.create_full ~name:"loop-checking-invariants" ()
 let _debug_loop_checking_model, debug_model = CDebug.create_full ~name:"loop-checking-model" ()
@@ -11,18 +11,6 @@ let _debug_loop_checking_check_model, debug_check_model = CDebug.create_full ~na
 let _debug_loop_checking_check, _debug_check = CDebug.create_full ~name:"loop-checking-check" ()
 
 (* let _ = CDebug.set_flag debug_loop_checking_check true *)
-
-module type Point = sig
-  type t
-
-  module Set : CSig.SetS with type elt = t
-  module Map : CMap.ExtS with type key = t and module Set := Set
-
-  val equal : t -> t -> bool
-  val compare : t -> t -> int
-  val is_source : t -> bool
-  val pr : t -> Pp.t
-end
 
 let _time prefix =
   let accum = ref 0. in
@@ -86,64 +74,61 @@ let time4 prefix f =
     res
   else f x y z w
 
-module Make (Point : Point) = struct
 
-  module Index :
-  sig
-    type t
-    val equal : t -> t -> bool
-    val compare : t -> t -> int
-    module Set : CSig.SetS with type elt = t
-    module Map : CMap.ExtS with type key = t and module Set := Set
-    type table
-    val empty : table
-    val fresh : Point.t -> table -> t * table
-    val mem : Point.t -> table -> bool
-    val find : Point.t -> table -> t
-    val repr : t -> table -> Point.t
-    val dom : table -> Point.Set.t
-    val hash : t -> int
-  end =
-  struct
-    type t = int
-    let equal = Int.equal
-    let compare = Int.compare
-    module Set = Int.Set
-    module Map = Int.Map
+module Index :
+sig
+  type t
+  val equal : t -> t -> bool
+  val compare : t -> t -> int
+  module Set : CSig.SetS with type elt = t
+  module Map : CMap.ExtS with type key = t and module Set := Set
+  type table
+  val empty : table
+  val fresh : Level.t -> table -> t * table
+  val mem : Level.t -> table -> bool
+  val find : Level.t -> table -> t
+  val repr : t -> table -> Level.t
+  val dom : table -> Level.Set.t
+  val hash : t -> int
+end =
+struct
+  type t = int
+  let equal = Int.equal
+  let compare = Int.compare
+  module Set = Int.Set
+  module Map = Int.Map
 
-    type table = {
-      tab_len : int;
-      tab_fwd : Point.t Int.Map.t;
-      tab_bwd : int Point.Map.t
+  type table = {
+    tab_len : int;
+    tab_fwd : Level.t Int.Map.t;
+    tab_bwd : int Level.Map.t
+  }
+
+  let empty = {
+    tab_len = 0;
+    tab_fwd = Int.Map.empty;
+    tab_bwd = Level.Map.empty;
+  }
+  let mem x t = Level.Map.mem x t.tab_bwd
+  let find x t = Level.Map.find x t.tab_bwd
+  let repr n t = Int.Map.find n t.tab_fwd
+
+  let fresh x t =
+    let () = assert (not @@ mem x t) in
+    let n = t.tab_len in
+    n, {
+      tab_len = n + 1;
+      tab_fwd = Int.Map.add n x t.tab_fwd;
+      tab_bwd = Level.Map.add x n t.tab_bwd;
     }
 
-    let empty = {
-      tab_len = 0;
-      tab_fwd = Int.Map.empty;
-      tab_bwd = Point.Map.empty;
-    }
-    let mem x t = Point.Map.mem x t.tab_bwd
-    let find x t = Point.Map.find x t.tab_bwd
-    let repr n t = Int.Map.find n t.tab_fwd
+  let dom t = Level.Map.domain t.tab_bwd
 
-    let fresh x t =
-      let () = assert (not @@ mem x t) in
-      let n = t.tab_len in
-      n, {
-        tab_len = n + 1;
-        tab_fwd = Int.Map.add n x t.tab_fwd;
-        tab_bwd = Point.Map.add x n t.tab_bwd;
-      }
-
-    let dom t = Point.Map.domain t.tab_bwd
-
-    let hash x = x
-  end
+  let hash x = x
+end
 
 module PMap = Index.Map
 module PSet = Index.Set
-
-type univ_constraint = Point.t * constraint_type * Point.t
 
 module NeList =
 struct
@@ -424,7 +409,7 @@ type canonical_node =
     clauses_bwd : ClausesOf.t; (* premises -> canon + k *)
     clauses_fwd : ClausesOf.t PMap.t (* canon + k, ... ->  concl + k' *) }
 
-(* A Point.t is either an alias for another one, or a canonical one,
+(* A Level.t is either an alias for another one, or a canonical one,
     for which we know the points that are above *)
 
 type entry =
@@ -513,17 +498,17 @@ let repr_node m u =
   try repr m (Index.find u m.table)
   with Not_found ->
     CErrors.anomaly ~label:"Univ.repr"
-      Pp.(str"Universe " ++ Point.pr u ++ str" undefined.")
+      Pp.(str"Universe " ++ Level.raw_pr u ++ str" undefined.")
 
 let repr_compress_node m u =
   try repr_compress m (Index.find u m.table)
   with Not_found ->
     CErrors.anomaly ~label:"Univ.repr"
-      Pp.(str"Universe " ++ Point.pr u ++ str" undefined.")
+      Pp.(str"Universe " ++ Level.raw_pr u ++ str" undefined.")
 
 let pr_index_point m idx =
   let idx = try (repr m idx).canon with Not_found -> idx in
-  try Point.pr (Index.repr idx m.table)
+  try Level.raw_pr (Index.repr idx m.table)
   with Not_found -> Pp.str"<point not in table>"
 
 let pr_pointint m = pr_with (pr_index_point m)
@@ -677,7 +662,7 @@ let _pr_clause_info m ((concl, kprem) : clause) =
 
 type t = model
 
-let check_invariants ~(required_canonical:Point.t -> bool) model =
+let check_invariants ~(required_canonical:Level.t -> bool) model =
   let required_canonical u = required_canonical (Index.repr u model.table) in
   let n_canon = ref 0 in
   PMap.iter (fun idx e ->
@@ -741,7 +726,7 @@ let without_bound (m : model) : int =
 
 let _pr_updates m s =
   let open Pp in
-  prlist_with_sep spc (fun idx -> Point.pr (Index.repr idx m.table)) (PSet.elements s)
+  prlist_with_sep spc (fun idx -> Level.raw_pr (Index.repr idx m.table)) (PSet.elements s)
 
 let length_path_from m idx =
   let rec aux = function
@@ -772,7 +757,7 @@ let debug_check_invariants m =
 
 (* PMaps are purely functional hashmaps *)
 
-exception Undeclared of Point.t
+exception Undeclared of Level.t
 
 let canonical_value m c = PMap.find_opt c.canon m.values
 
@@ -826,12 +811,12 @@ struct
 
   let pr m (w, _) =
     let open Pp in
-    prlist_with_sep spc (fun (idx, _) -> Point.pr (Index.repr idx m.table)) (PMap.bindings w)
+    prlist_with_sep spc (fun (idx, _) -> Level.raw_pr (Index.repr idx m.table)) (PMap.bindings w)
 
   let pr_clauses m (w, _) =
     let open Pp in
     prlist_with_sep spc (fun (idx, (bwd, fwd)) ->
-      Point.pr (Index.repr idx m.table) ++ str": " ++ spc () ++
+      Level.raw_pr (Index.repr idx m.table) ++ str": " ++ spc () ++
       str" Backward clauses " ++ pr_clauses_of m idx bwd ++
       str" Forward clauses " ++ pr_clauses_bwd m fwd)
       (PMap.bindings w)
@@ -875,7 +860,7 @@ let update_value check_early_stop c m clause : model option =
       Some (set_canonical_value m c newk)
 
 let pr_can m can =
-  Point.pr (Index.repr can.canon m.table)
+  Level.raw_pr (Index.repr can.canon m.table)
 
 let check_model_clauses_of_aux check_early_stop m can cls =
   ClausesOf.fold (fun cls m ->
@@ -979,7 +964,7 @@ let partition_clauses_fwd = time2 (Pp.str"partition clauses fwd") partition_clau
    it finds that the given atom is true *)
 
 (* model is a model for the clauses outside cls *)
-let _check_debug ?early_stop model (cls : CanSet.t) =
+let check ?early_stop model (cls : CanSet.t) =
   let cV = canonical_cardinal model in
   debug_check_invariants model;
   let rec inner_loop cardW w premconclw conclw m =
@@ -1039,11 +1024,10 @@ let _check_debug ?early_stop model (cls : CanSet.t) =
   in loop cV PSet.empty cls model
 
 
-let check ?early_stop model (cls : CanSet.t) =
+(*let check ?early_stop model (cls : CanSet.t) =
   let cV = canonical_cardinal model in
   let rec inner_loop cardW w premconclw conclw m =
     (* Should consider only clauses with conclusions in w *)
-    (* Partition the clauses acscording to the presence of w in the premises *)
     (* Warning: m is not necessarily a model for w *)
     let rec inner_loop_partition w cls m =
       match loop cardW w cls m with
@@ -1065,6 +1049,8 @@ let check ?early_stop model (cls : CanSet.t) =
       if Int.equal cardW cV
       then Loop
       else
+        (* Partition the clauses according to the presence of levels in w in the premises
+           or conclusion *)
         let (premconclw, conclw, premw) = partition_clauses_fwd m cls in
         (match inner_loop cardW PSet.empty premconclw conclw m with
         | Loop -> Loop
@@ -1073,7 +1059,7 @@ let check ?early_stop model (cls : CanSet.t) =
           (match check_clauses_with_premises w premw mc with
           | None -> Model (wc, mc)
           | Some (w, (wcls, mcls)) -> loop cV w wcls mcls))
-  in loop cV PSet.empty cls model
+  in loop cV PSet.empty cls model*)
 
 
 let entry_value m e =
@@ -1086,8 +1072,8 @@ let pr_levelmap (m : model) : Pp.t =
   h (prlist_with_sep fnl (fun (u, v) ->
     let value = entry_value m v in
     let point = Index.repr u m.table in
-    Point.pr point ++ str" -> " ++ pr_opt int value) (PMap.bindings m.entries))
-  (* Point.Map.pr Pp.int m  *)
+    Level.raw_pr point ++ str" -> " ++ pr_opt int value) (PMap.bindings m.entries))
+  (* Level.Map.pr Pp.int m  *)
 
 let pr_model model =
   Pp.(str "model: " ++ pr_levelmap model)
@@ -1241,7 +1227,7 @@ let _filter_trivial_can_clause canl ((k, prems) as kprems) =
     else Clauses.add (canl.canon, ClausesOf.singleton kprem) cls *)
 
 
-type pclause_info = (int * (Point.t * int) NeList.t)
+type pclause_info = (int * (Level.t * int) NeList.t)
 
 let _to_clause_info m (k, prems : pclause_info) : clause_info =
   let trans_prem (p, k) =
@@ -1269,11 +1255,11 @@ let _to_clause_info m (k, prems : pclause_info) : clause_info =
 let enforce_eq_can model canu canv : canonical_node * t =
   assert (canonical_value model canu = canonical_value model canv);
   assert (canu != canv);
-  (* v := u or u := v, depending on Point.is_source (for Set) *)
+  (* v := u or u := v, depending on Level.is_source (for Set) *)
   debug_check_invariants model;
   let model0 = model in
   let can, other, model =
-    if Point.is_source (Index.repr canu.canon model.table) then
+    if Level.is_set (Index.repr canu.canon model.table) then
       canu, canv, enter_equiv model canv.canon canu.canon
     else
       canv, canu, enter_equiv model canu.canon canv.canon
@@ -1436,69 +1422,6 @@ let min_can_premise model prem =
   let f prem minl = min minl (g prem) in
   Premises.fold_ne f g prem
 
-(* let _check_clause m prems concl k =
-  (* premises -> can + k ? *)
-  let test_idx y kpath =
-    match prems with
-    | NeList.Tip (prem, k') -> Index.equal y prem.canon && kpath <= k'
-    | _ ->
-        try let ky = NeList.find (fun prem -> Index.equal y prem.canon) prems in
-          kpath <= ky
-        with Not_found -> false
-  in
-  let test_repr y kpath =
-    match prems with
-    | NeList.Tip (prem, k') -> y == prem && kpath <= k'
-    | _ ->
-        if NeList.mem_assq y prems then
-          kpath <= NeList.assq y prems
-        else false
-  in
-  (* If the clause holds then prems -> concl + k, so k0 + k <= concl.value *)
-  let rec aux visited todo next_todo =
-    match todo, next_todo with
-    | [], [] -> visited
-    | [], todo -> aux visited todo []
-    | (canv, kpath) :: todo, next_todo ->
-      match canv.mark with
-      | Visited kpath' when kpath' <= kpath -> aux visited todo next_todo
-      | _ ->
-        let bwd = canv.clauses_bwd in
-        if ClausesOf.exists
-          (fun (kp, premises) ->
-            NeList.for_all (fun (idx, k') -> test_idx idx (kpath - kp + k')) premises) bwd then
-          raise_notrace (Found visited)
-        else
-        (* canv + k' -> canv + kpath *)
-          let visited = canv :: visited in
-          canv.mark <- Visited kpath;
-          let next_todo =
-            ClausesOf.fold
-              (fun (kp, premises) acc ->
-                NeList.fold (fun (idx, k') acc ->
-                  (* idx + k' -> canv + kp *)
-                  let canidx = repr m idx in
-                  let kidx = kpath - kp + k' in
-                  if not (Index.equal canidx.canon idx) &&
-                    test_repr canidx kidx then raise_notrace (Found visited)
-                  else (canidx, kidx) :: acc)
-                  premises acc)
-                bwd next_todo
-          in
-          aux visited todo next_todo
-  in
-  try
-    let res, visited =
-      try false, aux [] [(concl, k)] []
-      with Found visited -> true, visited
-    in
-    List.iter (fun u -> u.mark <- NoMark) visited;
-    res
-  with e ->
-    (* Unlikely event: fatal error or signal *)
-    let () = unset_marks m in
-    raise e *)
-
 type check_clause_mark = VisitedAt of int
 
 exception Found
@@ -1565,7 +1488,7 @@ let _check_clause_singleton m prem concl k =
    We generate the minimal model starting from the premises. I.e. we make the premises true.
    Then we check that the conclusion holds in this minimal model.  *)
 
-let _check_clause_singleton_alt_debug model prem concl k =
+let check_clause_singleton_alt model prem concl k =
   (* premise -> concl + k ? *)
   debug Pp.(fun () -> str"Checking entailment: " ++ pr_index_point model prem.canon ++
     str " -> " ++ pr_index_point model concl.canon ++ str"+" ++ int k);
@@ -1576,7 +1499,7 @@ let _check_clause_singleton_alt_debug model prem concl k =
   if PSet.is_empty modified then false else begin *)
   (* We have a model where only the premise is true, check if the conclusion follows *)
   debug Pp.(fun () -> str"Launching loop-checking to check for entailment");
-  if (Point.is_source (Index.repr concl.canon model.table)) && k == 0 then true else
+  if (Level.is_set (Index.repr concl.canon model.table)) && k == 0 then true else
   match check ~early_stop:(concl, k) model cls with
   | exception FoundImplication ->
     debug Pp.(fun () -> str"loop-checking found the implication early");
@@ -1596,97 +1519,6 @@ let _check_clause_singleton_alt_debug model prem concl k =
       debug Pp.(fun () -> str"Conclusion has value " ++ int value ++
         str" in the minimal model, expecting conclusion + " ++ int k ++ str " to hold");
       k <= value
-
-
-let check_clause_singleton_alt model prem concl k =
-  (* premise -> concl + k ? *)
-  if (Point.is_source (Index.repr concl.canon model.table)) && k == 0 then true else
-  let values = PMap.singleton prem.canon 0 in
-  let model = { model with values } in
-  let cls = CanSet.singleton prem.canon (prem.clauses_bwd, prem.clauses_fwd) in
-  (* We have a model where only the premise is true, check if the conclusion follows *)
-  match check ~early_stop:(concl, k) model cls with
-  | exception FoundImplication -> true
-  | Loop -> false
-  | Model (_updates, model') ->
-    match canonical_value model' concl with
-    | None -> false
-    | Some value -> k <= value
-
-
-let check_clause_singleton model prem concl k =
-  check_clause_singleton_alt model prem concl k
-
-  (*
-  let res' = check_clause_singleton_alt model prem concl k in
-  if res == res' then res
-  else
-    (CErrors.anomaly Pp.(str"check_clause_singleton discrepancy: original gave " ++ bool res ++
-      str " while alternative gave " ++ bool res'))
-*)
-
-(* a -> b
-   b -> c
-
-   add x
-
-
-
-*)
-(*
-let check_holds m concl clause =
-  let (k, premises) = clause in
-  let m =
-  let chk = NeList.fold (fun (idx, idxk) m ->
-    let can = repr_model m idx in
-    update_value (can, m) idxk)
-    premises m
-  in
-  chk*)
-
-(* let check_clauses m (cls : ClausesBackward.t) =
-  PMap.for_all (fun concl cls ->
-    let can = repr model concl in
-    ClausesOf.for_all (fun cl ->
-        let bwdc = check_clause_holds model can cl in bwdc)
-      cls)
-    cls *)
-
-      (* check_inv_clause_of m concl cl) *)
-      (* if check_clause_of m can.value cl then *)
-        (* let fwdc = check_clause_holds_fwd m can cl in *)
-        (* if fwdc == bwdc then fwdc *)
-        (* else CErrors.anomaly Pp.(str "check_clause_holds differ in fwd and backward mode: forward" ++ bool fwdc ++ str" backward: " ++ bool bwdc) *)
-      (* else false)  *)
-
-(* let check_clauses m cls =
-  if check_clauses m cls then
-    (debug Pp.(fun () -> str"check_clauses succeeded on: " ++ pr_clauses_bwd model cls ++
-    str" and model " ++ pr_levelmap model); true)
-  else (debug Pp.(fun () -> str"check_clauses failed on: " ++ pr_clauses_bwd model cls ++
-    str" and model " ++ pr_levelmap model); false) *)
-
-
-(* let check_clause = time4 (Pp.str"check_clause") check_clause *)
-
-let check_lt (m : t) u v =
-  let canu = repr_node m u in
-  let canv = repr_node m v in
-  check_clause_singleton m canv canu 1
-  (* let (prems, (concl, k)) = can_clause_of_point_constraint m u 1 v in *)
-  (* check_clause m prems concl k *)
-
-let check_leq (m : t) u vp =
-  (* debug_check Pp.(fun () -> str"checking : " ++ Point.pr u ++ str " ≤ " ++ Point.pr vp); *)
-  let canu = repr_node m u in
-  let canv = repr_node m vp in
-  canu == canv ||
-  check_clause_singleton m canv canu 0
-
-let check_eq m u v =
-  let canu = repr_node m u in
-  let canv = repr_node m v in
-  canu == canv
 
 (*let check_clause_holds_fwd m can clause =
   (* premises -> can + k *)
@@ -1817,6 +1649,42 @@ let infer_extension x k y m =
 let infer_extension =
   time4 Pp.(str "infer_extension") infer_extension
 
+let _check_clause_singleton_neg model prem concl k =
+(* premise -> concl + k ?
+    We check if the negation is consistent.
+    ~ (concl + k <= premise ) <-> (premise < concl + k) <-> (premise + 1 <= concl +k)
+    If it is, then the implication cannot hold yet
+    If it is not consistent, then necessarily the implication holds already.
+  *)
+  debug Pp.(fun () -> str"Checking entailment: " ++ pr_index_point model prem.canon ++
+    str " -> " ++ pr_index_point model concl.canon ++ str"+" ++ int k);
+  match infer_clause_extension (NeList.tip (concl, k), (prem, 1)) model with
+  | None -> (* Loop! *) true
+  | Some _ -> (* Consistent extension *) false
+
+let check_clause_singleton model prem concl k =
+  check_clause_singleton_alt model prem concl k
+
+let _check_lt_level (m : t) u v =
+  let canu = repr_node m u in
+  let canv = repr_node m v in
+  check_clause_singleton m canv canu 1
+
+let check_leq_level (m : t) u vp =
+(* debug_check Pp.(fun () -> str"checking : " ++ Level.raw_pr u ++ str " ≤ " ++ Level.raw_pr vp); *)
+  let canu = repr_node m u in
+  let canv = repr_node m vp in
+  canu == canv ||
+  check_clause_singleton m canv canu 0
+
+let check_eq_level m u v =
+  let canu = repr_node m u in
+  let canv = repr_node m v in
+  canu == canv
+let check_leq _ _ _ = assert false
+let check_eq _ _ _ = assert false
+
+
 (* Enforce u <= v and check if v <= u already held, in that case, enforce u = v *)
 let enforce_leq_can u v m =
   match infer_extension u 0 v m with
@@ -1828,12 +1696,12 @@ let enforce_leq_can u v m =
       Some (simplify_clauses_between m' v u)
     else Some m
 
-let enforce_leq u v m =
+let _enforce_leq_level u v m =
   let m, canu = repr_compress_node m u in
   let m, canv = repr_compress_node m v in
   enforce_leq_can canu canv m
 
-let enforce_lt u v m =
+let _enforce_lt_level u v m =
   let m, canu = repr_compress_node m u in
   let m, canv = repr_compress_node m v in
   infer_extension canu 1 canv m
@@ -1843,7 +1711,7 @@ let get_proper_value m can =
   | Some v -> v
   | None -> raise (Undeclared (Index.repr can.canon m.table))
 
-let enforce_eq u v m =
+let _enforce_eq_level u v m =
   let canu = repr_node m u in
   let canv = repr_node m v in
   if canu == canv then Some m
@@ -1874,8 +1742,6 @@ let enforce_eq u v m =
           enforce_leq_can canv' canu' m')
   end
 
-
-type lub = (Point.t * int) list
 type ilub = (canonical_node * int) NeList.t
 
 (* max u_i <= v <-> ∧_i u_i <= v *)
@@ -1883,14 +1749,13 @@ let clauses_of_le_constraint (u : ilub) (v : ilub) cls =
   NeList.fold (fun (u, k) cls ->
     (v, (u, k) : can_clause) :: cls) u cls
 
-let clauses_of_constraint m (u : lub) k (v : lub) cls =
-  let u = List.map (fun (p, k) -> repr_node m p, k) u in
-  let v = List.map (fun (p, k) -> repr_node m p, k) v in
+let clauses_of_constraint m (u : Universe.t) k (v : Universe.t) cls =
+  let u = List.map (fun (p, k) -> repr_node m p, k) (Universe.repr u) in
+  let v = List.map (fun (p, k) -> repr_node m p, k) (Universe.repr v) in
   let u = NeList.of_list u in
   let v = NeList.of_list v in
   match k with
   | Le -> clauses_of_le_constraint u v cls
-  | Lt -> clauses_of_le_constraint (NeList.map (fun (l, k) -> (l, k + 1)) u) v cls
   | Eq -> clauses_of_le_constraint u v (clauses_of_le_constraint v u cls)
 
 let enforce_constraint u k v (m : t) =
@@ -1900,11 +1765,17 @@ let enforce_constraint u k v (m : t) =
     | None -> None
     | Some m -> infer_clause_extension cl m) (Some m) cls
 
+let enforce_eq u v m = enforce_constraint u Eq v m
+let enforce_leq u v m = enforce_constraint u Le v m
+let enforce_lt u v m = enforce_constraint (Universe.addn u 1) Le v m
+
+let enforce_constraint (u, k, v) (m : t) = enforce_constraint u k v m
+
 exception AlreadyDeclared
 
 let add_model u { entries; table; values; canonical } =
   if Index.mem u table then
-   (debug Pp.(fun () -> str"Already declared level: " ++ Point.pr u);
+   (debug Pp.(fun () -> str"Already declared level: " ++ Level.raw_pr u);
     raise AlreadyDeclared)
   else
     let idx, table = Index.fresh u table in
@@ -1916,36 +1787,34 @@ let add_model u { entries; table; values; canonical } =
 
 let add ?(rank:int option) u model =
   let _r = rank in
-  debug Pp.(fun () -> str"Declaring level " ++ Point.pr u);
+  debug Pp.(fun () -> str"Declaring level " ++ Level.raw_pr u);
   let _idx, model = add_model u model in
   model
 
 let check_declared model us =
   let check l = if not (Index.mem l model.table) then raise (Undeclared l) in
-  Point.Set.iter check us
+  Level.Set.iter check us
 
-type explanation = Point.t * (constraint_type * Point.t) list
+type explanation = Level.t * (constraint_type * Level.t) list
 
-let get_explanation (cstr : Point.t * constraint_type * Point.t) _ : explanation =
+let get_explanation (cstr : univ_constraint) _ : explanation =
   let (l, _, _) = cstr in
   (* TODO *)
-  (l, [])
+  (Option.get (Universe.level l), [])
 
 let pr_constraint_type k =
   let open Pp in
   match k with
   | Eq -> str " = "
   | Le -> str " ≤ "
-  | Lt -> str " < "
 
 let constraint_type_ord c1 c2 = match c1, c2 with
-| Lt, Lt -> 0
-| Lt, _ -> -1
-| Le, Lt -> 1
 | Le, Le -> 0
 | Le, Eq -> -1
 | Eq, Eq -> 0
-| Eq, _ -> 1
+| Eq, Le -> 1
+
+type univ_constraint = Universe.t * constraint_type * Universe.t
 
 module UConstraintOrd =
 struct
@@ -1954,9 +1823,9 @@ let compare (u,c,v) (u',c',v') =
   let i = constraint_type_ord c c' in
   if not (Int.equal i 0) then i
   else
-    let i' = Point.compare u u' in
+    let i' = Universe.compare u u' in
     if not (Int.equal i' 0) then i'
-    else Point.compare v v'
+    else Universe.compare v v'
 end
 
 
@@ -1978,18 +1847,20 @@ let constraints_of_clauses m clauses =
     let conclp = Index.repr concl m.table in
     ClausesOf.fold (fun cli cstrs ->
       let (k, prems) = cli in
-      match prems with
-      | NeList.Tip (v, 0) ->
-        let vcan = repr m v in
-        let vp = Index.repr vcan.canon m.table in
-        if k = 0 then Constraints.add (conclp, Le, vp) cstrs
-        else if k = 1 then Constraints.add (conclp, Lt, vp) cstrs
-        else assert false
-      | _ -> assert false) cls cstrs)
+      let prems = NeList.to_list prems in
+      let prems =
+        List.map (fun (v, k) ->
+          let vcan = repr m v in
+          let vp = Index.repr vcan.canon m.table in
+          (vp, k)) prems
+      in
+      let prem = Universe.of_list prems in
+      Constraints.add (Universe.of_list [(conclp, k)], Le, prem) cstrs)
+      cls cstrs)
     clauses Constraints.empty
 
 let constraints_of model fold acc =
-  let module UF = Unionfind.Make (Point.Set) (Point.Map) in
+  let module UF = Unionfind.Make (Level.Set) (Level.Map) in
   let uf = UF.create () in
   let bwd = ref ClausesBackward.empty in
   let constraints_of u v =
@@ -2005,56 +1876,56 @@ let constraints_of model fold acc =
   let cstrs = constraints_of_clauses model !bwd in
   Constraints.fold fold cstrs acc, UF.partition uf
 
-type 'a constraint_fold = Point.t * constraint_type * Point.t -> 'a -> 'a
+type 'a constraint_fold = univ_constraint -> 'a -> 'a
 
-let constraints_for ~(kept:Point.Set.t) model (fold : 'a constraint_fold) (accu : 'a) =
+let interp_univ model l =
+  Universe.of_list (NeList.to_list (NeList.map (fun (idx, k) -> (Index.repr idx model.table, k)) l))
+
+let constraints_for ~(kept:Level.Set.t) model (fold : 'a constraint_fold) (accu : 'a) : 'a =
   (* rmap: partial map from canonical points to kept points *)
-  let add_cst u knd v (cst : 'a) =
-    fold (Index.repr u model.table, knd, Index.repr v model.table) cst
+  let add_cst u knd v (cst : 'a) : 'a =
+    fold (interp_univ model u, knd, interp_univ model v) cst
   in
-  let kept = Point.Set.fold (fun u accu -> PSet.add (Index.find u model.table) accu) kept PSet.empty in
+  let kept = Level.Set.fold (fun u accu -> PSet.add (Index.find u model.table) accu) kept PSet.empty in
   let rmap, csts = PSet.fold (fun u (rmap,csts) ->
       let arcu = repr model u in
       if PSet.mem arcu.canon kept then
         let csts = if Index.equal u arcu.canon then csts
-          else add_cst u Eq arcu.canon csts
+          else add_cst (NeList.tip (u, 0)) Eq (NeList.tip (arcu.canon, 0)) csts
         in
         PMap.add arcu.canon arcu.canon rmap, csts
       else
         match PMap.find arcu.canon rmap with
-        | v -> rmap, add_cst u Eq v csts
+        | v -> rmap, add_cst (NeList.tip (u, 0)) Eq (NeList.tip (v, 0)) csts
         | exception Not_found -> PMap.add arcu.canon u rmap, csts)
       kept (PMap.empty, accu)
   in
   let rec add_from u csts todo = match todo with
     | [] -> csts
     | (prems,k)::todo ->
-      let v = match prems with NeList.Tip (v, 0) -> v | _ -> assert false in
-      (* constraints cannot have premisses of other shapes *)
-      let v = repr model v in
-      (match PMap.find v.canon rmap with
-      | v ->
-        let d = if k > 0 then Lt else Le in
-        let csts = add_cst u d v csts in
+      if NeList.exists (fun (v, _) -> PMap.mem (repr model v).canon rmap) prems then
+        let csts = add_cst (NeList.tip (u.canon, 0)) Le prems csts in
         add_from u csts todo
-      | exception Not_found ->
-        let cls = v.clauses_bwd in
-        (* v is not equal to any kept point *)
-        let todo =
-          ClausesOf.fold (fun cli todo -> let (k', prems') = cli in (prems', k + k') :: todo)
-            cls todo
-        in
-        add_from u csts todo)
+      else
+        NeList.fold (fun (v, k') csts ->
+          let v = repr model v in
+          let cls = v.clauses_bwd in
+          (* v is not equal to any kept point *)
+          let todo =
+            ClausesOf.fold (fun cli todo -> let (k'', prems') = cli in (prems', k + k' + k'') :: todo)
+              cls todo
+          in
+          add_from u csts todo) prems csts
   in
   PSet.fold (fun u csts ->
       let arc = repr model u in
       let cls = arc.clauses_bwd in
-      ClausesOf.fold (fun cli csts -> let (k, prems) = cli in add_from u csts [prems,k]) cls csts)
+      ClausesOf.fold (fun cli csts -> let (k, prems) = cli in add_from arc csts [prems,k]) cls csts)
     kept csts
 
 (*
   let cstrs = constraints_of_clauses model clauses in
-  let cstrs = Constraints.filter (fun (l, _, r) -> Point.Set.mem l kept || Point.Set.mem r kept) cstrs in
+  let cstrs = Constraints.filter (fun (l, _, r) -> Level.Set.mem l kept || Level.Set.mem r kept) cstrs in
   Constraints.fold fold cstrs acc *)
 
 let domain model = Index.dom model.table
@@ -2079,10 +1950,10 @@ let choose p model p' =
       model.entries None
 
 type node =
-  | Alias of Point.t
-  | Node of bool Point.Map.t (** Nodes v s.t. u < v (true) or u <= v (false) *)
+  | Alias of Level.t
+  | Node of bool Level.Map.t (** Nodes v s.t. u < v (true) or u <= v (false) *)
 
-type repr = node Point.Map.t
+type repr = node Level.Map.t
 let repr model =
   PMap.fold (fun idx e acc ->
     let conclp = Index.repr idx model.table in
@@ -2097,21 +1968,21 @@ let repr model =
           | NeList.Tip (v, 0) ->
             let canv = repr model v in
             let vp = Index.repr canv.canon model.table in
-            if k = 0 then Point.Map.add vp false map
-            else if k = 1 then Point.Map.add vp true map
+            if k = 0 then Level.Map.add vp false map
+            else if k = 1 then Level.Map.add vp true map
             else assert false
-          | _ -> assert false) prems Point.Map.empty
+          | _ -> assert false) prems Level.Map.empty
       in
       Node map
     in
-    Point.Map.add conclp node acc)
-  model.entries Point.Map.empty
+    Level.Map.add conclp node acc)
+  model.entries Level.Map.empty
 
 let pmap_to_point_map table pmap =
   PMap.fold (fun idx v acc ->
     let p = Index.repr idx table in
-    Point.Map.add p v acc)
-    pmap Point.Map.empty
+    Level.Map.add p v acc)
+    pmap Level.Map.empty
 
 let valuation_of_model (m : model) =
   let max = Option.default 0 (model_max m) in
@@ -2119,5 +1990,3 @@ let valuation_of_model (m : model) =
     pmap_to_point_map m.table valm
 
 let valuation model = valuation_of_model model
-
-end
