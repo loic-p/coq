@@ -10,6 +10,9 @@ let _debug_loop_checking_loop, debug_loop = CDebug.create_full ~name:"loop-check
 let _debug_loop_checking_check_model, debug_check_model = CDebug.create_full ~name:"loop-checking-check-model" ()
 let _debug_loop_checking_check, _debug_check = CDebug.create_full ~name:"loop-checking-check" ()
 
+let _debug_loop_checking_global_flag, debug_global = CDebug.create_full ~name:"loop-checking-global" ()
+
+
 (* let _ = CDebug.set_flag debug_loop_checking_check true *)
 
 let _time prefix =
@@ -329,7 +332,7 @@ struct
   (* Invariant: sorted, non-empty *)
   type t = Premise.t NeList.t
 
-  let fold = NeList.fold
+  let _fold = NeList.fold
 
   let fold_ne = NeList.fold_ne
 
@@ -662,6 +665,9 @@ let _pr_clause_info m ((concl, kprem) : clause) =
 
 type t = model
 
+let eq_pointint m (x, k) (x', k') =
+  repr m x == repr m x' && Int.equal k k'
+
 let check_invariants ~(required_canonical:Level.t -> bool) model =
   let required_canonical u = required_canonical (Index.repr u model.table) in
   let n_canon = ref 0 in
@@ -677,7 +683,12 @@ let check_invariants ~(required_canonical:Level.t -> bool) model =
           assert (k >= 0);
           let check_prem (l, k) =
             assert (k >= 0);
-            assert (PMap.mem l model.entries)
+            assert (PMap.mem l model.entries);
+            let lcan = repr model l in
+            (* Ensure this backward clause is registered as a forward clause for the premise l *)
+            assert(PMap.exists (fun idx kprem -> repr model idx == can
+              && ClausesOf.exists (fun (k', prems') -> Int.equal k k' && NeList.equal (eq_pointint model) prems prems')
+              kprem) lcan.clauses_fwd)
           in
           Premises.iter check_prem prems) cls;
       assert (PMap.for_all (fun _ kprems ->
@@ -1087,7 +1098,27 @@ let _repr_clause m (concl, prem as cl : clause) =
   if concl' == concl && prem' == prem then cl
   else (concl', prem')
 
-let modify_can canidx (f : Index.t -> canonical_node -> canonical_node) =
+let pr_clauses m =
+  PMap.fold (fun p e acc ->
+    match e with
+    | Equiv p' ->
+      Pp.(pr_index_point m p ++ str " = " ++ pr_index_point m p' ++ acc)
+    | Canonical can ->
+      let bwd = can.clauses_bwd in
+      Pp.(pr_clauses_of m can.canon bwd ++ fnl () ++ acc)) m.entries (Pp.mt ())
+
+let pr_clauses_all m =
+  PMap.fold (fun p e acc ->
+    match e with
+    | Equiv p' ->
+      Pp.(pr_index_point m p ++ str " = " ++ pr_index_point m p' ++ acc)
+    | Canonical can ->
+      let bwd = can.clauses_bwd in
+      Pp.(pr_clauses_of m can.canon bwd ++ fnl () ++
+        pr_can m can ++ str" -> " ++ spc () ++ pr_clauses_bwd m can.clauses_fwd ++ acc))
+    m.entries (Pp.mt ())
+
+let _modify_can canidx (f : Index.t -> canonical_node -> canonical_node) =
   PMap.modify canidx
     (fun idx entry ->
     match entry with
@@ -1129,37 +1160,11 @@ let add_can_clause_model m cl =
   let can, model' = add_can_clause_model m cl in
   if model' == m then can, m else can, model'
 
-let add_clause_model m (prems, (l, k)) : model =
-  let m, canl = repr_compress m l in
-  let canl = canl.canon in
-  let clof = (k, prems) in
-  let entries = (* Add clause to the backwards clauses of l *)
-    modify_can canl (fun _ ({ clauses_bwd; _ } as can) ->
-      let bwd =
-        (* if ClausesOfRepr.mem_upto m clof clauses_bwd then clauses_bwd else  *)
-          ClausesOf.add clof clauses_bwd in
-      if bwd == clauses_bwd then can
-      else { can with clauses_bwd = bwd })
-    m.entries
-  in
-  (* Add clause to the forward clauses from the premises *)
-  let entries = Premises.fold (fun (idx, _) entries ->
-    let entries, canidx = repr_compress_entries entries idx in
-    let canidx = canidx.canon in
-    modify_can canidx (fun _idx ({ clauses_fwd; _ } as can) ->
-      (* let fwd = ClausesBackward.add_upto m (canl, ClausesOf.singleton clof) clauses_fwd in  *)
-      let fwd = ClausesBackward.add (canl, ClausesOf.singleton clof) clauses_fwd in
-      if fwd == clauses_fwd then can
-      else { can with clauses_fwd = fwd })
-      entries)
-    prems entries
-  in { m with entries }
-
-(** Assumes premise and conclusion already in canonical form *)
-let add_clauses_of_model m (l, kprems) =
-  ClausesOf.fold (fun (k, prems) m ->
-    let cl = (prems, (l, k)) in
-    add_clause_model m cl) kprems m
+let add_can_clause_model m cl =
+  debug_global Pp.(fun () -> str "add_can_clause_model: " ++ pr_clauses_all m);
+  let cl', m' = add_can_clause_model m cl in
+  debug_global Pp.(fun () -> str "addition result: " ++ pr_clauses_all m');
+  cl', m'
 
 let repr_model m =
   let entries' =
@@ -1495,7 +1500,7 @@ let check_one_clause model prems concl k =
   (* premise -> concl + k ? *)
   debug Pp.(fun () -> str"Checking entailment: " ++ prlist_with_sep (fun () -> str",") (pr_incr (pr_index_point model)) (NeList.to_list prems) ++
     str " -> " ++ pr_index_point model concl.canon ++ str"+" ++ int k);
-  if (Level.is_set (Index.repr concl.canon model.table)) && k == 0 then true else
+  (* if (Level.is_set (Index.repr concl.canon model.table)) && k == 0 then true else *)
   let values = NeList.fold (fun (x, k) values -> PMap.add x.canon k values) prems PMap.empty in
   let model = { model with values } in
   let cls = NeList.fold (fun (prem, _) cls -> CanSet.add prem.canon (prem.clauses_bwd, prem.clauses_fwd) cls) prems CanSet.empty in
@@ -1587,10 +1592,7 @@ let _check_clause_info m (concl, clause) =
   | Some v -> ClausesOf.for_all (check_clause_of m v) clause
   | None -> true (* concl is undefined *)
 
-(* let pr_clauses m cls = Clauses.pr pr_clause m cls.Clauses.clauses_bwd *)
-
 let _mem_clause = time2 (Pp.str"mem_clause") mem_clause
-let _add_clauses_of_model = time2 (Pp.str "add_clauses_of_model") add_clauses_of_model
 
 let update_model_value (m : model) can k' : model =
   let v = canonical_value m can in
@@ -1621,7 +1623,6 @@ let filter_trivial_can_clause ((prems, (concl, k as conclk) as x) : can_clause) 
 let infer_clause_extension cl m =
   (* debug Pp.(fun () -> str "current model is: " ++ pr_levelmap model); *)
   debug_check_invariants m;
-  debug Pp.(fun () -> str"Enforcing clause " ++ pr_can_clause m cl);
   match filter_trivial_can_clause cl with
   | None -> Some m
   | Some cl ->
@@ -1644,6 +1645,13 @@ let infer_clause_extension cl m =
         None
       | Some _ as x -> x
     end
+
+let infer_clause_extension cl m =
+  debug_global Pp.(fun () -> str"Enforcing clause " ++ pr_can_clause m cl);
+  let res = infer_clause_extension cl m in
+  match res with
+  | None -> debug_global Pp.(fun () -> str"Resulted in a loop"); res
+  | Some m -> debug_global Pp.(fun () -> str" is consistent, clauses: " ++ pr_clauses m); res
 
 let infer_extension x k y m =
   let cl = can_clause_of_can_constraint (x, k, y) in
@@ -1756,9 +1764,12 @@ let enforce_eq u v m = enforce_constraint u Eq v m
 let enforce_leq u v m = enforce_constraint u Le v m
 let enforce_lt u v m = enforce_constraint (Universe.addn u 1) Le v m
 
-let check_constraint (m : t) u k v =
-  let cls = clauses_of_constraint m u k v [] in
-  List.fold_left (fun check cl -> check && check_clause m cl) true cls
+let check_constraint (m : t) u k u' =
+  debug_global Pp.(fun () -> str"Checking " ++ pr_constraints Level.raw_pr (Constraints.singleton (u,k,u')));
+  let cls = clauses_of_constraint m u k u' [] in
+  let res = List.fold_left (fun check cl -> check && check_clause m cl) true cls in
+  if res then (debug_global Pp.(fun () -> str" Clause holds in: " ++ pr_clauses m); res)
+  else (debug_global Pp.(fun () -> str" Clause does not hold in: " ++ pr_clauses m); res)
 
 let check_leq m u v = check_constraint m u Le v
 let check_eq m u v = check_constraint m u Eq v
