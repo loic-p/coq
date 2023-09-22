@@ -53,7 +53,7 @@ type structured_constant =
   | Const_evar of Evar.t
   | Const_b0 of tag
   | Const_quality of Sorts.Quality.t
-  | Const_univ_level of Univ.Level.t
+  | Const_univ of Univ.Universe.t
   | Const_univ_instance of UVars.Instance.t
   | Const_val of structured_values
   | Const_uint of Uint63.t
@@ -107,8 +107,8 @@ let eq_structured_constant c1 c2 = match c1, c2 with
 | Const_b0 _, _ -> false
 | Const_quality q1, Const_quality q2 -> Sorts.Quality.equal q1 q2
 | Const_quality _, _ -> false
-| Const_univ_level l1 , Const_univ_level l2 -> Univ.Level.equal l1 l2
-| Const_univ_level _ , _ -> false
+| Const_univ l1 , Const_univ l2 -> Univ.Universe.equal l1 l2
+| Const_univ _ , _ -> false
 | Const_univ_instance u1 , Const_univ_instance u2 -> UVars.Instance.equal u1 u2
 | Const_univ_instance _ , _ -> false
 | Const_val v1, Const_val v2 -> eq_structured_values v1 v2
@@ -126,7 +126,7 @@ let hash_structured_constant c =
   | Const_evar e -> combinesmall 3 (Evar.hash e)
   | Const_b0 t -> combinesmall 4 (Int.hash t)
   | Const_quality q -> combinesmall 5 (Sorts.Quality.hash q)
-  | Const_univ_level l -> combinesmall 6 (Univ.Level.hash l)
+  | Const_univ l -> combinesmall 6 (Univ.Universe.hash l)
   | Const_univ_instance u -> combinesmall 7 (UVars.Instance.hash u)
   | Const_val v -> combinesmall 8 (hash_structured_values v)
   | Const_uint i -> combinesmall 9 (Uint63.hash i)
@@ -160,7 +160,7 @@ let pp_struct_const = function
   | Const_evar e -> Pp.( str "Evar(" ++ int (Evar.repr e) ++ str ")")
   | Const_b0 i -> Pp.int i
   | Const_quality q -> Sorts.Quality.raw_pr q
-  | Const_univ_level l -> Univ.Level.raw_pr l
+  | Const_univ_level l -> Univ.Universe.pr Univ.Level.raw_pr l
   | Const_univ_instance u -> UVars.Instance.pr Sorts.QVar.raw_pr Univ.Level.raw_pr u
   | Const_val _ -> Pp.str "(value)"
   | Const_uint i -> Pp.str (Uint63.to_string i)
@@ -413,7 +413,7 @@ let obj_of_str_const str =
   | Const_evar e -> obj_of_atom (Aid (EvarKey e))
   | Const_b0 tag -> Obj.repr tag
   | Const_quality q -> Obj.repr q
-  | Const_univ_level l -> Obj.repr l
+  | Const_univ l -> Obj.repr l
   | Const_univ_instance u -> Obj.repr u
   | Const_val v -> Obj.repr v
   | Const_uint i -> Obj.repr i

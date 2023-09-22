@@ -831,9 +831,15 @@ and compile_instance env cenv u sz cont =
     | None -> compile_structured_constant cenv (Const_quality q) sz cont
     | Some idx -> pos_instance cenv sz :: Kfield 0 :: Kfield idx :: cont
     in
-    let comp_univ cenv l sz cont = match Univ.Level.var_index l with
-    | None -> compile_structured_constant cenv (Const_univ_level l) sz cont
-    | Some idx -> pos_instance cenv sz :: Kfield 1 :: Kfield idx :: cont
+    (* todo fix MS *)
+    let comp_univ cenv u sz cont = 
+      match Univ.Universe.level u with
+      | Some l ->
+        (match Univ.Level.var_index l with
+        | None -> compile_structured_constant cenv (Const_univ l) sz cont
+        | Some idx -> pos_instance cenv sz :: Kfield 1 :: Kfield idx :: cont)
+      | None ->
+        compile_structured_constant cenv (Const_univ u) sz cont
     in
     let comp_array comp_val cenv vs sz cont =
       if Array.is_empty vs then Kmakeblock (0,0) :: cont
@@ -869,7 +875,10 @@ let is_univ_copy (maxq,maxu) u =
   let qs,us = UVars.Instance.to_array u in
   let check_array max var_index a =
     Array.length a = max
-    && Array.for_all_i (fun i x -> Option.equal Int.equal (var_index x) (Some i)) 0 a
+    && Array.for_all_i (fun i x ->
+      match Univ.Universe.level x with
+      | Some l -> Option.equal Int.equal (var_index l) (Some i)
+      | None -> false) 0 a
   in
   check_array maxq Sorts.Quality.var_index qs
   && check_array maxu Univ.Level.var_index us

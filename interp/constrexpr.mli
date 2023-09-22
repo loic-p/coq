@@ -19,6 +19,8 @@ type sort_name_expr =
   | CType of qualid
   | CRawType of Univ.Level.t (** Universes like "foo.1" have no qualid form *)
 
+type universe_expr = (sort_name_expr * int) list
+
 type univ_level_expr = (sort_name_expr * int) list Glob_term.glob_sort_gen
 
 type qvar_expr =
@@ -38,10 +40,10 @@ type relevance_info_expr = relevance_expr option
 
 type sort_expr = (qvar_expr option * (sort_name_expr * int) list) Glob_term.glob_sort_gen
 
-type instance_expr = quality_expr list * univ_level_expr list
+type sort_expr = (Sorts.QVar.t option * universe_expr) Glob_term.glob_sort_gen
 
 (** Constraints don't have anonymous universes *)
-type univ_constraint_expr = sort_name_expr * Univ.constraint_type * sort_name_expr
+type univ_constraint_expr = universe_expr * (Univ.constraint_type * bool) * universe_expr
 
 type universe_decl_expr = (lident list, lident list, univ_constraint_expr list) UState.gen_universe_decl
 type cumul_univ_decl_expr =

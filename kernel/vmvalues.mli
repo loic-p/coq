@@ -40,7 +40,7 @@ type structured_constant =
   | Const_evar of Evar.t
   | Const_b0 of tag
   | Const_quality of Sorts.Quality.t
-  | Const_univ_level of Univ.Level.t
+  | Const_univ of Univ.Universe.t
   | Const_univ_instance of UVars.Instance.t
   | Const_val of structured_values
   | Const_uint of Uint63.t

@@ -785,7 +785,7 @@ struct
 
   let add k v (w, cw) = (PMap.add k v w, succ cw)
 
-  let singleton k v = (PMap.singleton k v, 1)
+  let _singleton k v = (PMap.singleton k v, 1)
 
   let mem x (w, _cw) = PMap.mem x w
 
@@ -1488,18 +1488,21 @@ let _check_clause_singleton m prem concl k =
    We generate the minimal model starting from the premises. I.e. we make the premises true.
    Then we check that the conclusion holds in this minimal model.  *)
 
-let check_clause_singleton_alt model prem concl k =
+let pr_incr pr (x, k) =
+  Pp.(pr x.canon ++ if k == 0 then mt() else str"+" ++ int k)
+
+let check_one_clause model prems concl k =
   (* premise -> concl + k ? *)
-  debug Pp.(fun () -> str"Checking entailment: " ++ pr_index_point model prem.canon ++
+  debug Pp.(fun () -> str"Checking entailment: " ++ prlist_with_sep (fun () -> str",") (pr_incr (pr_index_point model)) (NeList.to_list prems) ++
     str " -> " ++ pr_index_point model concl.canon ++ str"+" ++ int k);
-  let values = PMap.singleton prem.canon 0 in
+  if (Level.is_set (Index.repr concl.canon model.table)) && k == 0 then true else
+  let values = NeList.fold (fun (x, k) values -> PMap.add x.canon k values) prems PMap.empty in
   let model = { model with values } in
-  let cls = CanSet.singleton prem.canon (prem.clauses_bwd, prem.clauses_fwd) in
+  let cls = NeList.fold (fun (prem, _) cls -> CanSet.add prem.canon (prem.clauses_bwd, prem.clauses_fwd) cls) prems CanSet.empty in
   (* let modified, (w, model) = check_model_fwd_clauses_aux prem.clauses_fwd (PSet.empty, (mo.empty, model)) in
   if PSet.is_empty modified then false else begin *)
   (* We have a model where only the premise is true, check if the conclusion follows *)
   debug Pp.(fun () -> str"Launching loop-checking to check for entailment");
-  if (Level.is_set (Index.repr concl.canon model.table)) && k == 0 then true else
   match check ~early_stop:(concl, k) model cls with
   | exception FoundImplication ->
     debug Pp.(fun () -> str"loop-checking found the implication early");
@@ -1649,41 +1652,25 @@ let infer_extension x k y m =
 let infer_extension =
   time4 Pp.(str "infer_extension") infer_extension
 
-let _check_clause_singleton_neg model prem concl k =
-(* premise -> concl + k ?
-    We check if the negation is consistent.
-    ~ (concl + k <= premise ) <-> (premise < concl + k) <-> (premise + 1 <= concl +k)
-    If it is, then the implication cannot hold yet
-    If it is not consistent, then necessarily the implication holds already.
-  *)
-  debug Pp.(fun () -> str"Checking entailment: " ++ pr_index_point model prem.canon ++
-    str " -> " ++ pr_index_point model concl.canon ++ str"+" ++ int k);
-  match infer_clause_extension (NeList.tip (concl, k), (prem, 1)) model with
-  | None -> (* Loop! *) true
-  | Some _ -> (* Consistent extension *) false
-
-let check_clause_singleton model prem concl k =
-  check_clause_singleton_alt model prem concl k
+let check_clause model (prems, (concl, k)) =
+  check_one_clause model prems concl k
 
 let _check_lt_level (m : t) u v =
   let canu = repr_node m u in
   let canv = repr_node m v in
-  check_clause_singleton m canv canu 1
+  check_one_clause m (NeList.tip (canv,0)) canu 1
 
 let check_leq_level (m : t) u vp =
 (* debug_check Pp.(fun () -> str"checking : " ++ Level.raw_pr u ++ str " ≤ " ++ Level.raw_pr vp); *)
   let canu = repr_node m u in
   let canv = repr_node m vp in
   canu == canv ||
-  check_clause_singleton m canv canu 0
+  check_one_clause m (NeList.tip (canv,0)) canu 0
 
 let check_eq_level m u v =
   let canu = repr_node m u in
   let canv = repr_node m v in
   canu == canv
-let check_leq _ _ _ = assert false
-let check_eq _ _ _ = assert false
-
 
 (* Enforce u <= v and check if v <= u already held, in that case, enforce u = v *)
 let enforce_leq_can u v m =
@@ -1768,6 +1755,13 @@ let enforce_constraint u k v (m : t) =
 let enforce_eq u v m = enforce_constraint u Eq v m
 let enforce_leq u v m = enforce_constraint u Le v m
 let enforce_lt u v m = enforce_constraint (Universe.addn u 1) Le v m
+
+let check_constraint (m : t) u k v =
+  let cls = clauses_of_constraint m u k v [] in
+  List.fold_left (fun check cl -> check && check_clause m cl) true cls
+
+let check_leq m u v = check_constraint m u Le v
+let check_eq m u v = check_constraint m u Eq v
 
 let enforce_constraint (u, k, v) (m : t) = enforce_constraint u k v m
 

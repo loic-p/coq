@@ -136,7 +136,7 @@ let infer_primitive env { prim_entry_type = utyp; prim_entry_content = p; } =
   let univs, typ =
     match utyp with
     | None ->
-      let u = Instance.of_level_instance @@ UContext.instance (AbstractContext.repr auctx) in
+      let u = UContext.instance (AbstractContext.repr auctx) in
       let typ = Typeops.type_of_prim_or_type env u p in
       let univs = if AbstractContext.is_empty auctx then Monomorphic
         else Polymorphic auctx

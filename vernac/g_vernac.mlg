@@ -337,16 +337,16 @@ GRAMMAR EXTEND Gram
       | -> { NoInline } ] ]
   ;
   univ_constraint:
-    [ [ l = universe_name; ord = [ "<" -> { Univ.Lt } | "=" -> { Univ.Eq } | "<=" -> { Univ.Le } ];
-        r = universe_name -> { (l, ord, r) } ] ]
+    [ [ l = universe; ord = [ "<" -> { (Univ.Le, true) } | "=" -> { (Univ.Eq, false) } | "<=" -> { (Univ.Le, false) } ];
+        r = universe -> { (l, ord, r) } ] ]
   ;
   univ_decl_constraints:
     [ [ "|"; l' = LIST0 univ_constraint SEP ",";
-        ext = [ "+" -> { true } | -> { false } ]; "}" -> { (l',ext) }
+        ext = [ "?" -> { true } | -> { false } ]; "}" -> { (l',ext) }
       | ext = [ "}" -> { true } | bar_cbrace -> { false } ] -> { ([], ext) } ] ]
   ;
   univ_decl:
-    [ [ "@{" ; test_univ_decl; l0 = LIST0 identref; "|";  l = LIST0 identref; ext = [ "+" -> { true } | -> { false } ];
+    [ [ "@{" ; test_univ_decl; l0 = LIST0 identref; "|";  l = LIST0 identref; ext = [ "?" -> { true } | -> { false } ];
          cs = univ_decl_constraints
          ->
          { let open UState in

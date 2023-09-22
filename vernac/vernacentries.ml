@@ -328,8 +328,9 @@ let dump_universes output g =
   let dump_arc u = function
     | UGraph.Node ltle ->
       Univ.Level.Map.iter (fun v strict ->
-          let typ = if strict then Lt else Le in
-          output typ u v) ltle;
+          (* todo fixme MS *)
+          (* let typ = if strict then Lt else Le in *)
+          output Le u v) ltle;
     | UGraph.Alias v ->
       output Eq u v
   in
@@ -346,8 +347,8 @@ let dump_universes_gen prl g s =
       begin fun kind left right ->
         let () = Lazy.force init in
         match kind with
-          | Univ.Lt ->
-            Printf.fprintf output "  \"%s\" -> \"%s\" [style=bold];\n" right left
+          (* | Univ.Lt ->
+            Printf.fprintf output "  \"%s\" -> \"%s\" [style=bold];\n" right left *)
           | Univ.Le ->
             Printf.fprintf output "  \"%s\" -> \"%s\" [style=solid];\n" right left
           | Univ.Eq ->
@@ -359,7 +360,7 @@ let dump_universes_gen prl g s =
     end else begin
       begin fun kind left right ->
         let kind = match kind with
-          | Univ.Lt -> "<"
+          (* | Univ.Lt -> "<" *)
           | Univ.Le -> "<="
           | Univ.Eq -> "="
         in
@@ -387,7 +388,7 @@ let universe_subgraph ?loc kept univ =
   let kept = List.fold_left (fun kept q -> Level.Set.add (parse q) kept) Level.Set.empty kept in
   let csts = UGraph.constraints_for ~kept univ in
   let add u newgraph =
-    let strict = UGraph.check_constraint univ (Level.set,Lt,u) in
+    let strict = UGraph.check_constraint univ (Universe.type1,Le,Universe.make u) in
     UGraph.add_universe u ~lbound:UGraph.Bound.Set ~strict newgraph
   in
   let univ = Level.Set.fold add kept UGraph.initial_universes in

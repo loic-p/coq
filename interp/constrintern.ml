@@ -2937,10 +2937,14 @@ let interp_known_level evd u =
   let u = intern_sort_name ~local_univs:{bound = bound_univs evd; unb_univs=false} u in
   known_glob_level evd u
 
-let interp_univ_constraint evd (u,c,v) =
-  let u = interp_known_level evd u in
-  let v = interp_known_level evd v in
-  Univ.Universe.make u,c,Univ.Universe.make v
+let interp_universe evd u =
+  let le = List.map (on_fst (interp_known_level evd)) u in
+  Univ.Universe.of_list le
+
+let interp_univ_constraint evd (u,(c, b) ,v) =
+  let u = interp_universe evd u in
+  let v = interp_universe evd v in
+  (if b then Univ.Universe.super u else u),c,v
 
 let interp_univ_constraints env evd cstrs =
   let interp (evd,cstrs) cstr =

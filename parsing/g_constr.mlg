@@ -86,7 +86,7 @@ let test_sort_qvar =
     lk_ident >> lk_list lk_field >> lk_kw "|"
   end
 
-type univ_level_or_quality =
+type univ_or_quality =
   | SProp | Prop | Set | Type | Anon of Loc.t | Global of Libnames.qualid
 
 let force_univ_level ?loc = function
@@ -109,7 +109,7 @@ let force_quality ?loc = function
 
 GRAMMAR EXTEND Gram
   GLOBAL: binder_constr lconstr constr term
-  universe_name sort sort_family
+  universe_name universe sort sort_family
   global constr_pattern cpattern Constr.ident
   closed_binder open_binders binder binders binders_fixannot
   record_declaration typeclass_constraint pattern arg type_cstr
@@ -308,7 +308,7 @@ GRAMMAR EXTEND Gram
       | -> { [] } ] ]
   ;
   univ_annot:
-    [ [ "@{"; l = LIST0 univ_level_or_quality; l' = OPT [ "|"; l' = LIST0 univ_level_or_quality -> { l' } ]; "}" ->
+    [ [ "@{"; l = LIST0 univ_or_quality; l' = OPT [ "|"; l' = LIST0 univ_or_quality -> { l' } ]; "}" ->
         {
           let l, l' = match l' with
             | None -> [], List.map (force_univ_level ~loc) l
@@ -318,17 +318,13 @@ GRAMMAR EXTEND Gram
         }
       | -> { None } ] ]
   ;
-  univ_level_or_quality:
+  univ_or_quality:
     [ [ "Set" -> { Set }
       | "SProp" -> { SProp }
       | "Prop" -> { Prop }
       | "Type" -> { Type }
       | "_" -> { Anon loc }
-      | id = global -> { Global id } ] ]
-  universe_level:
-    [ [ "Type" -> { UAnonymous {rigid=UnivRigid} }
-      | "_" -> { UAnonymous {rigid=UnivFlexible false} }
-      | u = universe -> { UNamed u } ] ]
+      | u = universe -> { Global u } ] ]
   ;
   fix_decls:
     [ [ dcl = fix_decl -> { let (id,_,_,_,_,_) = dcl.CAst.v in (id,[dcl.CAst.v]) }

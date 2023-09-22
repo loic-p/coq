@@ -382,9 +382,6 @@ let constr_display csr =
   and quality_display q =
     incr cnt; pp (str "with " ++ int !cnt ++ str" " ++ Sorts.Quality.raw_pr q ++ fnl ())
 
-  and level_display u =
-    incr cnt; pp (str "with " ++ int !cnt ++ str" " ++ Level.raw_pr u ++ fnl ())
-
   and sort_display = function
     | SProp -> "SProp"
     | Set -> "Set"
@@ -543,7 +540,7 @@ let print_pure_constr csr =
   and universes_display u =
     let qs, us = Instance.to_array u in
     Array.iter (fun u -> print_space (); pp (Sorts.Quality.raw_pr u)) qs;
-    Array.iter (fun u -> print_space (); pp (Level.raw_pr u)) us
+    Array.iter (fun u -> print_space (); pp (Universe.pr Level.raw_pr u)) us
 
   and sort_display = function
     | SProp -> print_string "SProp"
