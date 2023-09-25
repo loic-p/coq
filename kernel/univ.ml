@@ -662,9 +662,9 @@ let subst_univs_level_universe subst u =
     | (l, k as e) :: u ->
       match Level.Map.find l subst with
       | exception Not_found -> aux (e :: u') u
-      | u' ->
+      | univ ->
         modified := true;
-        aux (List.append (Universe.addn u' k) u') u
+        aux (List.append (Universe.addn univ k) u') u
   in
   let u' = aux [] u in
   if not !modified then u

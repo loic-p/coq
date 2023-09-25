@@ -78,10 +78,6 @@ val ugraph : t -> UGraph.t
 val initial_graph : t -> UGraph.t
 (** The initial graph with just the declarations of new universes. *)
 
-val is_algebraic : Level.t -> t -> bool
-(** Can this universe be instantiated with an algebraic
-    universe (ie it appears in inferred types only). *)
-
 val constraints : t -> Univ.Constraints.t
 (** Shorthand for {!context_set} composed with {!ContextSet.constraints}. *)
 
@@ -167,11 +163,10 @@ val restrict_even_binders : t -> Univ.Level.Set.t -> t
 
 type rigid =
   | UnivRigid
-  | UnivFlexible of bool (** Is substitution by an algebraic ok? *)
+  | UnivFlexible
 
 val univ_rigid : rigid
 val univ_flexible : rigid
-val univ_flexible_alg : rigid
 
 val merge : ?loc:Loc.t -> sideff:bool -> rigid -> t -> Univ.ContextSet.t -> t
 val merge_sort_variables : ?loc:Loc.t -> sideff:bool -> t -> QVar.Set.t -> t
@@ -194,17 +189,9 @@ val new_sort_variable : ?loc:Loc.t -> ?name:Id.t -> t -> t * QVar.t
 
 val new_univ_variable : ?loc:Loc.t -> rigid -> Id.t option -> t -> t * Univ.Level.t
 (** Declare a new local universe; use rigid if a global or bound
-    universe; use flexible for a universe existential variable; use
-    univ_flexible_alg for a universe existential variable allowed to
-    be instantiated with an algebraic universe *)
+    universe; use flexible for a universe existential variable *)
 
 val add_global_univ : t -> Univ.Level.t -> t
-
-val make_nonalgebraic_variable : t -> Univ.Level.t -> t
-(** cf UnivFlex *)
-
-val make_flexible_nonalgebraic : t -> t
-(** cf UnivFlex *)
 
 val normalize_variables : t -> t
 

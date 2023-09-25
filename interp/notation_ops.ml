@@ -75,8 +75,8 @@ let eq_rigid a b =
   let open UState in
   match a, b with
   | UnivRigid, UnivRigid -> true
-  | UnivFlexible a, UnivFlexible b -> (a:bool) = b
-  | (UnivRigid | UnivFlexible _), _ -> false
+  | UnivFlexible, UnivFlexible -> true
+  | (UnivRigid | UnivFlexible), _ -> false
 
 (* compare_glob_universe_instances true strictly_lt us1 us2 computes us1 <= us2,
    compare_glob_universe_instances false strictly_lt us1 us2 computes us1 = us2.

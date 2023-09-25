@@ -48,10 +48,7 @@ let subst_univs_universe fn ul =
 let subst_instance fn i =
   Instance.of_array (Array.Smart.map (subst_univs_universe (fun x -> Some (fn x))) (Instance.to_array i))
 
-let enforce_eq u v c =
-  if Universe.equal u v then c else match Universe.level u, Universe.level v with
-  | Some u, Some v -> enforce_eq_level u v c
-  | _ -> CErrors.anomaly (Pp.str "A universe comparison can only happen between variables.")
+let enforce_eq u v c = Univ.enforce_eq u v c
 
 let check_univ_leq_one u v =
   let leq (u,n) (v,n') =

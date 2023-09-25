@@ -108,7 +108,7 @@ let rec make_anonymous_conclusion_flexible ind =
   let open Glob_term in
   match DAst.get ind with
   | GSort (UAnonymous {rigid=UnivRigid}) ->
-    Some (DAst.make ?loc:ind.loc (GSort (UAnonymous {rigid=UnivFlexible true})))
+    Some (DAst.make ?loc:ind.loc (GSort (UAnonymous {rigid=UnivFlexible})))
   | GSort (UNamed _) -> None
   | GProd (a, b, c, d, e) -> begin match make_anonymous_conclusion_flexible e with
       | None -> None

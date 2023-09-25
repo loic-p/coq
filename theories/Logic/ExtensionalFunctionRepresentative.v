@@ -20,13 +20,6 @@
 (** It provides extensionality of functions while still supporting (a
     priori) an intensional interpretation of equality *)
 
-Set Debug "loop-checking-invariants".
-
-
-(* Set Debug "loop-checking-global". *)
-(* Set Debug "loop-checking". *)
-(* Set Debug "loop-checking-loop". *)
-
 Axiom extensional_function_representative :
   forall A B, exists repr, forall (f : A -> B),
   (forall x, f x = repr f x) /\

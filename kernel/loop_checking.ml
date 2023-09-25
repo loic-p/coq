@@ -1100,7 +1100,7 @@ let _repr_clause m (concl, prem as cl : clause) =
   if concl' == concl && prem' == prem then cl
   else (concl', prem')
 
-let pr_clauses m =
+let _pr_clauses m =
   PMap.fold (fun p e acc ->
     match e with
     | Equiv p' ->
@@ -1634,7 +1634,7 @@ let infer_clause_extension cl m =
   | None -> debug_global Pp.(fun () -> str"Resulted in a loop"); res
   | Some m ->
     debug_check_invariants m;
-    debug_global Pp.(fun () -> str" is consistent, clauses: " ++ pr_clauses m); res
+    debug_global Pp.(fun () -> str" is consistent"); res
 
 let infer_extension x k y m =
   let cl = can_clause_of_can_constraint (x, k, y) in
@@ -1749,8 +1749,8 @@ let check_constraint (m : t) u k u' =
   debug_global Pp.(fun () -> str"Checking " ++ pr_constraints Level.raw_pr (Constraints.singleton (u,k,u')));
   let cls = clauses_of_constraint u k u' [] in
   let res = List.fold_left (fun check cl -> check && check_clause m (can_clause_of_clause m cl)) true cls in
-  if res then (debug_global Pp.(fun () -> str" Clause holds in: " ++ pr_clauses m); res)
-  else (debug_global Pp.(fun () -> str" Clause does not hold in: " ++ pr_clauses m); res)
+  if res then (debug_global Pp.(fun () -> str" Clause holds"); res)
+  else (debug_global Pp.(fun () -> str" Clause does not hold"); res)
 
 let check_leq m u v = check_constraint m u Le v
 let check_eq m u v = check_constraint m u Eq v
@@ -1784,9 +1784,9 @@ let check_declared model us =
 type explanation = Level.t * (constraint_type * Level.t) list
 
 let get_explanation (cstr : univ_constraint) _ : explanation =
-  let (l, _, _) = cstr in
+  let (_l, _, r) = cstr in
   (* TODO *)
-  (Option.get (Universe.level l), [])
+  (Option.get (Universe.level r), [])
 
 let pr_constraint_type k =
   let open Pp in

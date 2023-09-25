@@ -634,11 +634,10 @@ val retract_coercible_metas : evar_map -> metabinding list * evar_map
 
 type rigid = UState.rigid =
   | UnivRigid
-  | UnivFlexible of bool (** Is substitution by an algebraic ok? *)
+  | UnivFlexible
 
 val univ_rigid : rigid
 val univ_flexible : rigid
-val univ_flexible_alg : rigid
 
 type 'a in_evar_universe_context = 'a * UState.t
 
@@ -661,9 +660,6 @@ val new_sort_variable : ?loc:Loc.t -> ?name:Id.t -> rigid -> evar_map -> evar_ma
 val add_global_univ : evar_map -> Univ.Level.t -> evar_map
 
 val universe_rigidity : evar_map -> Univ.Level.t -> rigid
-
-val make_nonalgebraic_variable : evar_map -> Univ.Level.t -> evar_map
-(** See [UState.make_nonalgebraic_variable]. *)
 
 val is_flexible_level : evar_map -> Univ.Level.t -> bool
 

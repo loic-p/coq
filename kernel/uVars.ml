@@ -587,14 +587,14 @@ let is_empty_sort_subst (qsubst,usubst) = Sorts.QVar.Map.is_empty qsubst && is_e
 let empty_sort_subst = Sorts.QVar.Map.empty, empty_level_subst
 
 let subst_sort_level_instance (qsubst,usubst) i =
-  let i' = Instance.subst_fn (Quality.subst_fn qsubst, subst_univs_level_level usubst) i in
+  let i' = Instance.subst_fn (Quality.subst_fn qsubst, subst_univs_level_universe usubst) i in
   if i == i' then i
   else i'
 
 let subst_instance_sort_level_subst s (i : sort_level_subst) =
   let qs, us = i in
   let qs' = Sorts.QVar.Map.map (fun l -> subst_instance_quality s l) qs in
-  let us' = Level.Map.map (fun l -> subst_instance_level s l) us in
+  let us' = Level.Map.map (fun l -> subst_instance_universe s l) us in
   if qs' == qs && us' == us then i else (qs', us')
 
 let subst_univs_level_abstract_universe_context subst (inst, csts) =

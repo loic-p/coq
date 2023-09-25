@@ -512,7 +512,7 @@ let universe_info ?loc sigma l = match l with
 
 let glob_univ ?loc evd : glob_univ -> _ = function
   | UAnonymous {rigid} ->
-    assert (rigid <> UnivFlexible true);
+    assert (rigid <> UnivFlexible);
     let evd, l = new_univ_level_variable ?loc rigid evd in
     evd, Univ.Universe.make l
   | UNamed s -> universe_info ?loc evd s
@@ -1394,7 +1394,7 @@ let pretype_type self c ?loc ~flags valcon (env : GlobEnv.t) sigma = match DAst.
            sigma, { utj_val = v;
                     utj_type = s }
        | None ->
-         let sigma, s = new_sort_variable univ_flexible_alg sigma in
+         let sigma, s = new_sort_variable univ_flexible sigma in
          let sigma, utj_val = new_evar env sigma ~src:(loc, knd) ~naming (mkSort s) in
          let sigma = if flags.program_mode then mark_obligation_evar sigma knd utj_val else sigma in
          sigma, { utj_val; utj_type = s})
@@ -1633,7 +1633,7 @@ let path_convertible env sigma cl p q =
       let params = class_nparams cl in
       let clty =
         match cl with
-        | CL_SORT -> mkGSort (Glob_term.UAnonymous {rigid=UnivFlexible false})
+        | CL_SORT -> mkGSort (Glob_term.UAnonymous {rigid=UnivFlexible})
         | CL_FUN -> anomaly (str "A source class must not be Funclass.")
         | CL_SECVAR v -> mkGRef (GlobRef.VarRef v)
         | CL_CONST c -> mkGRef (GlobRef.ConstRef c)

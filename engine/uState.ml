@@ -425,8 +425,7 @@ let is_uset = function USet -> true | UProp | USProp -> false
 
 type sort_classification =
 | USmall of small_universe (* Set, Prop or SProp *)
-| ULevel of Level.t (* Var or Global *)
-| UMax of Universe.t * Level.Set.t (* Max of Set, Var, Global without increments *)
+| ULevel of Level.t * Universe.t (* Var or Global *)
 | UAlgebraic of Universe.t (* Arbitrary algebraic expression *)
 
 let classify s = match s with
@@ -448,6 +447,9 @@ type local = {
 
 let add_local (l, d, r) local =
   { local with local_cst = Constraints.add (Universe.make l, d, Universe.make r) local.local_cst }
+
+let add_local_univ (l, d, r) local =
+  { local with local_cst = Constraints.add (l, d, r) local.local_cst }
 
 (* Constraint with algebraic on the left and a single level on the right *)
 let enforce_leq_up u v local =
@@ -526,29 +528,30 @@ let process_universe_constraints uctx cstrs =
       add_local (l', Eq, r') local
   in
   let equalize_algebraic l ru local =
-    let alg = UnivFlex.is_algebraic l uctx.univ_variables in
     let inst = univ_level_rem l ru ru in
-    if alg && not (Level.Set.mem l (Universe.levels inst)) then
-      let () = instantiate_variable l inst vars in
-      local
+    if not (Level.Set.mem l (Universe.levels inst)) then
+      if is_local l then
+        let () = instantiate_variable l inst vars in
+        local
+      else add_local_univ (Universe.make l, Eq, ru) local
     else
       if univ_level_mem l ru then
         enforce_leq_up inst l local
       else sort_inconsistency Eq (sort_of_univ (Universe.make l)) (sort_of_univ ru)
   in
   let equalize_universes l r local = match classify l, classify r with
-  | USmall l', (USmall _ | ULevel _ | UMax _ | UAlgebraic _) ->
+  | USmall l', (USmall _ | ULevel _ | UAlgebraic _) ->
     equalize_small l' r local
-  | (ULevel _ | UMax _ | UAlgebraic _), USmall r' ->
+  | (ULevel _ | UAlgebraic _), USmall r' ->
     equalize_small r' l local
-  | ULevel l', ULevel r' ->
+  | ULevel (l', _), ULevel (r', _) ->
     equalize_variables false l' r' local
-  | ULevel l', (UAlgebraic r | UMax (r, _)) | (UAlgebraic r | UMax (r, _)), ULevel l' ->
+  | ULevel (l', _), UAlgebraic r | UAlgebraic r, ULevel (l', _) ->
     equalize_algebraic l' r local
-  | (UAlgebraic _ | UMax _), (UAlgebraic _ | UMax _) ->
+  | UAlgebraic l', UAlgebraic r' ->
     (* both are algebraic *)
     if UGraph.check_eq_sort univs l r then local
-    else sort_inconsistency Eq l r
+    else add_local_univ (l', Eq, r') local
   in
   let unify_universes cst local =
     let cst = nf_constraint local.local_sorts cst in
@@ -579,24 +582,32 @@ let process_universe_constraints uctx cstrs =
       let l = normalize_sort local.local_sorts l in
       let r = normalize_sort local.local_sorts r in
       begin match classify r with
-      | UAlgebraic _ | UMax _ ->
-        if UGraph.check_leq_sort univs l r then local
-        else
-          sort_inconsistency Le l r
-            ~explain:(Pp.str "(cannot handle algebraic on the right)")
       | USmall r' ->
         (* Invariant: there are no universes u <= Set in the graph. Except for
            template levels, Set <= u anyways. Otherwise, for template
            levels, any constraint u <= Set is turned into u := Set. *)
         if UGraph.type_in_type univs then local
         else begin match classify l with
-        | UAlgebraic _ ->
-          (* l contains a +1 and r=r' small so l <= r impossible *)
-          sort_inconsistency Le l r
+        | UAlgebraic ul ->
+          if Universe.is_levels ul then
+            if is_uset r' then
+              let fold l' local =
+                if Level.is_set l' || is_local l' then
+                  equalize_variables false l' Level.set local
+                else
+                  let l = Sorts.sort_of_univ @@ Universe.make l' in
+                  sort_inconsistency Le l r
+              in
+              Level.Set.fold fold (Universe.levels ul) local
+            else
+              sort_inconsistency Le l r
+          else
+            (* l contains a +1 and r=r' small so l <= r impossible *)
+            sort_inconsistency Le l r
         | USmall l' ->
           if UGraph.check_leq_sort univs l r then local
           else sort_inconsistency Le l r
-        | ULevel l' ->
+        | ULevel (l', ul') ->
           if is_uset r' && is_local l' then
             (* Unbounded universe constrained from above, we equalize it *)
             let () = instantiate_variable l' Universe.type0 vars in
@@ -615,7 +626,7 @@ let process_universe_constraints uctx cstrs =
           else
             sort_inconsistency Le l r
         end
-      | ULevel r' ->
+      | ULevel (_, r') | UAlgebraic r' ->
         (* We insert the constraint in the graph even if the graph
             already contains it.  Indeed, checking the existence of the
             constraint is costly when the constraint does not already
@@ -626,18 +637,14 @@ let process_universe_constraints uctx cstrs =
             exist directly in the graph. *)
         match classify l with
         | USmall UProp ->
-          { local with local_above_prop = Level.Set.add r' local.local_above_prop }
+          { local with local_above_prop = Level.Set.union (Universe.levels r') local.local_above_prop }
         | USmall USProp ->
           if UGraph.type_in_type univs then local
           else sort_inconsistency Le l r
         | USmall USet ->
-          add_local (Level.set, Le, r') local
-        | ULevel l' ->
-          add_local (l', Le, r') local
-        | UAlgebraic l ->
-          enforce_leq_up l r' local
-        | UMax (_, l) ->
-          Univ.Level.Set.fold (fun l' accu -> add_local (l', Le, r') accu) l local
+          add_local_univ (Universe.type0, Le, r') local
+        | ULevel (_, l') | UAlgebraic l' ->
+          add_local_univ (l', Le, r') local
       end
     | ULub (l, r) ->
       (match Universe.level l, Universe.level r with
@@ -994,11 +1001,10 @@ let restrict_constraints uctx csts =
 
 type rigid =
   | UnivRigid
-  | UnivFlexible of bool (** Is substitution by an algebraic ok? *)
+  | UnivFlexible
 
 let univ_rigid = UnivRigid
-let univ_flexible = UnivFlexible false
-let univ_flexible_alg = UnivFlexible true
+let univ_flexible = UnivFlexible
 
 (** ~sideff indicates that it is ok to redeclare a universe.
     Also merges the universe context in the local constraint structures
@@ -1030,9 +1036,9 @@ let merge ?loc ~sideff rigid uctx uctx' =
   let uctx =
     match rigid with
     | UnivRigid -> uctx
-    | UnivFlexible b ->
+    | UnivFlexible ->
       assert (not sideff);
-      let uvars' = UnivFlex.add_levels levels ~algebraic:b uctx.univ_variables in
+      let uvars' = UnivFlex.add_levels levels uctx.univ_variables in
       { uctx with univ_variables = uvars' }
   in
   { uctx with names; local; universes;
@@ -1164,8 +1170,8 @@ let new_univ_variable ?loc rigid name uctx =
   let uctx =
     match rigid with
     | UnivRigid -> uctx
-    | UnivFlexible algebraic ->
-      let univ_variables = UnivFlex.add u ~algebraic uctx.univ_variables in
+    | UnivFlexible ->
+      let univ_variables = UnivFlex.add u uctx.univ_variables in
       { uctx with univ_variables }
   in
   let uctx = add_universe ?loc name false uctx.universes_lbound uctx u in
@@ -1182,12 +1188,6 @@ let make_with_initial_binders ~lbound univs binders =
 
 let from_env ?(binders=[]) env =
   make_with_initial_binders ~lbound:(Environ.universes_lbound env) (Environ.universes env) binders
-
-let make_nonalgebraic_variable uctx u =
-  { uctx with univ_variables = UnivFlex.make_nonalgebraic_variable uctx.univ_variables u }
-
-let make_flexible_nonalgebraic uctx =
-  { uctx with univ_variables = UnivFlex.make_all_undefined_nonalgebraic uctx.univ_variables }
 
 let subst_univs_context_with_def def usubst (uctx, cst) =
   (Level.Set.diff uctx def, UnivSubst.subst_univs_constraints usubst cst)
@@ -1214,6 +1214,7 @@ let minimize uctx =
   let lbound = uctx.universes_lbound in
   let (vars', us') =
     normalize_context_set ~lbound uctx.universes uctx.local uctx.univ_variables
+      ~binders:(fst uctx.names)
       uctx.minim_extra
   in
   if ContextSet.equal us' uctx.local then uctx

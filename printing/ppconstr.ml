@@ -222,14 +222,14 @@ let tag_var = tag Tag.variable
     | UNamed (None, [CProp, 0]) -> tag_type (str "Prop")
     | UNamed (None, [CSet, 0]) -> tag_type (str "Set")
     | UAnonymous {rigid=UnivRigid} -> tag_type (str "Type")
-    | UAnonymous {rigid=UnivFlexible b} ->
+    | UAnonymous {rigid=UnivFlexible} ->
       tag_type (str "Type") ++
-      pr_univ_annot (fun _ -> str "_" ++ if b then str " (* algebraic *)" else mt()) ()
+      pr_univ_annot (fun _ -> str "_") ()
     | UNamed u -> hov 0 (tag_type (str "Type") ++ pr_univ_annot pr_quality_univ u)
 
   let pr_universe_expr = function
     | UAnonymous {rigid=UnivRigid} -> tag_type (str "Type")
-    | UAnonymous {rigid=UnivFlexible b} -> assert (not b); tag_type (str "_")
+    | UAnonymous {rigid=UnivFlexible} -> tag_type (str "_")
     | UNamed u -> tag_type (pr_univ u)
 
   let pr_qualid sp =

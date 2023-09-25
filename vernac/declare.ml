@@ -914,13 +914,12 @@ module ProgramDecl = struct
             obls
         , b )
     in
-    let prg_uctx = UState.make_flexible_nonalgebraic uctx in
     { prg_cinfo = { cinfo with CInfo.typ = reduce cinfo.CInfo.typ }
     ; prg_info = info
     ; prg_hook = obl_hook
     ; prg_opaque = opaque
     ; prg_body = body
-    ; prg_uctx
+    ; prg_uctx = uctx
     ; prg_obligations = {obls = obls'; remaining = Array.length obls'}
     ; prg_deps = deps
     ; prg_fixkind = fixpoint_kind

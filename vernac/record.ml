@@ -159,12 +159,12 @@ let is_sort_variable sigma s =
 
 let build_type_telescope newps env0 sigma { DataI.arity; _ } = match arity with
   | None ->
-    let sigma, s = Evd.new_sort_variable Evd.univ_flexible_alg sigma in
+    let sigma, s = Evd.new_sort_variable Evd.univ_flexible sigma in
     sigma, (EConstr.mkSort s, s)
   | Some { CAst.v = CSort (Glob_term.UAnonymous {rigid=UnivRigid}); loc } ->
     (* special case: the user wrote ": Type". We want to allow it to become algebraic
        (and Prop but that may change in the future) *)
-    let sigma, s = Evd.new_sort_variable ?loc UState.univ_flexible_alg sigma in
+    let sigma, s = Evd.new_sort_variable ?loc UState.univ_flexible sigma in
     sigma, (EConstr.mkSort s, s)
   | Some t ->
     let env = EConstr.push_rel_context newps env0 in

@@ -31,6 +31,7 @@ Set Universe Polymorphism.
 (** A morphism for a relation [R] is a proper element of the relation.
    The relation [R] will be instantiated by [respectful] and [A] by an arrow
    type for usual morphisms. *)
+
 Section Proper.
   Context {A : Type}.
 
@@ -73,7 +74,7 @@ Section Proper.
   (** The non-dependent version is an instance where we forget dependencies. *)
   
   Definition respectful {B} (R : crelation A) (R' : crelation B) : crelation (A -> B) :=
-    Eval compute in @respectful_hetero A A (fun _ => B) (fun _ => B) R (fun _ _ => R').
+    fun f g => forall x y, R x y -> R' (f x) (g y).
 End Proper.
 
 (** We favor the use of Leibniz equality or a declared reflexive crelation 
@@ -87,7 +88,6 @@ Hint Extern 1 (ProperProxy _ _) =>
 Hint Extern 2 (ProperProxy ?R _) => 
   not_evar R; class_apply @proper_proper_proxy : typeclass_instances.
 
-(** Notations reminiscent of the old syntax for declaring morphisms. *)
 Declare Scope signatureT_scope.
 Delimit Scope signatureT_scope with signatureT.
 
@@ -434,7 +434,8 @@ Section GenericInstances.
   Proof. simpl_crelation. Qed.
   
   Class Params {A} (of : A) (arity : nat).
-    
+  Set Debug "univMinim".
+
   Lemma flip_respectful {A B} (R : crelation A) (R' : crelation B) :
     relation_equivalence (flip (R ==> R')) (flip R ==> flip R').
   Proof.

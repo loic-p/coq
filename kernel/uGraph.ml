@@ -11,6 +11,8 @@
 open Univ
 open UVars
 
+let _debug_ugraph, debug = CDebug.create_full ~name:"uGraph" ()
+
 module G = Loop_checking
 (* Do not include G to make it easier to control universe specific
    code (eg add_universe with a constraint vs G.add with no
@@ -52,6 +54,12 @@ let real_check_leq g u v =
 
 let check_leq g u v =
   type_in_type g || Universe.equal u v || (real_check_leq g u v)
+
+let check_leq g u u' =
+  let res = check_leq g u u' in
+  debug Pp.(fun () -> str"check_leq: " ++ Universe.pr Level.raw_pr u ++
+    str" <= " ++ Universe.pr Level.raw_pr u' ++ str" = " ++ bool res);
+  res
 
 let check_eq g u v =
   type_in_type g || Universe.equal u v ||

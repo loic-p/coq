@@ -1115,11 +1115,10 @@ let loc_of_conv_pb evd (pbty,env,t1,t2) =
 
 type rigid = UState.rigid =
   | UnivRigid
-  | UnivFlexible of bool (** Is substitution by an algebraic ok? *)
+  | UnivFlexible
 
 let univ_rigid = UnivRigid
-let univ_flexible = UnivFlexible false
-let univ_flexible_alg = UnivFlexible true
+let univ_flexible = UnivFlexible
 
 let evar_universe_context d = d.universes
 
@@ -1174,9 +1173,6 @@ let new_sort_variable ?loc ?name rigid sigma =
 let add_global_univ d u =
   { d with universes = UState.add_global_univ d.universes u }
 
-let make_nonalgebraic_variable evd u =
-  { evd with universes = UState.make_nonalgebraic_variable evd.universes u }
-
 (****************************************)
 (* Operations on constants              *)
 (****************************************)
@@ -1212,7 +1208,7 @@ let universe_rigidity evd l =
   let uctx = evd.universes in
   (* XXX why are we considering all locals to be flexible here? *)
   if Univ.Level.Set.mem l (Univ.ContextSet.levels (UState.context_set uctx)) then
-    UnivFlexible (UState.is_algebraic l uctx)
+    UnivFlexible
   else UnivRigid
 
 let normalize_universe_instance evd l =
