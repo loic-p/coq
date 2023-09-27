@@ -403,6 +403,9 @@ struct
     in
     List.fold_left fold Level.Set.empty l
 
+  let mem l u =
+    List.exists (fun (l', _) -> Level.equal l l') u
+
   let is_small u =
     match u with
     | [l] -> Expr.is_small l
@@ -561,12 +564,11 @@ let enforce_eq_level u v c =
 let enforce_leq_level u v c =
   if Level.equal u v then c else Constraints.add (Universe.make u,Le,Universe.make v) c
 
-let enforce_eq u v c =
-  if Universe.equal u v then c else Constraints.add (u,Eq,v) c
+let enforce u k v c =
+  if Universe.equal u v then c else Constraints.add (u,k,v) c
 
-let enforce_leq u v c =
-  if Universe.equal u v then c else Constraints.add (u,Le,v) c
-
+let enforce_eq u v c = enforce u Eq v c
+let enforce_leq u v c = enforce u Le v c
 
 (* Miscellaneous functions to remove or test local univ assumed to
    occur in a universe *)

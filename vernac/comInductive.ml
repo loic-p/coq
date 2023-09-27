@@ -334,8 +334,8 @@ let template_polymorphic_univs ~ctor_levels uctx paramsctxt u =
     let open Univ in
     Univ.Constraints.for_all (fun (l, d, r) ->
         match d with
-        | Eq -> not (Univ.Universe.equal l u) && not (Univ.Universe.equal r u)
-        | Le -> not (Univ.Universe.equal r u))
+        | Eq -> not (Univ.Universe.mem u l) && not (Univ.Universe.mem u r)
+        | Le -> not (Univ.Universe.mem u r))
       cstrs
   in
   let fold_params accu decl = match decl with
@@ -356,7 +356,7 @@ let template_polymorphic_univs ~ctor_levels uctx paramsctxt u =
     Univ.Level.Set.mem l (Univ.ContextSet.levels uctx) &&
     Univ.Level.Set.mem l paramslevels &&
     (let () = assert (not @@ Univ.Level.is_set l) in true) &&
-    unbounded_from_below (Univ.Universe.make l) (Univ.ContextSet.constraints uctx) &&
+    unbounded_from_below l (Univ.ContextSet.constraints uctx) &&
     not (Univ.Level.Set.mem l ctor_levels)
   in
   let univs = Univ.Universe.levels u in
@@ -384,17 +384,17 @@ let template_polymorphism_candidate uctx params entry concl = match concl with
 
 let split_universe_context subset (univs, csts) =
   let subfilter (l, _, r) =
-    let l = Option.get (Univ.Universe.level l) in
-    let r = Option.get (Univ.Universe.level r) in
-    let () = assert (not @@ Univ.Level.Set.mem r subset) in
-    Univ.Level.Set.mem l subset
+    let l = Univ.Universe.levels l in
+    let r = Univ.Universe.levels r in
+    let () = assert (not @@ Univ.Level.Set.subset r subset) in
+    Univ.Level.Set.subset l subset
   in
   let subcst = Univ.Constraints.filter subfilter csts in
   let rem = Univ.Level.Set.diff univs subset in
   let remfilter (l, _, r) =
-    let l = Option.get (Univ.Universe.level l) in
-    let r = Option.get (Univ.Universe.level r) in
-    not (Univ.Level.Set.mem l subset) && not (Univ.Level.Set.mem r subset)
+    let l = Univ.Universe.levels l in
+    let r = Univ.Universe.levels r in
+    not (Univ.Level.Set.subset l subset) && not (Univ.Level.Set.subset r subset)
   in
   let remcst = Univ.Constraints.filter remfilter csts in
   (subset, subcst), (rem, remcst)

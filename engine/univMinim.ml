@@ -231,10 +231,24 @@ let add_list_map u t map =
   with Not_found ->
     Level.Map.add u [t] map
 
+(** Turn max(l, l') <= u constraints into { l <= u, l' <= u } constraints *)
+let decompose_constraints cstrs =
+  let fold (l, d, r as cstr) acc =
+    match d with
+    | Eq -> Constraints.add cstr acc
+    | Le ->
+      match Universe.repr l with
+      | [] -> assert false
+      | [_] -> Constraints.add cstr acc
+      | l -> List.fold_left (fun acc le -> enforce (Universe.of_list [le]) d r acc) acc l
+  in Constraints.fold fold cstrs Constraints.empty
+
 let normalize_context_set ~lbound g ctx (us:UnivFlex.t) ?binders {weak_constraints=weak;above_prop} =
-  let (ctx, csts) = ContextSet.levels ctx, ContextSet.constraints ctx in
   let prl = UnivNames.pr_with_global_universes ?binders in
+  debug Pp.(fun () -> str "Minimizing context: " ++ pr_universe_context_set prl ctx);
+  let (ctx, csts) = ContextSet.levels ctx, ContextSet.constraints ctx in
   (* Keep the Prop/Set <= i constraints separate for minimization *)
+  let csts = decompose_constraints csts in
   let smallles, csts =
     Constraints.partition (fun (l,d,r) -> d == Le && Universe.is_type0 l) csts
   in
@@ -295,6 +309,7 @@ let normalize_context_set ~lbound g ctx (us:UnivFlex.t) ?binders {weak_constrain
           Level.Set.fold add_soft levels g)
         csts g
     in
+    debug Pp.(fun () -> str "Merging constraints: " ++ pr_universe_context_set prl (ctx, csts));
     let g = UGraph.merge_constraints csts g in
     let cstrs = UGraph.constraints_of_universes g in
     debug Pp.(fun () -> str "New universe context: " ++ pr_universe_context_set prl (ctx, fst cstrs));

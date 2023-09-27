@@ -512,7 +512,6 @@ let universe_info ?loc sigma l = match l with
 
 let glob_univ ?loc evd : glob_univ -> _ = function
   | UAnonymous {rigid} ->
-    assert (rigid <> UnivFlexible);
     let evd, l = new_univ_level_variable ?loc rigid evd in
     evd, Univ.Universe.make l
   | UNamed s -> universe_info ?loc evd s

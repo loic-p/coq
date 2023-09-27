@@ -42,18 +42,11 @@ let set_type_in_type b g = {g with type_in_type=b}
 
 let type_in_type g = g.type_in_type
 
-let check_smaller_expr g (u,n) (v,m) =
-  G.check_leq g.graph (Universe.of_list [(u,n)]) (Universe.of_list [(v,m)])
-
-let exists_bigger g ul l =
-  Universe.exists (fun ul' ->
-    check_smaller_expr g ul ul') l
-
-let real_check_leq g u v =
-  Universe.for_all (fun ul -> exists_bigger g ul v) u
+let graph_check_leq g u v = G.check_leq g.graph u v
+let graph_check_eq g u v = G.check_eq g.graph u v
 
 let check_leq g u v =
-  type_in_type g || Universe.equal u v || (real_check_leq g u v)
+  type_in_type g || Universe.equal u v || graph_check_leq g u v
 
 let check_leq g u u' =
   let res = check_leq g u u' in
@@ -62,8 +55,7 @@ let check_leq g u u' =
   res
 
 let check_eq g u v =
-  type_in_type g || Universe.equal u v ||
-    (real_check_leq g u v && real_check_leq g v u)
+  type_in_type g || Universe.equal u v || graph_check_eq g u v
 
 let check_eq_level g u v =
   u == v || type_in_type g || G.check_eq_level g.graph u v

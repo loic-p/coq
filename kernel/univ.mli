@@ -137,6 +137,9 @@ sig
   val levels : t -> Level.Set.t
   (** Get the levels inside the universe, forgetting about increments *)
 
+  val mem : Level.t -> t -> bool
+  (** Does a level appear in a universe? *)
+
   val super : t -> t
   (** The universe strictly above *)
 
@@ -196,6 +199,8 @@ val constraints_of : 'a constrained -> Constraints.t
 
 (** Enforcing Constraints.t. *)
 type 'a constraint_function = 'a -> 'a -> Constraints.t -> Constraints.t
+
+val enforce : Universe.t -> constraint_type -> Universe.t -> Constraints.t -> Constraints.t
 
 val enforce_eq : Universe.t constraint_function
 val enforce_leq : Universe.t constraint_function

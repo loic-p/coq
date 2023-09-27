@@ -259,8 +259,8 @@ let check_record data =
 let unbounded_from_below u cstrs =
   Univ.Constraints.for_all (fun (l, d, r) ->
       match d with
-      | Eq -> not (Univ.Universe.equal l u) && not (Univ.Universe.equal r u)
-      | Le -> not (Univ.Universe.equal r u))
+      | Eq -> not (Univ.Universe.mem u l) && not (Univ.Universe.mem u r)
+      | Le -> not (Univ.Universe.mem u r))
     cstrs
 
 let get_template univs ~env_params ~env_ar_par ~params entries =
@@ -297,7 +297,7 @@ let get_template univs ~env_params ~env_ar_par ~params entries =
       else Level.Set.elements plevels
     in
     let check_bound l =
-      if not (unbounded_from_below (Universe.make l) (snd ctx)) then
+      if not (unbounded_from_below l (snd ctx)) then
         CErrors.user_err Pp.(strbrk "Universe level " ++ Level.raw_pr l ++ strbrk " has a lower bound")
     in
     let () = List.iter check_bound plevels in
