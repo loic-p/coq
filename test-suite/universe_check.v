@@ -1,26 +1,12 @@
 Set Universe Polymorphism.
 (* So that by default we only get Set <= a constraints, not Set < a *)
-(* Set Debug "loop-checking".
-Set Debug "loop-checking-loop". *)
-(* Set Debug "loop-checking-model".*)
-(* a = 0
-      b -> c
-      a -> b + 1
-      c -> c + 1
 
-      1st round: b = 0.
-      W = {b}
-      2nd round: c = 0.
-      W = {b, c}
-      c = 1.
-      W = {b, c}
-      *)
-(* Section test_loop.
+Section test_loop.
   Universes a b c d.
   Constraint b < a.
   Constraint c <= d.
-  Constraint d < c.
-  Fail Constraint b < a. *)
+  Fail Constraint d < c.
+End test_loop.
 
 Section funext.
   Universes a b c d.
