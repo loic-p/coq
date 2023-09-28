@@ -27,7 +27,6 @@ type 'a check_function = t -> 'a -> 'a -> bool
 
 val check_leq : Universe.t check_function
 val check_eq : Universe.t check_function
-val check_eq_level : Level.t check_function
 
 (** The initial graph of universes: Prop < Set *)
 val initial_universes : t
@@ -87,8 +86,9 @@ val empty_universes : t
 
 (** [constraints_of_universes g] returns [csts] and [partition] where
    [csts] are the non-Eq constraints and [partition] is the partition
-   of the universes into equivalence classes. *)
-val constraints_of_universes : t -> Constraints.t * Level.Set.t list
+   of the universes into equivalence classes mapping a level to its equivalent
+   level expressions (i.e. l = l' + k). *)
+val constraints_of_universes : t -> Constraints.t * (Level.t * int) list Level.Map.t
 
 val choose : (Level.t -> bool) -> t -> Level.t -> Level.t option
 (** [choose p g u] picks a universe verifying [p] and equal
@@ -110,7 +110,7 @@ val check_subtype : AbstractContext.t check_function
 (** {6 Dumping} *)
 
 type node =
-| Alias of Level.t
+| Alias of LevelExpr.t
 | Node of bool Level.Map.t (** Nodes v s.t. u < v (true) or u <= v (false) *)
 
 val repr : t -> node Level.Map.t

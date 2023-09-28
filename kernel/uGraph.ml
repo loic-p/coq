@@ -57,9 +57,6 @@ let check_leq g u u' =
 let check_eq g u v =
   type_in_type g || Universe.equal u v || graph_check_eq g u v
 
-let check_eq_level g u v =
-  u == v || type_in_type g || G.check_eq_level g.graph u v
-
 let empty_universes = {graph=G.empty; type_in_type=false}
 
 let initial_universes =
@@ -209,10 +206,10 @@ let pr_arc prl = let open Pp in
             ltle) ++
       fnl ()
   | u, G.Alias v ->
-    prl u  ++ str " = " ++ prl v ++ fnl ()
+    prl u  ++ str " = " ++ LevelExpr.pr prl v ++ fnl  ()
 
 type node = G.node =
-| Alias of Level.t
+| Alias of LevelExpr.t
 | Node of bool Level.Map.t
 
 let repr g = G.repr g.graph

@@ -331,7 +331,8 @@ let dump_universes output g =
           (* todo fixme MS *)
           (* let typ = if strict then Lt else Le in *)
           output Le u v) ltle;
-    | UGraph.Alias v ->
+    | UGraph.Alias (v, _k) ->
+      (* fixme MS *)
       output Eq u v
   in
   Univ.Level.Map.iter dump_arc g
@@ -397,7 +398,8 @@ let universe_subgraph ?loc kept univ =
 let sort_universes g =
   let open Univ in
   let rec normalize u = match Level.Map.find u g with
-  | UGraph.Alias u -> normalize u
+  (* TODO FIX MS *)
+  | UGraph.Alias (u, k) -> normalize u
   | UGraph.Node _ -> u
   in
   let get_next u = match Level.Map.find u g with
@@ -442,7 +444,8 @@ let sort_universes g =
     if Level.is_set u then ans
     else
       let n = Level.Map.find (normalize u) levels in
-      Level.Map.add u (UGraph.Alias ulevels.(n)) ans
+      (* TODO FIXME*)
+      Level.Map.add u (UGraph.Alias (ulevels.(n), 0)) ans
   in
   Level.Map.fold fold g ans
 

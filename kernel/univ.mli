@@ -87,11 +87,26 @@ sig
     val pr : (key -> Pp.t) -> ('a -> Pp.t) -> 'a t -> Pp.t
     (** Pretty-printing *)
   end
+end
+
+val pr_with_incr : ('a -> Pp.t) -> ('a * int) -> Pp.t
+
+module LevelExpr :
+sig
+  type t = Level.t * int
+
+  val equal : t -> t -> bool
+  val compare : t -> t -> int
+
+  val addn : t -> int -> t
+
+  val pr : (Level.t -> Pp.t) -> t -> Pp.t
 
 end
 
 module Universe :
 sig
+
   type t
   (** Type of universes. A universe is defined as a set of level expressions.
       A level expression is built from levels and successors of level expressions, i.e.:
@@ -116,8 +131,11 @@ sig
   val make : Level.t -> t
   (** Create a universe representing the given level. *)
 
-  val of_list : (Level.t * int) list -> t
-(** Create a universe representing the maximum of some non-empty level expressions. *)
+  val of_expr : LevelExpr.t -> t
+  (** Creat a singleton universe from a level expression *)
+
+  val of_list : LevelExpr.t list -> t
+  (** Create a universe representing the maximum of some non-empty level expressions. *)
 
   val pr : (Level.t -> Pp.t) -> t -> Pp.t
   (** Pretty-printing *)
@@ -163,8 +181,8 @@ sig
   val exists : (Level.t * int -> bool) -> t -> bool
   val for_all : (Level.t * int -> bool) -> t -> bool
 
-  val repr : t -> (Level.t * int) list
-  val unrepr : (Level.t * int) list -> t
+  val repr : t -> LevelExpr.t list
+  val unrepr : LevelExpr.t list -> t
 
   module Set : CSet.S with type elt  = t
   module Map : CMap.ExtS with type key = t and module Set := Set

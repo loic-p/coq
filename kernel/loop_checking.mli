@@ -33,9 +33,6 @@ type 'a check_function = t -> 'a -> 'a -> bool
 val check_eq : Universe.t check_function
 val check_leq : Universe.t check_function
 
-val check_eq_level : Level.t check_function
-val check_leq_level : Level.t check_function
-
 val enforce_eq : Universe.t -> Universe.t -> t -> t option
 val enforce_leq : Universe.t -> Universe.t -> t -> t option
 val enforce_lt : Universe.t -> Universe.t -> t -> t option
@@ -49,7 +46,7 @@ val get_explanation : univ_constraint -> t -> explanation
 
 type 'a constraint_fold = univ_constraint -> 'a -> 'a
 
-val constraints_of : t -> 'a constraint_fold -> 'a -> 'a * Level.Set.t list
+val constraints_of : t -> 'a constraint_fold -> 'a -> 'a * (Level.t * int) list Level.Map.t
 
 val constraints_for : kept:Level.Set.t -> t -> 'a constraint_fold -> 'a -> 'a
 
@@ -60,7 +57,7 @@ val choose : (Level.t -> bool) -> t -> Level.t -> Level.t option
 (** {5 High-level representation} *)
 
 type node =
-| Alias of Level.t
+| Alias of LevelExpr.t
 | Node of bool Level.Map.t (** Nodes v s.t. u < v (true) or u <= v (false) *)
 type repr = node Level.Map.t
 val repr : t -> repr
