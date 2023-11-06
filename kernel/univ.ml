@@ -275,8 +275,13 @@ struct
     else
       let (x, n) = u and (x', n') = v in
       let c = Int.compare n n' in
-      if Int.equal 0 c then  Level.compare x x'
+      if Int.equal 0 c then Level.compare x x'
       else c
+
+    module Self = struct type nonrec t = t let compare = compare end
+    module Map = CMap.Make(Self)
+    module Set = CSet.Make(Self)
+
 
   let set = hcons (Level.set, 0)
   let type1 = hcons (Level.set, 1)

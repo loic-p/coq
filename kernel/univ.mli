@@ -102,6 +102,8 @@ sig
 
   val pr : (Level.t -> Pp.t) -> t -> Pp.t
 
+  module Set : CSet.S with type elt  = t
+  module Map : CMap.ExtS with type key = t and module Set := Set
 end
 
 module Universe :

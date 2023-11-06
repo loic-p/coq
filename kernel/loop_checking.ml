@@ -1,5 +1,7 @@
 open Univ
 
+let _, debug_updates = CDebug.create_full ~name:"loop-checking-updates" ()
+
 let debug_loop_checking_invariants, debug_invariants = CDebug.create_full ~name:"loop-checking-invariants" ()
 let _debug_loop_checking_invariants_all, debug_invariants_all = CDebug.create_full ~name:"loop-checking-invariants-all" ()
 let _debug_loop_checking_model, debug_model = CDebug.create_full ~name:"loop-checking-model" ()
@@ -838,7 +840,7 @@ struct
     in
     if w == w' then x else (w', !cwr)
 
-  let pr m (w, _) =
+  let _pr m (w, _) =
     let open Pp in
     prlist_with_sep spc (fun (idx, _) -> Level.raw_pr (Index.repr idx m.table)) (PMap.bindings w)
 
@@ -871,8 +873,6 @@ struct
 
 end
 
-let pr_w m w = CanSet.pr m w
-
 exception FoundImplication
 
 let update_value c ck m clause : int option =
@@ -891,8 +891,8 @@ let check_model_clauses_of_aux m can k cls =
     match update_value can k m cls with
     | None -> m
     | Some newk ->
-      debug Pp.(fun () -> str"Updated value of " ++ pr_can m can ++ str " to " ++ int newk);
-      debug Pp.(fun () -> str" due to clause " ++ pr_clauses_bwd m (ClausesBackward.singleton (can.canon, ClausesOf.singleton cls)));
+      debug_updates Pp.(fun () -> str"Updated value of " ++ pr_can m can ++ str " to " ++ int newk);
+      debug_updates Pp.(fun () -> str" due to clause " ++ pr_clauses_bwd m (ClausesBackward.singleton (can.canon, ClausesOf.singleton cls)));
       set_canonical_value m can newk)
     cls m
 
@@ -989,48 +989,79 @@ let partition_clauses_fwd = time2 (Pp.str"partition clauses fwd") partition_clau
 (* If early_stop is given, check raises FoundImplication as soon as
    it finds that the given atom is true *)
 
+let _model_points model =
+  PMap.fold (fun idx equiv s ->
+    match equiv with
+    | Canonical _ -> PSet.add idx s
+    | Equiv _ -> s)
+    model.entries PSet.empty
+
+let _pr_w m w =
+  let open Pp in
+  PSet.fold (fun idx pp ->
+    pr_index_point m idx ++ spc () ++ pp) w (mt())
+
+let w_of_canset (c : CanSet.t) = CanSet._domain c
+
+let target_of_canset (c : CanSet.t) =
+  CanSet.fold (fun _idx (_bwd, fwd) acc ->
+    PSet.union (PMap.domain fwd) acc) c PSet.empty
+
 (* model is a model for the clauses outside cls *)
 let check ?early_stop model (cls : CanSet.t) =
+  (* let points = model_points model in *)
   let cV = canonical_cardinal model in
   debug_check_invariants model;
   let rec inner_loop cardW w premconclw conclw m =
     (* Should consider only clauses with conclusions in w *)
     (* Partition the clauses acscording to the presence of w in the premises *)
-    debug_loop Pp.(fun () -> str "Inner loop on " ++ int cardW ++ str" universes: " ++
-      str " Premises and conclusions in w: " ++ pr_w m premconclw ++
-      str " Conclusions in w: " ++ pr_w m conclw);
+    debug_loop Pp.(fun () -> str "Inner loop on " ++ int cardW ++ str" universes: ");
+      (* str " Premises and conclusions in w: " ++ pr_w m premconclw ++
+      str " Conclusions in w: " ++ pr_w m conclw); *)
     (* Warning: m is not necessarily a model for w *)
     let rec inner_loop_partition w cls m =
-      debug_loop Pp.(fun () -> str "cls = " ++ pr_w m cls);
+      debug_loop Pp.(fun () -> str "inner_loop_partition on " ++ int (PSet.cardinal w) ++ str" cardW = " ++ int cardW);
+      (* debug_loop Pp.(fun () -> str "cls = " ++ pr_w m cls); *)
       match loop cardW w cls m with
       | Loop -> Loop
       | Model (wr, mr) ->
-        debug_loop Pp.(fun () -> str "wr = " ++ pr_w mr wr);
+        debug_loop Pp.(fun () -> str "inner_loop_partition call to loop results in a model with wr of size " ++ int (CanSet.cardinal wr) );
+        (* debug_loop Pp.(fun () -> str "wr = " ++ pr_w mr wr); *)
         (* This is only necessary when clauses do have multiple premises,
            otherwise each clause is either in premconclw and already considered
            or in conclw but then the premise cannot be updated and this is useless work *)
-        (match check_clauses_with_premises ?early_stop w conclw mr with
+        (match check_clauses_with_premises ?early_stop (w_of_canset wr) conclw mr with
         | Some (wconcl, (clsconcl, mconcl)) ->
-          debug_loop Pp.(fun () -> str "clsconcl = " ++ pr_w mconcl clsconcl);
-          debug Pp.(fun () -> str"Found an update in conclw");
+          (* debug_loop Pp.(fun () -> str "clsconcl = " ++ pr_w mconcl clsconcl); *)
+          debug_loop Pp.(fun () -> str"Found an update in conclw");
           inner_loop_partition wconcl clsconcl mconcl
         | None ->
           debug_loop Pp.(fun () -> str"Inner loop found a model");
           Model (wr, mr))
-      in inner_loop_partition w premconclw m
+      in
+      assert (PSet.cardinal (w_of_canset premconclw) <= cardW);
+      assert (PSet.cardinal (target_of_canset conclw) <= cardW);
+      inner_loop_partition w premconclw m
   and loop cV w cls m =
-    debug_loop Pp.(fun () -> str"loop iteration on "  ++ CanSet.pr_clauses m cls ++ str" with bound " ++ int cV);
+    debug_loop Pp.(fun () -> str "loop on #|w| = " ++ int (PSet.cardinal w) ++ str" bound is " ++ int cV);
+    debug_loop Pp.(fun () -> str" w = : " ++ prlist_with_sep spc (pr_index_point m) (PSet.elements w));
+      (* debug_loop Pp.(fun () -> str"loop iteration on " ++ CanSet.pr_clauses m cls ++ str" with bound " ++ int cV); *)
     match check_clauses_with_premises ?early_stop w cls m with
-    | None -> Model (cls, m)
+    | None -> debug_loop Pp.(fun () -> str "loop on #|w| " ++ int (PSet.cardinal w) ++ str" found a model, bound is " ++ int cV);
+      Model (cls, m)
     | Some (w, (cls, m)) ->
+      debug_loop Pp.(fun () -> str"check_clauses_with_premises updated " ++ int (PSet.cardinal w) ++ str" universes, bound is " ++ int cV);
       debug_loop Pp.(fun () -> str"Updated universes: " ++ prlist_with_sep spc (pr_index_point m) (PSet.elements w) ++ str", bound is " ++ int cV);
       let cardW = (PSet.cardinal w) in
       if Int.equal cardW cV
       then (debug_loop Pp.(fun () -> str"Found a loop on " ++ int cV ++ str" universes" ); Loop)
+      else if cardW > cV then
+        (debug_global Pp.(fun () -> str"Cardinal of w > V: ");
+         (* ++ pr_w m (PSet.diff w vps)); *)
+         assert false)
       else
         let (premconclw, conclw, premw) = partition_clauses_fwd m cls in
-        (* debug_loop Pp.(fun () -> str"partitionning clauses: " ++ spc () ++
-          CanSet.pr_clauses { m with entries = PMap.empty } cls); *)
+        debug_loop Pp.(fun () -> str"partitionning clauses: ");
         debug_loop Pp.(fun () -> str"partitioned clauses: from and to w " ++ spc () ++
           CanSet.pr_clauses { m with entries = PMap.empty } premconclw);
         debug_loop Pp.(fun () -> str"partitioned clauses: to w, not from w: " ++ spc () ++
@@ -1042,11 +1073,15 @@ let check ?early_stop model (cls : CanSet.t) =
         (match inner_loop cardW PSet.empty premconclw conclw m with
         | Loop -> Loop
         | Model (wc, mc) ->
-          debug_loop Pp.(fun () -> str "wc = " ++ pr_w mc wc);
+          (* debug_loop Pp.(fun () -> str "wc = " ++ pr_w mc wc); *)
+          debug_loop Pp.(fun () -> str"Checking clauses with premises in w, concl not in w");
           (* wc is a subset of w *)
-          (match check_clauses_with_premises w premw mc with
+          (match check_clauses_with_premises PSet.empty premw mc with
           | None -> Model (wc, mc)
-          | Some (w, (wcls, mcls)) -> loop cV w wcls mcls))
+          | Some (w, (wcls, mcls)) ->
+            debug_loop Pp.(fun () -> str"Resulted in an update of #|w| = " ++ int (PSet.cardinal w) ++
+              str" universes, launching back loop");
+            loop cV w wcls mcls))
   in loop cV PSet.empty cls model
 
 
@@ -1224,14 +1259,17 @@ let enforce_eq_can model (canu, ku as u) (canv, kv as v) : (canonical_node * int
     if Level.is_set (Index.repr canu.canon model.table) then
       (* Set + k = l + k' -> k' < k
         -> l = Set + (k - k') *)
-      (assert (kv < ku);
+      (assert (kv <= ku);
        (canu, ku, canv, ku - kv, enter_equiv model canv.canon canu.canon (ku - kv)))
     else if ku <= kv then
       (canv, kv, canu, kv - ku, enter_equiv model canu.canon canv.canon (kv - ku))
     else
+      (* canu + ku = canv + kv /\ kv < ku ->
+        canv = canu + (ku - kv)
+        *)
       (canu, ku, canv, ku - kv, enter_equiv model canv.canon canu.canon (ku - kv))
   in
-  (* other := can + k *)
+  (* other = can + diff *)
   let can, model =
     let bwd = ClausesOfRepr.union_upto model can.canon can.clauses_bwd (ClausesOf.shift diff other.clauses_bwd) in
     let fwd = ClausesBackward.union_upto model can.clauses_fwd other.clauses_fwd in
@@ -1702,14 +1740,9 @@ let constraints_of_clauses m clauses =
       cls cstrs)
     clauses Constraints.empty
 
-let add_equiv pm u v =
-  Level.Map.update u (function
-    | None -> Some [v]
-    | Some l -> Some (CList.add_set (=) v l))
-    pm
-
 let constraints_of model fold acc =
-  let equiv = ref Level.Map.empty in
+  let module UF = Unionfind.Make (LevelExpr.Set) (LevelExpr.Map) in
+  let equiv = UF.create () in
   let bwd = ref ClausesBackward.empty in
   let constraints_of u v =
     match v with
@@ -1718,11 +1751,11 @@ let constraints_of model fold acc =
     | Equiv (v, vk) ->
       let u = Index.repr u model.table in
       let v = Index.repr v model.table in
-      equiv := add_equiv !equiv u (v, vk)
+      UF.union (u, 0) (v, vk) equiv
   in
   let () = PMap.iter constraints_of model.entries in
   let cstrs = constraints_of_clauses model !bwd in
-  Constraints.fold fold cstrs acc, !equiv
+  Constraints.fold fold cstrs acc, UF.partition equiv
 
 type 'a constraint_fold = univ_constraint -> 'a -> 'a
 

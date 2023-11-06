@@ -46,7 +46,7 @@ val get_explanation : univ_constraint -> t -> explanation
 
 type 'a constraint_fold = univ_constraint -> 'a -> 'a
 
-val constraints_of : t -> 'a constraint_fold -> 'a -> 'a * (Level.t * int) list Level.Map.t
+val constraints_of : t -> 'a constraint_fold -> 'a -> 'a * LevelExpr.Set.t list
 
 val constraints_for : kept:Level.Set.t -> t -> 'a constraint_fold -> 'a -> 'a
 

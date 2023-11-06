@@ -23,24 +23,24 @@ let { Goptions.get = get_set_minimization } =
 (** Simplification *)
 
 (** Precondition: flexible <= ctx *)
-let choose_canonical ctx flexible exps =
-  let global, local =
-    List.fold_left (fun (global, local) (l, k) ->
-      if Int.equal k 0 && not (Level.Set.mem l ctx) then (Level.Set.add l global, local)
-      else (global, (l, k) :: local)) (Level.Set.empty, []) exps in
-  let flexible, rigid = List.partition (fun (l, _) -> flexible l) local in
+
+let choose_expr s = LevelExpr.Set.max_elt s
+
+let choose_canonical ctx flexible s =
+  let local, global = LevelExpr.Set.partition (fun (l, _k) -> Level.Set.mem l ctx) s in
+  let flexible, rigid = LevelExpr.Set.partition (fun (l, _k) -> flexible l) local in
     (* If there is a global universe in the set, choose it *)
-    if not (Level.Set.is_empty global) then
-      let canon = Level.Set.choose global in
-        canon, (Level.Set.remove canon global, rigid, flexible)
+    if not (LevelExpr.Set.is_empty global) then
+      let canon = choose_expr global in
+        canon, (LevelExpr.Set.remove canon global, rigid, flexible)
     else (* No global in the equivalence class, choose a rigid one *)
-        if rigid <> [] then
-          let canon, k = List.find (fun (l, k) -> Int.equal k 0) rigid in
-            canon, (global, CList.remove (=) (canon, k) rigid, flexible)
+        if not (LevelExpr.Set.is_empty rigid) then
+          let canon = choose_expr rigid in
+            canon, (global, LevelExpr.Set.remove canon rigid, flexible)
         else (* There are only flexible universes in the equivalence
                  class, choose an arbitrary one. *)
-          let canon, k = List.find (fun (l, k) -> Int.equal k 0) flexible in
-          canon, (global, rigid, CList.remove (=) (canon, k) flexible)
+          let canon = choose_expr flexible in
+          canon, (global, rigid, LevelExpr.Set.remove canon flexible)
 
 type lowermap = int Level.Map.t
 
@@ -236,9 +236,9 @@ let add_list_map u t map =
 
 let pr_partition prl m =
   let open Pp in
-  Level.Map.fold (fun l eq acc ->
-    prl l ++ str" = " ++ prlist_with_sep spc (LevelExpr.pr prl) eq ++ fnl () ++ acc)
-    m (mt ())
+  prlist_with_sep spc (fun s ->
+    str "{" ++ LevelExpr.Set.fold (fun lk acc -> LevelExpr.pr prl lk ++ str", " ++ acc) s (mt()) ++ str "}" ++ fnl ())
+    m
 
 (** Turn max(l, l') <= u constraints into { l <= u, l' <= u } constraints *)
 let decompose_constraints cstrs =
@@ -334,33 +334,35 @@ let normalize_context_set ~lbound g ctx (us:UnivFlex.t) ?binders {weak_constrain
   (* Put back constraints [Set <= u] from type inference *)
   let noneqs = Constraints.union noneqs smallles in
   let flex x = UnivFlex.mem x us in
-  let ctx, us, eqs = Level.Map.fold (fun l eqs (ctx, us, cstrs) ->
-      let canon, (global, rigid, flexible) = choose_canonical ctx flex ((l, 0) :: eqs) in
+  let ctx, us, eqs = List.fold_left (fun (ctx, us, cstrs) eqs ->
+      let canon, (global, rigid, flexible) = choose_canonical ctx flex eqs in
       (* Add equalities for globals which can't be merged anymore. *)
-      let cstrs = Level.Set.fold (fun g cst ->
-          enforce_eq (Universe.make canon) (Universe.make g) cst) global
+      let canonu = Universe.of_expr canon in
+      let cstrs = LevelExpr.Set.fold (fun g cst ->
+          enforce_eq canonu (Universe.of_expr g) cst) global
           cstrs
       in
       (* Also add equalities for rigid variables *)
-      let cstrs = List.fold_left (fun cst g ->
-          enforce_eq (Universe.make canon) (Universe.of_expr g) cst) cstrs rigid
+      let cstrs = LevelExpr.Set.fold (fun g cst ->
+          enforce_eq canonu (Universe.of_expr g) cst) rigid cstrs
       in
-      let canonu = Universe.make canon in
-      let flexible = CList.sort (fun (l, k) (l', k') -> k - k') flexible in
-      (* Head of flexible is the max *)
-      match flexible with
-      | [] -> (ctx, us, cstrs)
-      | (l, max) :: flexible ->
-        let us, ctx = List.fold_left (fun (us, ctx) (f, k) -> (UnivFlex.define f (Universe.of_expr (l, max - k)) us, Level.Set.remove f ctx)) (us, ctx) flexible in
-        (* canonu = l + max *)
-        if UnivFlex.mem canon us then
-          let us = UnivFlex.define canon (Universe.of_expr (l, max)) us in
-          (Level.Set.remove canon ctx, us, cstrs)
-        else
-          let cstrs = enforce_eq canonu (Universe.of_expr (l, max)) cstrs in
-          (ctx, us, cstrs))
-      partition
+      if UnivFlex.mem (fst canon) us then
+        (* canon + k = l + k' ... <-> l = canon + k - k' (k' <= k by invariant of choose_canonical) *)
+        let ctx, us = LevelExpr.Set.fold (fun (f, k') (ctx, us) -> (Level.Set.remove f ctx, UnivFlex.define f (Universe.addn canonu (-k')) us)) flexible (ctx, us) in
+        ctx, us, cstrs
+      else
+        if LevelExpr.Set.is_empty flexible then (ctx, us, cstrs) else
+        (* We need to find the max of canon and flexibles *)
+        let (canon', canonk' as can') = LevelExpr.Set.max_elt flexible in
+        let ctx, us = LevelExpr.Set.fold (fun (f, k') (ctx, us) ->
+          (Level.Set.remove f ctx, UnivFlex.define f (Universe.addn (Universe.of_expr can') (-k')) us))
+          (LevelExpr.Set.remove (canon', canonk') flexible) (ctx, us)
+        in
+        if snd canon < canonk' then
+          ctx, us, enforce_eq canonu (Universe.of_expr can') cstrs
+        else Level.Set.remove canon' ctx, UnivFlex.define canon' (Universe.addn canonu (-canonk')) us, cstrs)
       (ctx, us, Constraints.empty)
+      partition
   in
   (* Noneqs is now in canonical form w.r.t. equality constraints,
      and contains only inequality constraints. *)

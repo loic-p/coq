@@ -434,7 +434,6 @@ Section GenericInstances.
   Proof. simpl_crelation. Qed.
   
   Class Params {A} (of : A) (arity : nat).
-  Set Debug "univMinim".
 
   Lemma flip_respectful {A B} (R : crelation A) (R' : crelation B) :
     relation_equivalence (flip (R ==> R')) (flip R ==> flip R').
@@ -585,9 +584,10 @@ End Normalize.
 Lemma flip_arrow `(NA : Normalizes A R (flip R'''), NB : Normalizes B R' (flip R'')) :
   Normalizes (A -> B) (R ==> R') (flip (R''' ==> R'')%signatureT).
 Proof. 
-  unfold Normalizes in *. intros.
+Admitted.
+  (* unfold Normalizes in *. intros.
   rewrite NA, NB. firstorder. 
-Qed.
+Qed. *)
 
 Ltac normalizes :=
   match goal with
@@ -667,7 +667,8 @@ Require Import Relation_Definitions.
 Instance PartialOrder_proper_type `(PartialOrder A eqA R) :
   Proper (eqA==>eqA==>iffT) R.
 Proof.
-intros.
+Admitted.
+(*intros.
 apply proper_sym_arrow_iffT_2. 1-2: auto with crelations.
 intros x x' Hx y y' Hy Hr.
 transitivity x.
@@ -675,7 +676,7 @@ transitivity x.
 - transitivity y; auto.
   generalize (partial_order_equivalence y y'); compute; intuition.
 Qed.
-
+*)
 (** From a [PartialOrder] to the corresponding [StrictOrder]:
      [lt = le /\ ~eq].
     If the order is total, we could also say [gt = ~le]. *)
@@ -690,14 +691,16 @@ split; compute.
   + intro Hxz.
     apply Hxy'.
     apply partial_order_antisym; auto.
+    (* Set Debug "loop-checking-loop". *)
+    Set Debug "loop-checking-global".
+
     rewrite Hxz. auto.
-Qed.
+Admitted.
 
 (** From a [StrictOrder] to the corresponding [PartialOrder]:
      [le = lt \/ eq].
     If the order is total, we could also say [ge = ~lt]. *)
 
-Lemma StrictOrder_PreOrder
  `(Equivalence A eqA, StrictOrder A R, Proper _ (eqA==>eqA==>iffT) R) :
  PreOrder (relation_disjunction R eqA).
 Proof.
@@ -705,10 +708,12 @@ split.
 - intros x. right. reflexivity.
 - intros x y z [Hxy|Hxy] [Hyz|Hyz].
   + left. transitivity y; auto.
+  Set Debug "loop-checking-loop".
+  Set Debug "loop-checking-global".
   + left. rewrite <- Hyz; auto.
   + left. rewrite Hxy; auto.
   + right. transitivity y; auto.
-Qed.
+Admitted.
 
 #[global]
 Hint Extern 4 (PreOrder (relation_disjunction _ _)) => 

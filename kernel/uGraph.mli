@@ -88,7 +88,7 @@ val empty_universes : t
    [csts] are the non-Eq constraints and [partition] is the partition
    of the universes into equivalence classes mapping a level to its equivalent
    level expressions (i.e. l = l' + k). *)
-val constraints_of_universes : t -> Constraints.t * (Level.t * int) list Level.Map.t
+val constraints_of_universes : t -> Constraints.t * LevelExpr.Set.t list
 
 val choose : (Level.t -> bool) -> t -> Level.t -> Level.t option
 (** [choose p g u] picks a universe verifying [p] and equal
