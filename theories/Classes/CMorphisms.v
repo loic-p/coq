@@ -22,6 +22,8 @@ Generalizable Variables A eqA B C D R RA RB RC m f x y.
 Local Obligation Tactic := try solve [ simpl_crelation ].
 
 Set Universe Polymorphism.
+Set Debug "backtrace".
+Set Debug "loop-checking-invariants".
 
 (** * Morphisms.
 
@@ -171,6 +173,7 @@ Section Relations.
     - firstorder.
   Qed.
   
+
   (** Subcrelations induce a morphism on the identity. *)
   
   Global Instance subrelation_id_proper `(subrelation A RA RA') : Proper (RA ==> RA') id.
@@ -414,8 +417,8 @@ Section GenericInstances.
     Reflexive (@Logic.eq A ==> R').
   Proof. simpl_crelation. Qed.
 
-  (** [respectful] is a morphism for crelation equivalence . *)
 
+    (** [respectful] is a morphism for crelation equivalence . *)
   Global Instance respectful_morphism {A B} :
     Proper (relation_equivalence ++> relation_equivalence ++> relation_equivalence) 
            (@respectful A B).
@@ -684,6 +687,7 @@ Qed.
 Lemma PartialOrder_StrictOrder `(PartialOrder A eqA R) :
   StrictOrder (relation_conjunction R (complement eqA)).
 Proof.
+
 split; compute.
 - intros x (_,Hx). apply Hx, Equivalence_Reflexive.
 - intros x y z (Hxy,Hxy') (Hyz,Hyz'). split.
@@ -692,7 +696,8 @@ split; compute.
     apply Hxy'.
     apply partial_order_antisym; auto.
     (* Set Debug "loop-checking-loop". *)
-    Set Debug "loop-checking-global".
+    (* Set Debug "loop-checking-global". *)
+    (* Set Debug "loop-checking". *)
 
     rewrite Hxz. auto.
 Admitted.
@@ -708,8 +713,8 @@ split.
 - intros x. right. reflexivity.
 - intros x y z [Hxy|Hxy] [Hyz|Hyz].
   + left. transitivity y; auto.
-  Set Debug "loop-checking-loop".
-  Set Debug "loop-checking-global".
+  (* Set Debug "loop-checking-loop". *)
+  (* Set Debug "loop-checking-global". *)
   + left. rewrite <- Hyz; auto.
   + left. rewrite Hxy; auto.
   + right. transitivity y; auto.

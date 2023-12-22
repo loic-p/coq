@@ -241,7 +241,7 @@ struct
     | Tip hd -> [hd]
     | Cons (hd, tl) -> hd :: to_list tl
 
-  let filter_map_same f l =
+  let _filter_map_same f l =
     let rec aux l =
       match l with
       | Tip hd ->
@@ -307,6 +307,16 @@ struct
             else Some (Cons (hd, tl'))
           else Some tl'
     in aux l
+
+  let uniq eq l =
+    let rec aux l =
+      match l with
+      | Tip _ -> l
+      | Cons (hd, tl) ->
+        if exists (fun y -> eq hd y) tl then aux tl
+        else Cons (hd, aux tl)
+    in aux l
+
 end
 
 module Premises =
@@ -397,7 +407,7 @@ module ClausesOf = struct
       | None ->  remove x acc
       | Some x' -> if x' == x then acc else add x' (remove x acc)) l l
 
-  let shift n cls = map (fun (k, prems) -> (k + n, prems)) cls
+  let shift n cls = if Int.equal n 0 then cls else map (fun (k, prems) -> (k + n, prems)) cls
 
 end
 
@@ -506,6 +516,10 @@ let repr_compress_node m u =
 
 let pr_expr = LevelExpr.pr Level.raw_pr
 
+let pr_raw_index_point m idx =
+  try pr_expr (Index.repr idx m.table, 0)
+  with Not_found -> Pp.str"<point not in table>"
+
 let pr_index_point m idx =
   let (idx, k) = try let can, k = repr m idx in (can.canon, k) with Not_found -> (idx, 0) in
   try pr_expr (Index.repr idx m.table, k)
@@ -553,17 +567,20 @@ struct
   let subset_upto m cls cls' =
     for_all (fun cl -> mem_upto m cl cls') cls
 
-  let filter_trivial_clause m l ((k, prems) as kprems) =
-    let prems' = NeList.filter_map_same (fun x ->
-      let canl', k' = repr_expr m x in
-      if Index.equal canl'.canon l && k' >= k then None
-      else Some (canl'.canon, k')) prems
-    in
-    match prems' with
-    | None -> None
-    | Some prems' ->
-      if prems' == prems then Some kprems
-      else Some (k, prems')
+  let can_point_eq (can, k) (can', k') =
+    can == can' && Int.equal k k'
+
+  let can_prem_to_prem l = NeList.map (fun (x, k) -> (x.canon, k)) l
+
+  let filter_trivial_clause m l (k, prems) =
+    (* Canonicalize the premises *)
+    let prems' = NeList.map (repr_expr m) prems in
+     (* Filter out ..., u + k, ... -> u trivial clause *)
+    if NeList.exists (fun (can, k') -> Index.equal can.canon l && k' >= k) prems' then None
+    else
+      (* Simplify (u + k, ... u + k -> v + k') clauses to have a single premise by universe *)
+      let prems' = NeList.uniq can_point_eq prems' in
+      Some (k, can_prem_to_prem prems')
 
   let filter_trivial (m : model) l kprem =
     filter_map (filter_trivial_clause m l) kprem
@@ -661,8 +678,17 @@ let _pr_clause_info m ((concl, kprem) : clause) =
 
 type t = model
 
-let eq_pointint m (x, k) (x', k') =
-  repr m x == repr m x' && Int.equal k k'
+let eq_pointint m x x' =
+  let (can, idx) = repr_expr m x
+  and (can', idx') = repr_expr m x' in
+  can == can' && Int.equal idx idx'
+
+
+let simplify_can_premises p =
+  let uniq = NeList.uniq (fun (can, k) (can', k') -> can == can' && Int.equal k k') p in
+  NeList.map (fun (can, k) -> (can.canon, k)) uniq
+
+let canonical_premises m = NeList.map (repr_expr m)
 
 let check_invariants ~(required_canonical:Level.t -> bool) model =
   let required_canonical u = required_canonical (Index.repr u model.table) in
@@ -676,15 +702,22 @@ let check_invariants ~(required_canonical:Level.t -> bool) model =
       let cls = can.clauses_bwd in
       ClausesOf.iter
         (fun (k, prems) ->
-          assert (k >= 0);
+          (* prems -> can + k *)
+          if not (k >= 0) then CErrors.user_err Pp.(str "A conclusion has negative weight") else ();
+          let prems = simplify_can_premises (canonical_premises model prems) in
           let check_prem (l, lk) =
-            assert (lk >= 0);
+            if not (lk >= 0) then CErrors.user_err Pp.(str "A premise has negative weight") else ();
             assert (PMap.mem l model.entries);
             let lcan, _lk = repr_expr model (l, lk) in
-            (* Ensure this backward clause is registered as a forward clause for the premise l *)
-            PMap.exists (fun idx kprem -> repr model idx == (can, 0)
-              && ClausesOf.exists (fun (k', prems') -> Int.equal k k' && NeList.equal (eq_pointint model) prems prems')
-              kprem) lcan.clauses_fwd
+            (* Ensure this backward clause of shape [max(... l + lk ... ) -> can + k] is registered as a forward clause for the premise l *)
+            PMap.exists (fun idx kprem ->
+              (* kprem = { (kconcl, max ( ... l' + lk' ... )) } -> idx *)
+              let (can', shift) = repr model idx in
+              can' == can &&
+              ClausesOf.exists (fun (k', prems') -> Int.equal k k' && NeList.equal (eq_pointint model)
+                prems (simplify_can_premises (canonical_premises model prems')))
+                (ClausesOf.shift shift kprem))
+              lcan.clauses_fwd
           in
           Premises.iter (fun kprem -> if (check_prem kprem) then () else
             CErrors.user_err Pp.(str"Clause " ++ pr_clauses_bwd model
@@ -768,7 +801,7 @@ let pr_clauses_all m =
   PMap.fold (fun p e acc ->
     match e with
     | Equiv (p', k) ->
-      Pp.(pr_index_point m p ++ str " = " ++ pr_with_incr (pr_index_point m) (p',k) ++ acc)
+      Pp.(pr_raw_index_point m p ++ str " = " ++ pr_with_incr (pr_raw_index_point m) (p',k) ++ spc () ++ acc)
     | Canonical can ->
       let bwd = can.clauses_bwd in
       Pp.(str"For " ++ pr_can m can ++ fnl () ++ pr_clauses_of m can.canon bwd ++ fnl () ++
@@ -777,10 +810,11 @@ let pr_clauses_all m =
 
 let debug_check_invariants m =
   if CDebug.get_flag debug_loop_checking_invariants then
-    (debug_invariants Pp.(fun () -> str"Checking invariants, " ++ statistics m);
+    (debug_invariants_all Pp.(fun () -> str"Checking invariants, " ++ statistics m);
      debug_invariants_all (fun () -> pr_clauses_all m);
      try check_invariants ~required_canonical:(fun _ -> false) m
-     with e -> debug_invariants Pp.(fun () -> str "Broken invariants on: " ++ pr_clauses_all m);
+     with e ->
+      debug_invariants Pp.(fun () -> str "Broken invariants on: " ++ pr_clauses_all m ++ CErrors.print e);
       raise e)
 
 (* PMaps are purely functional hashmaps *)
@@ -1384,7 +1418,9 @@ let find_to_merge model status (canv, kv) (canu, ku) =
 let find_to_merge =
   time4 (Pp.str "find_to_merge") find_to_merge
 
-let simplify_clauses_between model (canv, _ as v) (canu, _ as u) =
+let pr_can_expr m = pr_incr (fun c -> pr_index_point m c.canon)
+
+let simplify_clauses_between model (canv, kv as v) (canu, _ as u) =
   if canv == canu then
     (debug_global Pp.(fun () -> str"simplify clauses between: same universes"); model)
   else if not (Option.equal Int.equal (expr_value model u) (expr_value model v)) then
@@ -1397,8 +1433,8 @@ let simplify_clauses_between model (canv, _ as v) (canu, _ as u) =
   else
     let status = Status.create model in
     let merge, equiv = find_to_merge model status v u in
-    (debug_global Pp.(fun () -> str"Trying to merge: " ++ pr_can model canu ++ str" (value =  " ++
-        pr_opt int (canonical_value model canu) ++ str") and " ++ pr_can model canv ++ str " (value = " ++
+    (if merge then debug_global Pp.(fun () -> str"Trying to merge: " ++ pr_can_expr model u ++ str" (value =  " ++
+        pr_opt int (canonical_value model canu) ++ str") and " ++ pr_can_expr model (canv, kv) ++ str " (value = " ++
         pr_opt int (canonical_value model canv));
     if merge then make_equiv model equiv else model)
 
@@ -1442,8 +1478,6 @@ let update_model_value (m : model) can k' : model =
   else
     (debug Pp.(fun () -> str"Updated value of " ++ pr_can m can ++ str " to " ++ pr_opt int k');
     set_canonical_value m can (Option.get k'))
-
-let pr_can_expr m = pr_incr (fun c -> pr_index_point m c.canon)
 
 (* A clause premises -> concl + k might hold in the current minimal model without being valid in all
    its extensions.
