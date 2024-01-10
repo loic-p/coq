@@ -48,7 +48,7 @@ type 'a constraint_fold = univ_constraint -> 'a -> 'a
 
 val constraints_of : t -> 'a constraint_fold -> 'a -> 'a * LevelExpr.Set.t list
 
-val constraints_for : kept:Level.Set.t -> t -> 'a constraint_fold -> 'a -> 'a
+val constraints_for : kept:Level.Set.t -> t -> 'a constraint_fold -> 'a -> 'a * Level.Set.t
 
 val domain : t -> Level.Set.t
 

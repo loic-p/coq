@@ -96,9 +96,10 @@ val choose : (Level.t -> bool) -> t -> Level.t -> Level.t option
 
 (** [constraints_for ~kept g] returns the constraints about the
    universes [kept] in [g] up to transitivity.
-
-    eg if [g] is [a <= b <= c] then [constraints_for ~kept:{a, c} g] is [a <= c]. *)
-val constraints_for : kept:Level.Set.t -> t -> Constraints.t
+   e.g. if [g] is [a <= b <= c] then [constraints_for ~kept:{a, c} g] is [a <= c].
+   It can return extra universes outside of [kept] if they are involved in constraints that
+   have to be kept. e.g. [constraints_for ~kept:{a, c} {a <= max (b, c)}] is [a <= max (b, c), {b}] *)
+val constraints_for : kept:Level.Set.t -> t -> Constraints.t * Level.Set.t
 
 val domain : t -> Level.Set.t
 (** Known universes *)

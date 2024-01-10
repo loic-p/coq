@@ -22,5 +22,4 @@ transitivity x.
 - generalize (partial_order_equivalence x x'); compute; intuition.
 - transitivity y; auto.
   generalize (partial_order_equivalence y y'); compute; intuition.
-  Set Debug "univMinim".
 Qed.

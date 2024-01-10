@@ -649,7 +649,8 @@ Section Normalize.
 
   Lemma proper_normalizes_proper `(Normalizes R0 R1, Proper A R1 m) : Proper R0 m.
   Proof.
-    rewrite normalizes.
+    red in H.
+    rewrite H.
     assumption.
   Qed.
 

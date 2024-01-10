@@ -447,6 +447,8 @@ let add_constraints c env =
 let check_constraints c env =
   UGraph.check_constraints c env.env_universes
 
+let _debug_environ, debug = CDebug.create_full ~name:"environ" ()
+
 let add_universes ~lbound ~strict ctx g =
   let _qs, us = UVars.LevelInstance.to_array (UVars.UContext.instance ctx) in
   let g = Array.fold_left
@@ -488,7 +490,7 @@ let push_subgraph (levels,csts) env =
     let newg = Univ.Level.Set.fold (fun v g -> UGraph.add_universe ~lbound ~strict:false v g) levels g in
     let newg = UGraph.merge_constraints csts newg in
     (if not (Univ.Constraints.is_empty csts) then
-       let restricted = UGraph.constraints_for ~kept:(UGraph.domain g) newg in
+       let restricted, _extras = UGraph.constraints_for ~kept:(UGraph.domain g) newg in
        (if not (UGraph.check_constraints restricted g) then
           CErrors.anomaly Pp.(str "Local constraints imply new transitive constraints.")));
     newg

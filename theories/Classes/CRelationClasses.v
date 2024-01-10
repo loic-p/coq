@@ -38,6 +38,10 @@ Arguments snd {A B}.
 
 Definition iffT (A B : Type) := (prodT (A -> B) (B -> A))%type.
 
+Cumulative Inductive sumT A B :=
+| Inl : A -> sumT A B
+| Inr : B -> sumT A B.
+
 (** We allow to unfold the [crelation] definition while doing morphism search. *)
 
 Section Defs.
@@ -69,6 +73,8 @@ Section Defs.
   
   Class Transitive (R : crelation A) :=
     transitivity : forall {x y z}, R x y -> R y z -> R x z.
+
+  Arguments transitivity {R Transitive x} y {z}.
 
   (** Various combinations of reflexivity, symmetry and transitivity. *)
   
@@ -135,7 +141,7 @@ Section Defs.
       fun x y H H' => asymmetry (R:=R) H H'.
     
     Program Definition flip_Transitive `(Transitive R) : Transitive (flip R) :=
-      fun x y z H H' => transitivity (R:=R) H' H.
+      fun x y z H H' => transitivity (R:=R) _ H' H.
 
     Program Definition flip_Antisymmetric `(Antisymmetric eqA R) :
       Antisymmetric eqA (flip R).
@@ -198,6 +204,8 @@ Section Defs.
   End Leibniz.
   
 End Defs.
+
+Global Arguments transitivity {A R Transitive x} y {z}.
 
 (** Default rewrite crelations handled by [setoid_rewrite]. *)
 #[global]
@@ -336,10 +344,10 @@ Section Binary.
   Defined.
 
   Definition relation_conjunction (R : crelation A) (R' : crelation A) : crelation A :=
-    fun x y => prod (R x y) (R' x y).
+    fun x y => prodT (R x y) (R' x y).
 
   Definition relation_disjunction (R : crelation A) (R' : crelation A) : crelation A :=
-    fun x y => sum (R x y) (R' x y).
+    fun x y => sumT (R x y) (R' x y).
   
   (** Relation equivalence is an equivalence, and subrelation defines a partial order. *)
 

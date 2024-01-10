@@ -387,12 +387,13 @@ let universe_subgraph ?loc kept univ =
       CErrors.user_err Pp.(str "Undeclared universe " ++ pr_qualid q ++ str".")
   in
   let kept = List.fold_left (fun kept q -> Level.Set.add (parse q) kept) Level.Set.empty kept in
-  let csts = UGraph.constraints_for ~kept univ in
+  let csts, extras = UGraph.constraints_for ~kept univ in
   let add u newgraph =
     let strict = UGraph.check_constraint univ (Universe.type1,Le,Universe.make u) in
     UGraph.add_universe u ~lbound:UGraph.Bound.Set ~strict newgraph
   in
   let univ = Level.Set.fold add kept UGraph.initial_universes in
+  let univ = Level.Set.fold add extras univ in
   UGraph.merge_constraints csts univ
 
 let sort_universes g =

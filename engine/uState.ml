@@ -975,9 +975,9 @@ let restrict_universe_context ~lbound (univs, csts) keep =
                         UGraph.add_universe v ~lbound ~strict:false g) allunivs g in
   let g = UGraph.merge_constraints csts g in
   let allkept = Level.Set.union (UGraph.domain UGraph.initial_universes) (Level.Set.diff allunivs removed) in
-  let csts = UGraph.constraints_for ~kept:allkept g in
+  let csts, extras = UGraph.constraints_for ~kept:allkept g in
   let csts = Constraints.filter (fun (l,d,r) -> not (is_bound l lbound && d == Le)) csts in
-  let uctx = (Level.Set.inter univs keep, csts) in
+  let uctx = (Level.Set.inter univs (Level.Set.union keep extras), csts) in
   debug Pp.(fun () -> str"Restricted universe context" ++ pr_universe_context_set Level.raw_pr uctx);
   uctx
 
