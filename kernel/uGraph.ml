@@ -83,7 +83,7 @@ let enforce_constraint cst g = match enforce_constraint0 cst g with
   if not (type_in_type g) then
     let (u, c, v) = cst in
     let e = lazy (G.get_explanation cst g.graph) in
-    let mk u = Sorts.sort_of_univ u in
+    let mk u = Sorts.mkType u in
     raise (UniverseInconsistency (c, mk u, mk v, Some (Path e)))
   else g
 | Some g -> g

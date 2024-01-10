@@ -217,7 +217,7 @@ let include_constructor_argument env evd ~ctor_sort ~inductive_sort =
     assert false
   | None, Some _ -> evd
   | Some uctor, Some uind ->
-    let mk u = ESorts.make (Sorts.sort_of_univ u) in
+    let mk u = ESorts.make (Sorts.mkType u) in
     Evd.set_leq_sort env evd (mk uctor) (mk uind)
 
 let inductive_levels env evd arities ctors =

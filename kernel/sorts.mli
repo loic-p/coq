@@ -141,7 +141,10 @@ val sprop : t
 val set  : t
 val prop : t
 val type1  : t
+val mkType : Univ.Universe.t -> t
 val qsort : QVar.t -> Univ.Universe.t -> t
+
+val make : Quality.t -> Univ.Universe.t -> t
 
 val equal : t -> t -> bool
 val compare : t -> t -> int
@@ -159,8 +162,6 @@ val hcons : t -> t
 val family_compare : family -> family -> int
 val family_equal : family -> family -> bool
 val family_leq : family -> family -> bool
-
-val sort_of_univ : Univ.Universe.t -> t
 
 val levels : t -> Univ.Level.Set.t
 

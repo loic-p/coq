@@ -185,7 +185,7 @@ let of_kind = function
 let mkSProp  = of_kind @@ Sort Sorts.sprop
 let mkProp   = of_kind @@ Sort Sorts.prop
 let mkSet    = of_kind @@ Sort Sorts.set
-let mkType u = of_kind @@ Sort (Sorts.sort_of_univ u)
+let mkType u = of_kind @@ Sort (Sorts.mkType u)
 let mkSort   = function
   | Sorts.SProp -> mkSProp
   | Sorts.Prop -> mkProp (* Easy sharing *)
