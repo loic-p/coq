@@ -376,7 +376,7 @@ let { Goptions.get = drop_weak_constraints } =
     ()
 
 let level_inconsistency cst l r =
-  let mk u = Sorts.mkType @@ Universe.make u in
+  let mk = Sorts.mkType_of_level in
   raise (UGraph.UniverseInconsistency (cst, mk l, mk r, None))
 
 let nf_universe uctx u =
@@ -534,7 +534,7 @@ let process_universe_constraints uctx cstrs =
     else
       if univ_level_mem l ru then
         enforce_leq_up inst l local
-      else sort_inconsistency Eq (mkType (Universe.make l)) (mkType ru)
+      else sort_inconsistency Eq (mkType_of_level l) (mkType ru)
   in
   let equalize_universes l r local = match classify l, classify r with
   | USmall l', (USmall _ | ULevel _ | UMax _ | UAlgebraic _) ->
@@ -606,7 +606,7 @@ let process_universe_constraints uctx cstrs =
         | UMax (_, levels) ->
           if is_uset r' then
             let fold l' local =
-              let l = mkType @@ Universe.make l' in
+              let l = mkType_of_level l' in
               if Level.is_set l' || is_local l' then
                 equalize_variables false l' Level.set local
               else sort_inconsistency Le l r
@@ -677,7 +677,7 @@ let add_universe_constraints uctx cstrs =
 
 let problem_of_constraints cstrs =
   Constraints.fold (fun (l,d,r) acc ->
-      let l = Universe.make l and r = mkType @@ Universe.make r in
+      let l = Universe.make l and r = mkType_of_level r in
       let cstr' = let open UnivProblem in
         match d with
         | Lt ->

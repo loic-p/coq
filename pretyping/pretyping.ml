@@ -514,7 +514,7 @@ let pretype_ref ?loc sigma env ref us =
 let sort ?loc evd : glob_sort -> _ = function
   | UAnonymous {rigid} ->
     let evd, l = new_univ_level_variable ?loc rigid evd in
-    evd, ESorts.make (Sorts.mkType (Univ.Universe.make l))
+    evd, ESorts.make (Sorts.mkType_of_level l)
   | UNamed (q, l) ->
     let evd, s = sort_info ?loc evd q l in
     evd, ESorts.make s

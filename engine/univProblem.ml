@@ -27,7 +27,7 @@ let is_trivial = function
 
 let force = function
   | QEq _ | QLeq _ | ULe _ | UEq _ | UWeak _ as cst -> cst
-  | ULub (u,v) -> UEq (Sorts.mkType @@ Universe.make u, Sorts.mkType @@ Universe.make v)
+  | ULub (u,v) -> UEq (Sorts.mkType_of_level u, Sorts.mkType_of_level v)
 
 let check_eq_level g u v = UGraph.check_eq_level g u v
 
@@ -100,7 +100,7 @@ end
 type 'a constraint_function = 'a -> 'a -> Set.t -> Set.t
 
 let enforce_eq_instances_univs strict x y c =
-  let mkU u = Sorts.mkType @@ Universe.make u in
+  let mkU u = Sorts.mkType_of_level u in
   let mk u v = if strict then ULub (u, v) else UEq (mkU u, mkU v) in
   if not (UVars.eq_sizes (UVars.Instance.length x) (UVars.Instance.length y)) then
     CErrors.anomaly Pp.(str "Invalid argument: enforce_eq_instances_univs called with" ++
@@ -123,7 +123,7 @@ let enforce_eq_qualities qs qs' cstrs =
     cstrs qs qs'
 
 let compare_cumulative_instances  cv_pb variances u u' cstrs =
-  let make u = Sorts.mkType @@ Univ.Universe.make u in
+  let make = Sorts.mkType_of_level in
   let qs, us = UVars.Instance.to_array u
   and qs', us' = UVars.Instance.to_array u' in
   let cstrs = enforce_eq_qualities qs qs' cstrs in

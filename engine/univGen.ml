@@ -137,7 +137,7 @@ let fresh_sort_in_family = function
   | InSet -> Sorts.set, empty_sort_context
   | InType | InQSort (* Treat as Type *) ->
     let u = fresh_level () in
-      Sorts.mkType (Univ.Universe.make u), ((QVar.Set.empty,Level.Set.singleton u),Constraints.empty)
+      Sorts.mkType_of_level u, ((QVar.Set.empty,Level.Set.singleton u),Constraints.empty)
 
 let new_global_univ () =
   let u = fresh_level () in

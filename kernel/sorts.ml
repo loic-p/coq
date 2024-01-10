@@ -271,6 +271,9 @@ let qsort q u = QSort (q, u)
 let mkType u =
   if Universe.is_type0 u then set else Type u
 
+let mkType_of_level l =
+  if Level.is_set l then set else Type (Universe.make l)
+
 let make q u =
   let open Quality in
   match q with

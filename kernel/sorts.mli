@@ -140,6 +140,8 @@ val type1  : t
 val mkType : Univ.Universe.t -> t
 val qsort : QVar.t -> Univ.Universe.t -> t
 
+val mkType_of_level : Univ.Level.t -> t
+
 val make : Quality.t -> Univ.Universe.t -> t
 
 val equal : t -> t -> bool
