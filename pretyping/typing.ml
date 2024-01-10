@@ -152,7 +152,7 @@ let is_correct_arity env sigma c pj ind specif params =
         let sigma = match ESorts.kind sigma s with
         | QSort (_, u) ->
           (* Arbitrarily set the return sort to Type *)
-          Evd.set_eq_sort env sigma s (ESorts.make (Sorts.sort_of_univ u))
+          Evd.set_eq_sort env sigma s (ESorts.make (Sorts.mkType u))
         | Set | Type _ | Prop | SProp -> sigma
         in
         if not (List.mem_f Sorts.family_equal (ESorts.family sigma s) allowed_sorts)
@@ -395,7 +395,7 @@ let judge_of_array env sigma u tj defj tyj =
     | _ -> assert false
   in
   let sigma = Evd.set_leq_sort env sigma tyj.utj_type
-      (ESorts.make (Sorts.sort_of_univ (Univ.Universe.make ulev)))
+      (ESorts.make (Sorts.mkType (Univ.Universe.make ulev)))
   in
   let check_one sigma j = check_actual_type env sigma j tyj.utj_val in
   let sigma = check_one sigma defj in
@@ -431,7 +431,7 @@ let check_binder_relevance env sigma s decl =
     | (SProp | Prop | Set), RelevanceVar q ->
       DummySort (ESorts.make (Sorts.qsort q Univ.Universe.type0))
     | Type l, RelevanceVar q -> DummySort (ESorts.make (Sorts.qsort q l))
-    | QSort (_,l), Relevant -> DummySort (ESorts.make (Sorts.sort_of_univ l))
+    | QSort (_,l), Relevant -> DummySort (ESorts.make (Sorts.mkType l))
     | QSort _, Irrelevant -> DummySort ESorts.sprop
   in
   let unify = match preunify with

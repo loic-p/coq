@@ -207,7 +207,7 @@ let subst_univs_sort subs = function
     Sorts.prop
   | (u,n) :: rest ->
     let fold accu (u, n) = Universe.sup accu (supern u n) in
-    Sorts.sort_of_univ (List.fold_left fold (supern u n) rest)
+    Sorts.mkType (List.fold_left fold (supern u n) rest)
 
 let instantiate_universes ctx (templ, ar) args =
   let subst = make_subst (ctx,templ.template_param_levels,args) in

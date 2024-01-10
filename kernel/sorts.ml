@@ -268,8 +268,16 @@ let set = Set
 let type1 = Type Universe.type1
 let qsort q u = QSort (q, u)
 
-let sort_of_univ u =
+let mkType u =
   if Universe.is_type0 u then set else Type u
+
+let make q u =
+  let open Quality in
+  match q with
+  | QVar q -> qsort q u
+  | QConstant QSProp -> sprop
+  | QConstant QProp -> prop
+  | QConstant QType -> mkType u
 
 let compare s1 s2 =
   if s1 == s2 then 0 else
@@ -321,7 +329,7 @@ let subst_fn (fq,fu) = function
   | SProp | Prop | Set as s -> s
   | Type v as s ->
     let v' = fu v in
-    if v' == v then s else sort_of_univ v'
+    if v' == v then s else mkType v'
   | QSort (q, v) as s ->
     let open Quality in
     match fq q with
@@ -331,7 +339,7 @@ let subst_fn (fq,fu) = function
       else qsort q' v'
     | QConstant QSProp -> sprop
     | QConstant QProp -> prop
-    | QConstant QType -> sort_of_univ (fu v)
+    | QConstant QType -> mkType (fu v)
 
 let family = function
   | SProp -> InSProp

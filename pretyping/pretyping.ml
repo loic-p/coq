@@ -220,7 +220,7 @@ let sort_info ?loc sigma q l = match l with
   let (sigma, u) = get_level sigma u n in
   let (sigma, u) = List.fold_left fold (sigma, u) us in
   let s = match q with
-    | None -> Sorts.sort_of_univ u
+    | None -> Sorts.mkType u
     | Some q -> Sorts.qsort q u
   in
   sigma, s
@@ -514,7 +514,7 @@ let pretype_ref ?loc sigma env ref us =
 let sort ?loc evd : glob_sort -> _ = function
   | UAnonymous {rigid} ->
     let evd, l = new_univ_level_variable ?loc rigid evd in
-    evd, ESorts.make (Sorts.sort_of_univ (Univ.Universe.make l))
+    evd, ESorts.make (Sorts.mkType (Univ.Universe.make l))
   | UNamed (q, l) ->
     let evd, s = sort_info ?loc evd q l in
     evd, ESorts.make s
@@ -1394,7 +1394,7 @@ let pretype_type self c ?loc ~flags valcon (env : GlobEnv.t) sigma = match DAst.
         (* we retype because it may be an evar which has been defined, resulting in a lower sort
            cf #18480 *)
         (Retyping.get_sort_of !!env sigma jty.utj_val)
-        (ESorts.make (Sorts.sort_of_univ (Univ.Universe.make u)))
+        (ESorts.make (Sorts.mkType (Univ.Universe.make u)))
     in
     let u = UVars.Instance.of_array ([||],[| u |]) in
     let ta = EConstr.of_constr @@ Typeops.type_of_array !!env u in

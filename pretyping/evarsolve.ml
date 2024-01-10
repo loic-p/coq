@@ -119,7 +119,7 @@ let refresh_universes ?(status=univ_rigid) ?(onlyalg=false) ?(refreshset=false)
     let sigma, l = new_univ_level_variable status !evdref in
     let s' = match ESorts.kind sigma s with
       | QSort (q, _) -> Sorts.qsort q (Univ.Universe.make l)
-      | _ -> Sorts.sort_of_univ @@ Univ.Universe.make l
+      | _ -> Sorts.mkType @@ Univ.Universe.make l
     in
     let s' = ESorts.make s' in
     evdref := sigma;

@@ -101,7 +101,7 @@ let enforce_constraint cst g = match enforce_constraint0 cst g with
   if not (type_in_type g) then
     let (u, c, v) = cst in
     let e = lazy (G.get_explanation cst g.graph) in
-    let mk u = Sorts.sort_of_univ @@ Universe.make u in
+    let mk u = Sorts.mkType @@ Universe.make u in
     raise (UniverseInconsistency (c, mk u, mk v, Some (Path e)))
   else g
 | Some g -> g
@@ -151,7 +151,7 @@ let enforce_leq_alg u v g =
   | Inl x -> x
   | Inr ((u, c, v), g) ->
     let e = lazy (G.get_explanation (u, c, v) g.graph) in
-    let mk u = Sorts.sort_of_univ @@ Universe.make u in
+    let mk u = Sorts.mkType @@ Universe.make u in
     let e = UniverseInconsistency (c, mk u, mk v, Some (Path e)) in
     raise e
 
