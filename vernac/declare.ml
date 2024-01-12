@@ -1803,13 +1803,13 @@ let make_univs_deferred ~poly ~initial_euctx ~uctx ~udecl
 let make_univs_private_poly ~poly ~uctx ~udecl (used_univs_typ, typ) (used_univs_body, body) =
   let used_univs = Univ.Level.Set.union used_univs_body used_univs_typ in
   let uctx = UState.restrict uctx used_univs in
-  let uctx' = UState.restrict uctx used_univs_typ in
-  let utyp = UState.check_univ_decl ~poly uctx' udecl in
-  let ubody = Univ.ContextSet.diff
+  (* let uctx' = UState.restrict uctx used_univs_typ in *)
+  let utyp = UState.check_univ_decl ~poly uctx udecl in
+  (* let ubody = Univ.ContextSet.diff
       (UState.context_set uctx)
       (UState.context_set uctx')
-  in
-  utyp, ubody
+  in *)
+  utyp, Univ.ContextSet.empty
 
 let make_univs ~poly ~uctx ~udecl eff (used_univs_typ, typ) (used_univs_body, body) =
   let used_univs = Univ.Level.Set.union used_univs_body used_univs_typ in

@@ -344,7 +344,7 @@ Proof.
 Qed.
 
 #[global]
-Instance CRlt_morph
+Polymorphic Instance CRlt_morph
   : forall {R : ConstructiveReals}, CMorphisms.Proper
       (CMorphisms.respectful (CReq R) (CMorphisms.respectful (CReq R) CRelationClasses.iffT)) (CRlt R).
 Proof.
@@ -1027,6 +1027,8 @@ Proof.
     apply CR_of_Q_morph. field. intro abs.
     rewrite abs in qPos. exact (Qlt_irrefl 0 qPos).
 Qed.
+
+(* Set Cumulativity Weak Constraints. *)
 
 Lemma CRmult_le_0_compat : forall {R : ConstructiveReals} (a b : CRcarrier R),
     0 <= a -> 0 <= b -> 0 <= a * b.

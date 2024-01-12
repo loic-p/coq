@@ -147,7 +147,8 @@ Ltac f_equiv :=
  end.
 
 Section Relations.
-  Context {A : Type}. 
+  Universes a.
+  Context {A : Type@{a}}.
 
   (** [forall_def] reifies the dependent product as a definition. *)
   
@@ -179,9 +180,13 @@ Section Relations.
 
   (** The subrelation property goes through products as usual. *)
   
-  Lemma subrelation_respectful `(subl : subrelation A RA' RA, subr : subrelation B RB RB') :
+  Lemma subrelation_respectful@{b ra ra' rb rb'} {B : Type@{b}}
+    (RA : crelation@{a ra} A) (RA' : crelation@{a ra'} A)
+    (RB : crelation@{b rb} B) (RB' : crelation@{b rb'} B)
+    (subl : subrelation@{a ra' ra} RA' RA)
+    (subr : subrelation@{b rb rb'} RB RB') :
     subrelation (RA ==> RB) (RA' ==> RB').
-  Proof. simpl_crelation. Qed.
+  Proof. intros f g rfg x y rxy. apply subr. apply rfg. apply subl. exact rxy. Qed.
 
   (** And of course it is reflexive. *)
   
@@ -429,7 +434,8 @@ Section GenericInstances.
 
   (** [R] is Reflexive, hence we can build the needed proof. *)
 
-  Lemma Reflexive_partial_app_morphism `(Proper (A -> B) (R ==> R') m, ProperProxy A R x) :
+  Lemma Reflexive_partial_app_morphism@{a b ra rb} {A : Type@{a}} {B : Type@{b}}
+    {R : crelation@{a ra} A} {R' : crelation@{b rb} B} {m : A -> B} (pm : Proper (R ==> R') m) {x} (pr : ProperProxy R x) :
     Proper R' (m x).
   Proof. simpl_crelation. Qed.
   
@@ -472,6 +478,8 @@ Section GenericInstances.
   Proof. intros. apply reflexive_proper. Qed.
 
 End GenericInstances.
+
+Set Printing Universes.
 
 Class PartialApplication.
 
