@@ -296,7 +296,7 @@ struct
       | Cons (hd, tl) -> prelt hd ++ sep () ++ aux tl
     in aux
 
-  let _filter p l =
+  let filter p l =
     let rec aux l =
       match l with
       | Tip x -> if p x then Some l else None
@@ -1552,23 +1552,6 @@ let update_model ((prems, (can, k)) : can_clause) (m : model) : CanSet.t * model
       | None -> (CanSet.empty, m')
     else (CanSet.empty, m)
 
-(* let debug_filter, _ = CDebug.create_full ~name:"loop-checking-filter" () *)
-
-(*
-(** Simplify u <= max (Set, v) clauses to u <= v and filter away u <= ... u + n , ... clauses, always valid *)
-let filter_trivial_can_clause _m ((prems, conclk) : can_clause) : can_clause option = Some (prems, conclk)
-(* let canset = Index.find Level.set m.table in
-let prems =
-  match NeList.filter (fun (prem, k) -> not (Index.equal prem.canon canset && Int.equal k 0)) prems with
-  | Some prems -> prems (* There were at least two premises in the rule *)
-  | None -> prems
-in
-(* if NeList.exists (fun (prem, k') -> prem == concl && k' >= k) prems then
-  (* Trivial ... u + k ... -> u + k' clause *) None
-else
-   *)
-  Some (prems, conclk) *) *)
-
 let infer_clause_extension cl m =
   (* debug Pp.(fun () -> str "current model is: " ++ pr_levelmap model); *)
   debug_check_invariants m;
@@ -1686,12 +1669,33 @@ let infer_extension (prems, (concl, k) as cl) m =
     enforce_leq_can (concl, k) pk m
   | _ -> infer_clause_extension cl m
 
+
+(* let debug_filter, _ = CDebug.create_full ~name:"loop-checking-filter" () *)
+
+(** Simplify u <= max (Set, v) clauses to u <= v and filter away u <= ... u + n , ... clauses, always valid *)
+let filter_trivial_can_clause m ((prems, (concl, k as conclk)) : can_clause) : can_clause option =
+ let canset = Index.find Level.set m.table in
+  let prems =
+  match NeList.filter (fun (prem, k) -> not (Index.equal prem.canon canset && Int.equal k 0)) prems with
+  | Some prems -> prems (* There were at least two premises in the rule *)
+  | None -> prems
+  in
+  (* Trivial ... u + k + n ... -> u + k clause *)
+  if NeList.exists (fun (prem, k') -> prem == concl && k' >= k) prems then
+    None
+  else Some (prems, conclk)
+
+let infer_extension_filter cl m =
+  match filter_trivial_can_clause m cl with
+  | None -> Some m
+  | Some cl -> infer_extension cl m
+
 let enforce_constraint u k v (m : t) =
   let cls = clauses_of_constraint u k v [] in
   List.fold_left (fun m cl ->
     match m with
     | None -> None
-    | Some m -> infer_extension (can_clause_of_clause m cl) m) (Some m) cls
+    | Some m -> infer_extension_filter (can_clause_of_clause m cl) m) (Some m) cls
 
 let enforce u k v m =
   match Universe.repr u, k, Universe.repr v with
