@@ -382,21 +382,17 @@ let template_polymorphism_candidate uctx params entry concl = match concl with
   univs
 | Some (QSort _) -> assert false
 
+(* Returns two universe contexts, for the template and global universes.
+   The global universe will be declared before the template ones. *)
 let split_universe_context subset (univs, csts) =
   let subfilter (l, _, r) =
     let l = Univ.Universe.levels l in
     let r = Univ.Universe.levels r in
-    let () = assert (not @@ Univ.Level.Set.subset r subset) in
-    Univ.Level.Set.subset l subset
+    let () = assert (not @@ Univ.Level.Set.for_all (fun r -> Univ.Level.Set.mem r subset) r) in
+    Univ.Level.Set.exists (fun l -> Univ.Level.Set.mem l subset) l
   in
-  let subcst = Univ.Constraints.filter subfilter csts in
+  let subcst, remcst = Univ.Constraints.partition subfilter csts in
   let rem = Univ.Level.Set.diff univs subset in
-  let remfilter (l, _, r) =
-    let l = Univ.Universe.levels l in
-    let r = Univ.Universe.levels r in
-    not (Univ.Level.Set.subset l subset) && not (Univ.Level.Set.subset r subset)
-  in
-  let remcst = Univ.Constraints.filter remfilter csts in
   (subset, subcst), (rem, remcst)
 
 let warn_no_template_universe =

@@ -950,16 +950,16 @@ let update_value c m clause : int option =
     let newk = k + k0 in
     match canonical_value m c with
     | Some v when newk <= v -> None
-    | _ -> Some newk
+    | _ ->
+      debug_updates Pp.(fun () -> str"Updated value of " ++ pr_can m c ++ str " to " ++ int newk);
+      debug_updates Pp.(fun () -> str" due to clause " ++ pr_clauses_bwd m (ClausesBackward.singleton (c.canon, ClausesOf.singleton clause)));
+       Some newk
 
 let check_model_clauses_of_aux m can cls =
   ClausesOf.fold (fun cls m ->
     match update_value can m cls with
     | None -> m
-    | Some newk ->
-      debug_updates Pp.(fun () -> str"Updated value of " ++ pr_can m can ++ str " to " ++ int newk);
-      debug_updates Pp.(fun () -> str" due to clause " ++ pr_clauses_bwd m (ClausesBackward.singleton (can.canon, ClausesOf.singleton cls)));
-      set_canonical_value m can newk)
+    | Some newk -> set_canonical_value m can newk)
     cls m
 
 let find_bwd m can cls =
@@ -995,7 +995,7 @@ let check_model_fwd_clauses_aux ?early_stop (cls : ClausesBackward.t) (acc : PSe
         ClausesOf.iter (fun cls ->
           match update_value can m cls with
           | None -> ()
-          | Some newk -> if newk <= k then raise FoundImplication)
+          | Some newk -> if k <= newk then raise FoundImplication)
           cls;
         check ()
 
@@ -1743,12 +1743,12 @@ let check_declared model us =
   let check l = if not (Index.mem l model.table) then raise (Undeclared l) in
   Level.Set.iter check us
 
-type explanation = Level.t * (constraint_type * Level.t) list
+type explanation = Universe.t * (constraint_type * Universe.t) list
 
 let get_explanation (cstr : univ_constraint) _ : explanation =
   let (_l, _, r) = cstr in
   (* TODO *)
-  (Option.get (Universe.level r), [])
+  (r, [])
 
 let pr_constraint_type k =
   let open Pp in

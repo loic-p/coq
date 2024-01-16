@@ -236,8 +236,8 @@ let explain_universe_inconsistency prq prl (o,u,v,p : univ_inconsistency) =
       let pstart, p = Lazy.force p in
       if p = [] then mt ()
       else
-        str " because" ++ spc() ++ prl pstart ++
-        prlist (fun (r,v) -> spc() ++ pr_rel r ++ str" " ++ prl v) p
+        str " because" ++ spc() ++ Universe.pr prl pstart ++
+        prlist (fun (r,v) -> spc() ++ pr_rel r ++ str" " ++ Universe.pr prl v) p
   in
     str "Cannot enforce" ++ spc() ++ pr_uni u ++ spc() ++
       pr_rel o ++ spc() ++ pr_uni v ++ reason

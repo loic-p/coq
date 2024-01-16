@@ -475,6 +475,7 @@ let push_context ?(strict=false) ctx env =
   map_universes (add_universes ~lbound:(universes_lbound env) ~strict ctx) env
 
 let add_universes_set ~lbound ~strict ctx g =
+  debug Pp.(fun () -> str"Adding universes context" ++ Univ.pr_universe_context_set Univ.Level.raw_pr ctx);
   let g = Univ.Level.Set.fold
             (* Be lenient, module typing reintroduces universes and constraints due to includes *)
             (fun v g -> try UGraph.add_universe ~lbound ~strict v g with UGraph.AlreadyDeclared -> g)

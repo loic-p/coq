@@ -38,7 +38,7 @@ val enforce_leq : Universe.t -> Universe.t -> t -> t option
 val enforce_lt : Universe.t -> Universe.t -> t -> t option
 val enforce_constraint : univ_constraint -> t -> t option
 
-type explanation = Level.t * (constraint_type * Level.t) list
+type explanation = Universe.t * (constraint_type * Universe.t) list
 
 val get_explanation : univ_constraint -> t -> explanation
 (** Assuming that the corresponding call to [enforce_*] returned [None], this
