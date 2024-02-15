@@ -686,6 +686,8 @@ let apply_branch env sigma (ind, i) args (ci, u, pms, iv, r, lf) =
 
 exception PatternFailure
 
+let is_conv_ref = ref (fun _ _ _ _ -> assert false)
+
 let match_einstance sigma pu u psubst =
   UVars.Instance.pattern_match pu (EInstance.kind sigma u) psubst
 
@@ -698,7 +700,16 @@ let rec match_arg_pattern whrec env sigma ctx psubst p t =
   let open Declarations in
   let t' = EConstr.it_mkLambda_or_LetIn t ctx in
   match p with
-  | EHole i -> Partial_subst.add_term i t' psubst
+  | EHole i ->
+    begin match Partial_subst.get_term psubst i with
+    | None -> Partial_subst.add_term i t' psubst
+    | Some t0 ->
+      let eq_istrue = !is_conv_ref env sigma t' t0 in
+      if eq_istrue then
+        psubst
+      else
+        raise PatternFailure
+    end
   | EHoleIgnored -> psubst
   | ERigid (ph, es) ->
       let t, stk = whrec (t, Stack.empty) in
@@ -1227,6 +1238,8 @@ let is_conv_leq ?(reds=TransparentState.full) env sigma x y =
   is_fconv ~reds Conversion.CUMUL env sigma x y
 let check_conv ?(pb=Conversion.CUMUL) ?(ts=TransparentState.full) env sigma x y =
   is_fconv ~reds:ts pb env sigma x y
+
+let () = is_conv_ref := is_conv
 
 let sigma_compare_sorts env pb s0 s1 sigma =
   match pb with
