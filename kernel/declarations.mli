@@ -155,7 +155,7 @@ v}
 type record_info =
 | NotRecord
 | FakeRecord
-| PrimRecord of (Id.t * Label.t array * Sorts.relevance array * types array) array
+| PrimRecord of (Id.t * Label.t array * UVars.QualUniv.t array * types array) array
 
 type regular_inductive_arity = {
   mind_user_arity : types;

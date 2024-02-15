@@ -601,7 +601,7 @@ let lookup_projection p env =
   | PrimRecord infos ->
     let _,_,rs,typs = infos.(i) in
     let arg = Projection.arg p in
-    rs.(arg), typs.(arg)
+    UVars.QualUniv.relevance rs.(arg), typs.(arg)
 
 let get_projection env ind ~proj_arg =
   let mib = lookup_mind (fst ind) env in

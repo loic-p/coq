@@ -128,6 +128,9 @@ let eq_universes u1 u2 =
   | Some l, Some l' -> l = l'
   | _, _ -> false
 
+let eq_qualuniv_opt : qualuniv_expr option -> qualuniv_expr option -> bool =
+  Stdlib.(=)
+
 (* We use a functor to avoid passing the recursion all over the place *)
 module EqGen (A:sig val constr_expr_eq : constr_expr -> constr_expr -> bool end) = struct
 
@@ -227,19 +230,19 @@ module EqGen (A:sig val constr_expr_eq : constr_expr -> constr_expr -> bool end)
         List.equal field_eq l1 l2
       | CCases(_,r1,a1,brl1), CCases(_,r2,a2,brl2) ->
         (* Don't care about the case_style *)
-        Option.equal constr_expr_eq r1 r2 &&
+        Option.equal (fun (r1, qu1) (r2, qu2) -> constr_expr_eq r1 r2 && eq_qualuniv_opt qu1 qu2) r1 r2 &&
         List.equal case_expr_eq a1 a2 &&
         List.equal branch_expr_eq brl1 brl2
       | CLetTuple (n1, (m1, e1), t1, b1), CLetTuple (n2, (m2, e2), t2, b2) ->
         List.equal (CAst.eq Name.equal) n1 n2 &&
         Option.equal (CAst.eq Name.equal) m1 m2 &&
-        Option.equal constr_expr_eq e1 e2 &&
+        Option.equal (fun (r1, qu1) (r2, qu2) -> constr_expr_eq r1 r2 && eq_qualuniv_opt qu1 qu2) e1 e2 &&
         constr_expr_eq t1 t2 &&
         constr_expr_eq b1 b2
       | CIf (e1, (n1, r1), t1, f1), CIf (e2, (n2, r2), t2, f2) ->
         constr_expr_eq e1 e2 &&
         Option.equal (CAst.eq Name.equal) n1 n2 &&
-        Option.equal constr_expr_eq r1 r2 &&
+        Option.equal (fun (r1, qu1) (r2, qu2) -> constr_expr_eq r1 r2 && eq_qualuniv_opt qu1 qu2) r1 r2 &&
         constr_expr_eq t1 t2 &&
         constr_expr_eq f1 f2
       | CHole _, CHole _ -> true
@@ -377,18 +380,20 @@ let fold_constr_expr_with_binders g f n acc = CAst.with_val (function
     | CRecord l -> List.fold_left (fun acc (id, c) -> f n acc c) acc l
     | CCases (sty,rtnpo,al,bl) ->
       let ids = ids_of_cases_tomatch al in
-      let acc = Option.fold_left (f (Id.Set.fold g ids n)) acc rtnpo in
+      let acc = Option.fold_left (fun acc (r, _) -> f (Id.Set.fold g ids n) acc r) acc rtnpo in
       let acc = List.fold_left (f n) acc (List.map (fun (fst,_,_) -> fst) al) in
       List.fold_right (fun {CAst.v=(patl,rhs)} acc ->
           let ids = ids_of_pattern_list patl in
           f (Id.Set.fold g ids n) acc rhs) bl acc
     | CLetTuple (nal,(ona,po),b,c) ->
       let n' = List.fold_right (CAst.with_val (Name.fold_right g)) nal n in
-      f (Option.fold_right (CAst.with_val (Name.fold_right g)) ona n') (f n acc b) c
+      let acc = f (Option.fold_right (CAst.with_val (Name.fold_right g)) ona n') (f n acc b) c in
+      Option.fold_left
+        (fun acc (r, _) -> f (Option.fold_right (CAst.with_val (Name.fold_right g)) ona n) acc r) acc po
     | CIf (c,(ona,po),b1,b2) ->
       let acc = f n (f n (f n acc b1) b2) c in
       Option.fold_left
-        (f (Option.fold_right (CAst.with_val (Name.fold_right g)) ona n)) acc po
+        (fun acc (r, _) -> f (Option.fold_right (CAst.with_val (Name.fold_right g)) ona n) acc r) acc po
     | CFix (_,l) ->
       let n' = List.fold_right (fun ( { CAst.v = id },_,_,_,_,_) -> g id) l n in
       List.fold_right (fun (_,_,ro,lb,t,c) acc ->
@@ -494,15 +499,15 @@ let map_constr_expr_with_binders g f e = CAst.map (function
           let ids = ids_of_pattern_list patl in
           CAst.make ?loc (patl,f (Id.Set.fold g ids e) rhs)) bl in
       let ids = ids_of_cases_tomatch a in
-      let po = Option.map (f (Id.Set.fold g ids e)) rtnpo in
+      let po = Option.map (on_fst @@ f (Id.Set.fold g ids e)) rtnpo in
       CCases (sty, po, List.map (fun (tm,x,y) -> f e tm,x,y) a,bl)
     | CLetTuple (nal,(ona,po),b,c) ->
       let e' = List.fold_right (CAst.with_val (Name.fold_right g)) nal e in
       let e'' = Option.fold_right (CAst.with_val (Name.fold_right g)) ona e in
-      CLetTuple (nal,(ona,Option.map (f e'') po),f e b,f e' c)
+      CLetTuple (nal,(ona,Option.map (on_fst @@ f e'') po),f e b,f e' c)
     | CIf (c,(ona,po),b1,b2) ->
       let e' = Option.fold_right (CAst.with_val (Name.fold_right g)) ona e in
-      CIf (f e c,(ona,Option.map (f e') po),f e b1,f e b2)
+      CIf (f e c,(ona,Option.map (on_fst @@ f e') po),f e b1,f e b2)
     | CFix (id,dl) ->
       CFix (id,List.map (fun (id,r,n,bl,t,d) ->
           let (e',bl') = fold_map_local_binders f g e bl in

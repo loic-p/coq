@@ -150,13 +150,14 @@ let check_valid_elimination env (ind, u as pind) ~dep kind =
       (RecursionSchemeError
           (env, NotAllowedCaseAnalysis (false, fst (UnivGen.fresh_sort_in_family kind), pind)))
 
-let mis_make_case_com dep env sigma (ind, u as pind) (mib, mip) kind =
+let mis_make_case_com dep env sigma (ind, u as pind) (mib, mip) qu =
+  let kind = EConstr.EQualUniv.family sigma qu in
   let () = check_valid_elimination env pind ~dep kind in
   let lnamespar = Vars.subst_instance_context u mib.mind_params_ctxt in
   let indf = make_ind_family(pind, Context.Rel.instance_list mkRel 0 lnamespar) in
   let constrs = get_constructors env indf in
   let projs = get_projections env ind in
-  let relevance = Sorts.relevance_of_sort_family kind in
+  let relevance = EConstr.EQualUniv.relevance sigma qu in
   let ndepar = mip.mind_nrealdecls + 1 in
 
   (* Pas génant car env ne sert pas à typer mais juste à renommer les Anonym *)
@@ -164,7 +165,8 @@ let mis_make_case_com dep env sigma (ind, u as pind) (mib, mip) kind =
   let env = RelEnv.make env in
   let env' = RelEnv.push_rel_context lnamespar env in
 
-  let (sigma, s) = Evd.fresh_sort_in_family ~rigid:Evd.univ_flexible_alg sigma kind in
+  let s = EConstr.EQualUniv.to_sort sigma qu in
+  let qu = EConstr.Unsafe.to_qualuniv qu in
   let typP = make_arity !!env' sigma dep indf s in
   let typP = EConstr.Unsafe.to_constr typP in
   let nameP = make_name env' "P" Sorts.Relevant in
@@ -224,7 +226,7 @@ let mis_make_case_com dep env sigma (ind, u as pind) (mib, mip) kind =
         in
         let br = Array.init ncons mk_branch in
         let pnas = Array.of_list (List.rev_map get_annot pctx) in
-        let obj = mkCase (ci, u, pms, ((pnas, liftn ndepar (ndepar + 1) pbody), relevance), iv, mkRel 1, br) in
+        let obj = mkCase (ci, u, pms, ((pnas, liftn ndepar (ndepar + 1) pbody), qu), iv, mkRel 1, br) in
         sigma, obj, pbody
       | Some ps ->
         let term =
@@ -415,9 +417,14 @@ let mis_make_indrec env sigma ?(force_mutual=false) listdepkind mib u =
   let env = RelEnv.make env in
   let nparams = mib.mind_nparams in
   let nparrec = mib.mind_nparams_rec in
-  let evdref = ref sigma in
   let lnonparrec,lnamesparrec = Inductive.inductive_nonrec_rec_paramdecls (mib,u) in
   let nrec = List.length listdepkind in
+  let sigma, listdepkind = List.fold_left_map (fun evd (indu,mibi,mipi,dep,target_sort) ->
+    let sigma, qu = Evd.fresh_qualuniv_of_family ~rigid:Evd.univ_flexible evd target_sort in
+    sigma, (indu,mibi,mipi,dep,EConstr.EQualUniv.make qu)
+    ) sigma listdepkind
+  in
+  let evdref = ref sigma in
   let depPvec =
     Array.make mib.mind_ntypes (None : (bool * constr) option) in
   let _ =
@@ -438,7 +445,7 @@ let mis_make_indrec env sigma ?(force_mutual=false) listdepkind mib u =
   let make_one_rec p =
     let makefix nbconstruct =
       let rec mrec i ln lrelevance ltyp ldef = function
-        | ((indi,u),mibi,mipi,dep,target_sort)::rest ->
+        | ((indi,u),mibi,mipi,dep,qu)::rest ->
           let tyi = snd indi in
           let nctyi =
             Array.length mipi.mind_consnames in (* nb constructeurs du type*)
@@ -498,7 +505,7 @@ let mis_make_indrec env sigma ?(force_mutual=false) listdepkind mib u =
             in
 
             (* body of i-th component of the mutual fixpoint *)
-            let target_relevance = Sorts.relevance_of_sort_family target_sort in
+            let target_relevance = EConstr.EQualUniv.relevance !evdref qu in
             let deftyi =
               let ci = make_case_info !!env indi RegularStyle in
               let concl = applist (mkRel (dect+j+ndepar),pargs) in
@@ -511,7 +518,7 @@ let mis_make_indrec env sigma ?(force_mutual=false) listdepkind mib u =
               let obj =
                 let indty = find_rectype !!env sigma (EConstr.of_constr depind) in
                 Inductiveops.make_case_or_project !!env !evdref indty ci
-                  (EConstr.of_constr pred, target_relevance)
+                  (EConstr.of_constr pred, qu)
                   (EConstr.mkRel 1) (Array.map EConstr.of_constr branches)
               in
               let obj = EConstr.to_constr !evdref obj in
@@ -543,7 +550,7 @@ let mis_make_indrec env sigma ?(force_mutual=false) listdepkind mib u =
         mrec 0 [] [] [] []
     in
     let rec make_branch env i = function
-      | ((indi,u),mibi,mipi,dep,sfam)::rest ->
+      | ((indi,u),mibi,mipi,dep,qu)::rest ->
           let tyi = snd indi in
           let nconstr = Array.length mipi.mind_consnames in
           let rec onerec env j =
@@ -558,7 +565,7 @@ let mis_make_indrec env sigma ?(force_mutual=false) listdepkind mib u =
                 type_rec_branch
                   true dep !!env !evdref (vargs,depPvec,i+j) indi cs recarg
               in
-              let r_0 = Sorts.relevance_of_sort_family sfam in
+              let r_0 = EConstr.EQualUniv.relevance !evdref qu in
               let namef = make_name env "f" r_0 in
                 mkLambda (namef, p_0,
                   (onerec (RelEnv.push_rel (LocalAssum (namef,p_0)) env)) (j+1))
@@ -567,12 +574,9 @@ let mis_make_indrec env sigma ?(force_mutual=false) listdepkind mib u =
           makefix i listdepkind
     in
     let rec put_arity env i = function
-      | ((indi,u),_,_,dep,kinds)::rest ->
+      | ((indi,u),_,_,dep,qu)::rest ->
           let indf = make_ind_family ((indi,u), Context.Rel.instance_list mkRel i lnamesparrec) in
-          let s =
-            let sigma, res = Evd.fresh_sort_in_family ~rigid:Evd.univ_flexible_alg !evdref kinds in
-            evdref := sigma; res
-          in
+          let s = EConstr.EQualUniv.to_sort !evdref qu in
           let typP = make_arity !!env !evdref dep indf s in
           let typP = EConstr.Unsafe.to_constr typP in
           let nameP = make_name env "P" Sorts.Relevant in
@@ -606,7 +610,8 @@ let mis_make_indrec env sigma ?(force_mutual=false) listdepkind mib u =
 
 let build_case_analysis_scheme env sigma pity dep kind =
   let specif = lookup_mind_specif env (fst pity) in
-  mis_make_case_com dep env sigma pity specif kind
+  let sigma, qu = Evd.fresh_qualuniv_of_family ~rigid:Evd.univ_flexible sigma kind in
+  mis_make_case_com dep env sigma pity specif (EConstr.EQualUniv.make qu)
 
 let is_in_prop mip =
   match inductive_sort_family mip with

@@ -409,6 +409,12 @@ let match_goals ot nt =
       | None, None -> ()
       | _, _ -> raise (Diff_Failure "Unable to match goals between old and new proof states (1)")
     in
+    let return_clause_opt ogname exp exp2 =
+      match exp, exp2 with
+      | Some (expa, _), Some (expb, _) -> constr_expr ogname expa expb
+      | None, None -> ()
+      | _, _ -> raise (Diff_Failure "Unable to match goals between old and new proof states (1b)")
+    in
     let constr_arr ogname arr_exp arr_exp2 =
       let len = Array.length arr_exp in
       if len <> Array.length arr_exp2 then
@@ -496,16 +502,16 @@ let match_goals ot nt =
       iter2 (fun a a2 -> let (_, c) = a and (_, c2) = a2 in
           constr_expr ogname c c2) fs fs2
     | CCases (sty,rtnpo,tms,eqns), CCases (sty2,rtnpo2,tms2,eqns2) ->
-        constr_expr_opt ogname rtnpo rtnpo2;
+        return_clause_opt ogname rtnpo rtnpo2;
         iter2 (case_expr ogname) tms tms2;
         iter2 (branch_expr ogname) eqns eqns2
     | CLetTuple (nal,(na,po),b,c), CLetTuple (nal2,(na2,po2),b2,c2) ->
-      constr_expr_opt ogname po po2;
+      return_clause_opt ogname po po2;
       constr_expr ogname b b2;
       constr_expr ogname c c2
     | CIf (c,(na,po),b1,b2), CIf (c2,(na2,po2),b12,b22) ->
       constr_expr ogname c c2;
-      constr_expr_opt ogname po po2;
+      return_clause_opt ogname po po2;
       constr_expr ogname b1 b12;
       constr_expr ogname b2 b22
     | CHole _, CHole _ -> ()

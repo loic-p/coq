@@ -108,7 +108,7 @@ module Internal : sig
     -> Names.Id.t
     -> projection_flags list
     -> Impargs.manual_implicits list
-    -> Constr.rel_context
+    -> Constr.rel_context * UVars.QualUniv.t list
     -> Structure.projection list
 
   val declare_structure_entry : Structure.t -> unit

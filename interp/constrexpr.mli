@@ -39,6 +39,7 @@ type relevance_info_expr = relevance_expr option
 type sort_expr = (qvar_expr option * (sort_name_expr * int) list) Glob_term.glob_sort_gen
 
 type instance_expr = quality_expr list * univ_level_expr list
+type qualuniv_expr = quality_expr option * univ_level_expr
 
 (** Constraints don't have anonymous universes *)
 type univ_constraint_expr = sort_name_expr * Univ.constraint_type * sort_name_expr
@@ -127,6 +128,8 @@ type cases_pattern_expr_r =
   | CPatCast   of cases_pattern_expr * constr_expr
 and cases_pattern_expr = cases_pattern_expr_r CAst.t
 
+and cases_return_clause = (constr_expr * qualuniv_expr option) option
+
 and kinded_cases_pattern_expr = cases_pattern_expr * Glob_term.binding_kind
 
 and cases_pattern_notation_substitution =
@@ -149,13 +152,13 @@ and constr_expr_r =
 
   (* representation of the "let" and "match" constructs *)
   | CCases of Constr.case_style   (* determines whether this value represents "let" or "match" construct *)
-            * constr_expr option  (* return-clause *)
+            * cases_return_clause (* return-clause *)
             * case_expr list
             * branch_expr list    (* branches *)
 
-  | CLetTuple of lname list * (lname option * constr_expr option) *
+  | CLetTuple of lname list * (lname option * cases_return_clause) *
                  constr_expr * constr_expr
-  | CIf of constr_expr * (lname option * constr_expr option)
+  | CIf of constr_expr * (lname option * cases_return_clause)
          * constr_expr * constr_expr
   | CHole   of Evar_kinds.glob_evar_kind option
   | CGenarg of Genarg.raw_generic_argument

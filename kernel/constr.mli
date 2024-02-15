@@ -158,7 +158,7 @@ end
 type 'constr pcase_branch = Name.t Context.binder_annot array * 'constr
 (** Names bound by matching the constructor for this branch. *)
 
-type 'types pcase_return = (Name.t Context.binder_annot array * 'types) * Sorts.relevance
+type ('types, 'qualuniv) pcase_return = (Name.t Context.binder_annot array * 'types) * 'qualuniv
 (** Names of the indices + name of self *)
 
 type 'constr pcase_invert =
@@ -169,13 +169,13 @@ type 'constr pcase_invert =
   (** Reduce when the indices match those of the unique constructor.
       (SProp to non SProp only) *)
 
-type ('constr, 'types, 'univs) pcase =
-  case_info * 'univs * 'constr array * 'types pcase_return * 'constr pcase_invert * 'constr * 'constr pcase_branch array
+type ('constr, 'types, 'univs, 'qualuniv) pcase =
+  case_info * 'univs * 'constr array * ('types, 'qualuniv) pcase_return * 'constr pcase_invert * 'constr * 'constr pcase_branch array
 
 type case_invert = constr pcase_invert
-type case_return = types pcase_return
+type case_return = (types, UVars.QualUniv.t) pcase_return
 type case_branch = constr pcase_branch
-type case = (constr, types, UVars.Instance.t) pcase
+type case = (constr, types, UVars.Instance.t, UVars.QualUniv.t) pcase
 
 val mkCase : case -> constr
 
@@ -235,7 +235,7 @@ val mkCoFix : cofixpoint -> constr
    the same order (i.e. last argument first) *)
 type 'constr pexistential = Evar.t * 'constr SList.t
 
-type ('constr, 'types, 'sort, 'univs) kind_of_term =
+type ('constr, 'types, 'sort, 'univs, 'qualuniv) kind_of_term =
   | Rel       of int
   (** Gallina-variable introduced by [forall], [fun], [let-in], [fix], or [cofix]. *)
   | Var       of Id.t
@@ -267,7 +267,7 @@ type ('constr, 'types, 'sort, 'univs) kind_of_term =
   | Construct of (constructor * 'univs)
   (** A constructor of an inductive type defined by [Variant],
      [Inductive] or [Record] Vernacular-commands. *)
-  | Case      of case_info * 'univs * 'constr array * 'types pcase_return * 'constr pcase_invert * 'constr * 'constr pcase_branch array
+  | Case      of case_info * 'univs * 'constr array * ('types, 'qualuniv) pcase_return * 'constr pcase_invert * 'constr * 'constr pcase_branch array
   (** [Case (ci,u,params,p,iv,c,brs)] is a [match c return p with brs]
      expression. [c] lives in inductive [ci.ci_ind] at universe
      instance [u] and parameters [params]. If this match has case
@@ -292,13 +292,13 @@ type ('constr, 'types, 'sort, 'univs) kind_of_term =
    least one argument and the function is not itself an applicative
    term *)
 
-val kind : constr -> (constr, types, Sorts.t, UVars.Instance.t) kind_of_term
-val of_kind : (constr, types, Sorts.t, UVars.Instance.t) kind_of_term -> constr
+val kind : constr -> (constr, types, Sorts.t, UVars.Instance.t, UVars.QualUniv.t) kind_of_term
+val of_kind : (constr, types, Sorts.t, UVars.Instance.t, UVars.QualUniv.t) kind_of_term -> constr
 
-val kind_nocast_gen : ('v -> ('v, 'v, 'sort, 'univs) kind_of_term) ->
-  ('v -> ('v, 'v, 'sort, 'univs) kind_of_term)
+val kind_nocast_gen : ('v -> ('v, 'v, 'sort, 'univs, 'qualuniv) kind_of_term) ->
+  ('v -> ('v, 'v, 'sort, 'univs, 'qualuniv) kind_of_term)
 
-val kind_nocast : constr -> (constr, types, Sorts.t, UVars.Instance.t) kind_of_term
+val kind_nocast : constr -> (constr, types, Sorts.t, UVars.Instance.t, UVars.QualUniv.t) kind_of_term
 
 (** {6 Simple case analysis} *)
 val isRel  : constr -> bool
@@ -571,15 +571,18 @@ type 'univs instance_compare_fn = (GlobRef.t * int) option ->
    compare universe instances, [s] to compare sorts; Cast's, binders
    name and Cases annotations are not taken into account *)
 
-val compare_head_gen : UVars.Instance.t instance_compare_fn ->
+val compare_head_gen :
+  (UVars.QualUniv.t -> UVars.QualUniv.t -> bool) ->
+  UVars.Instance.t instance_compare_fn ->
   (Sorts.t -> Sorts.t -> bool) ->
   (existential -> existential -> bool) ->
   constr constr_compare_fn ->
   constr constr_compare_fn
 
 val compare_head_gen_leq_with :
-  ('v -> ('v, 'v, 'sort, 'univs) kind_of_term) ->
-  ('v -> ('v, 'v, 'sort, 'univs) kind_of_term) ->
+  ('v -> ('v, 'v, 'sort, 'univs, 'qualuniv) kind_of_term) ->
+  ('v -> ('v, 'v, 'sort, 'univs, 'qualuniv) kind_of_term) ->
+  ('qualuniv -> 'qualuniv -> bool) ->
   'univs instance_compare_fn ->
   ('sort -> 'sort -> bool) ->
   ('v pexistential -> 'v pexistential -> bool) ->
@@ -592,8 +595,9 @@ val compare_head_gen_leq_with :
     is used,rather than {!kind}, to expose the immediate subterms of
     [c1] (resp. [c2]). *)
 val compare_head_gen_with :
-  ('v -> ('v, 'v, 'sort, 'univs) kind_of_term) ->
-  ('v -> ('v, 'v, 'sort, 'univs) kind_of_term) ->
+  ('v -> ('v, 'v, 'sort, 'univs, 'qualuniv) kind_of_term) ->
+  ('v -> ('v, 'v, 'sort, 'univs, 'qualuniv) kind_of_term) ->
+  ('qualuniv -> 'qualuniv -> bool) ->
   'univs instance_compare_fn ->
   ('sort -> 'sort -> bool) ->
   ('v pexistential -> 'v pexistential -> bool) ->
@@ -607,7 +611,9 @@ val compare_head_gen_with :
     [s] to compare sorts for for subtyping; Cast's, binders name and
     Cases annotations are not taken into account *)
 
-val compare_head_gen_leq : UVars.Instance.t instance_compare_fn ->
+val compare_head_gen_leq :
+  (UVars.QualUniv.t -> UVars.QualUniv.t -> bool) ->
+  UVars.Instance.t instance_compare_fn ->
   (Sorts.t -> Sorts.t -> bool) ->
   (existential -> existential -> bool) ->
   constr constr_compare_fn ->

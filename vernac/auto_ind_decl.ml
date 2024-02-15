@@ -735,7 +735,8 @@ let build_beq_scheme env handle kn =
     (* do the [| C1 ... =>  match Y with ... end
                ...
                Cn => match Y with ... end |]  part *)
-    let rci = Sorts.Relevant in (* returning a boolean, hence relevant *)
+    let qualuniv = EConstr.EQualUniv.make UVars.QualUniv.set in
+    (* returning a boolean, hence in Set *)
     let open Inductiveops in
     let constrs =
       let params = Context.Rel.instance_list mkRel 0 params_ctx in
@@ -810,7 +811,7 @@ let build_beq_scheme env handle kn =
           let predj = EConstr.of_constr (translate_term env_lift_recparams_fix_nonrecparams_tomatch_csargsi pred) in
           let case =
             simple_make_case_or_project env (Evd.from_env env)
-              ci (predj,rci) NoInvert (EConstr.mkRel (nb_cstr_args + 1))
+              ci (predj,qualuniv) NoInvert (EConstr.mkRel (nb_cstr_args + 1))
               (EConstr.of_constr_array ar2)
           in
           let cs_argsi = translate_context env_lift_recparams_fix_nonrecparams_tomatch constrs.(i).cs_args in
@@ -819,7 +820,7 @@ let build_beq_scheme env handle kn =
         let predi = EConstr.of_constr (translate_term env_lift_recparams_fix_nonrecparams_tomatch pred) in
         let case =
           simple_make_case_or_project env (Evd.from_env env)
-            ci (predi,rci) NoInvert (EConstr.mkRel 2)
+            ci (predi,qualuniv) NoInvert (EConstr.mkRel 2)
             (EConstr.of_constr_array ar) in
         EConstr.Unsafe.to_constr case
     in

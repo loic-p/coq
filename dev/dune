@@ -8,38 +8,40 @@
  (libraries coq-core.toplevel coq-core.plugins.ltac))
 
 (rule
-  (targets dune-dbg)
-  (deps
-    dune-dbg.in
-    ../checker/coqchk.bc
-    ../topbin/coqc_bin.bc
-    ../topbin/coqnative_bin.bc
-    ../ide/coqide/coqide_main.bc
-    ../tools/coqdep/coqdep.bc
-    ; We require all the OCaml libs to be in place and searchable
-    ; by OCamlfind, this is a bit of a hack but until Dune gets
-    ; proper ocamldebug support we have to live with that.
-    %{lib:coq-core.config:config.cma}
-    %{lib:coq-core.clib:clib.cma}
-    %{lib:coq-core.lib:lib.cma}
-    %{lib:coq-core.kernel:kernel.cma}
-    %{lib:coq-core.vm:coqrun.cma}
-    %{lib:coq-core.vm:../../stublibs/dllcoqrun_stubs.so}
-    %{lib:coq-core.library:library.cma}
-    %{lib:coq-core.engine:engine.cma}
-    %{lib:coq-core.pretyping:pretyping.cma}
-    %{lib:coq-core.gramlib:gramlib.cma}
-    %{lib:coq-core.interp:interp.cma}
-    %{lib:coq-core.proofs:proofs.cma}
-    %{lib:coq-core.parsing:parsing.cma}
-    %{lib:coq-core.printing:printing.cma}
-    %{lib:coq-core.tactics:tactics.cma}
-    %{lib:coq-core.vernac:vernac.cma}
-    %{lib:coq-core.stm:stm.cma}
-    %{lib:coq-core.sysinit:sysinit.cma}
-    %{lib:coq-core.toplevel:toplevel.cma}
-    %{lib:coq-core.plugins.ltac:ltac_plugin.cma}
-    %{lib:coq-core.top_printers:top_printers.cmi}
-    %{lib:coq-core.top_printers:top_printers.cma}
-    %{lib:coq-core.top_printers:../META})
-  (action (copy dune-dbg.in dune-dbg)))
+ (targets dune-dbg)
+ (deps
+  dune-dbg.in
+  ../checker/coqchk.bc
+  ../topbin/coqc_bin.bc
+  ../topbin/coqnative_bin.bc
+  ../ide/coqide/coqide_main.bc
+  ../tools/coqdep/coqdep.bc
+  ; We require all the OCaml libs to be in place and searchable
+  ; by OCamlfind, this is a bit of a hack but until Dune gets
+  ; proper ocamldebug support we have to live with that.
+  %{lib:coq-core.config:config.cma}
+  %{lib:coq-core.clib:clib.cma}
+  %{lib:coq-core.lib:lib.cma}
+  %{lib:coq-core.kernel:kernel.cma}
+  %{lib:coq-core.vm:coqrun.cma}
+  %{lib:coq-core.vm:../../stublibs/dllcoqrun_stubs.so}
+  %{lib:coq-core.library:library.cma}
+  %{lib:coq-core.engine:engine.cma}
+  %{lib:coq-core.pretyping:pretyping.cma}
+  %{lib:coq-core.gramlib:gramlib.cma}
+  %{lib:coq-core.interp:interp.cma}
+  %{lib:coq-core.proofs:proofs.cma}
+  %{lib:coq-core.parsing:parsing.cma}
+  %{lib:coq-core.printing:printing.cma}
+  %{lib:coq-core.tactics:tactics.cma}
+  %{lib:coq-core.vernac:vernac.cma}
+  %{lib:coq-core.checker:coq_checklib.cma}
+  %{lib:coq-core.stm:stm.cma}
+  %{lib:coq-core.sysinit:sysinit.cma}
+  %{lib:coq-core.toplevel:toplevel.cma}
+  %{lib:coq-core.plugins.ltac:ltac_plugin.cma}
+  %{lib:coq-core.top_printers:top_printers.cmi}
+  %{lib:coq-core.top_printers:top_printers.cma}
+  %{lib:coq-core.top_printers:../META})
+ (action
+  (copy dune-dbg.in dune-dbg)))

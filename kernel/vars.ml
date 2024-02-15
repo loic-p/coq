@@ -309,11 +309,10 @@ let map_constr_relevance f c =
     if na' == na then c else mkLetIn (na',x,y,z)
 
   | Case (ci,u,params,(ret,r),iv,v,brs) ->
-    let r' = f r in
     let ret' = map_case_under_context_relevance f ret in
     let brs' = CArray.Smart.map (map_case_under_context_relevance f) brs in
-    if r' == r && ret' == ret && brs' == brs then c
-    else mkCase (ci,u,params,(ret',r'),iv,v,brs')
+    if ret' == ret && brs' == brs then c
+    else mkCase (ci,u,params,(ret',r),iv,v,brs')
 
   | Fix data ->
     let data' = map_rec_declaration_relevance f data in
@@ -339,15 +338,14 @@ let fold_rec_declaration_relevance f acc (nas,_,_) =
 let fold_constr_relevance f acc c =
   match kind c with
   | Rel _ | Var _ | Meta _ | Evar _
-  |  Sort _ | Cast _ | App _
+  | Sort _ | Cast _ | App _
   | Const _ | Ind _ | Construct _
   | Int _ | Float _ | Array _ -> acc
 
   | Prod (na,_,_) | Lambda (na,_,_) | LetIn (na,_,_,_) ->
     fold_annot_relevance f acc na
 
-  | Case (_,_u,_params,(ret,r),_iv,_v,brs) ->
-    let acc = f acc r in
+  | Case (_,_u,_params,(ret,_r),_iv,_v,brs) ->
     let acc = fold_case_under_context_relevance f acc ret in
     let acc = CArray.fold_left (fold_case_under_context_relevance f) acc brs in
     acc
@@ -361,6 +359,7 @@ let fold_constr_relevance f acc c =
 let subst_univs_level_constr subst c =
   if UVars.is_empty_sort_subst subst then c
   else
+    let f1 = UVars.subst_sort_level_qualuniv subst in
     let f = UVars.subst_sort_level_instance subst in
     (* XXX shouldn't Constr.map return the pointer equal term when unchanged instead? *)
     let changed = ref false in
@@ -392,20 +391,22 @@ let subst_univs_level_constr subst c =
         else
           (changed := true; mkSort s')
 
-      | Case (ci, u, pms, p, CaseInvert {indices}, c, br) ->
-        if UVars.Instance.is_empty u then Constr.map aux t
-        else
-          let u' = f u in
-          if u' == u then Constr.map aux t
-          else (changed:=true; Constr.map aux (mkCase (ci,u',pms,p,CaseInvert {indices},c,br)))
+      | Case (ci, u, pms, (p, r), CaseInvert {indices}, c, br) ->
+        let u' = if UVars.Instance.is_empty u then u else f u in
+        let r' = f1 r in
+        if u' == u && r' == r then Constr.map aux t
+        else (changed:=true; Constr.map aux (mkCase (ci,u',pms,(p, r'),CaseInvert {indices},c,br)))
 
-      | Case (ci, u, pms, p, NoInvert, c, br) ->
-        if UVars.Instance.is_empty u then Constr.map aux t
+      | Case (ci, u, pms, (p, r), NoInvert, c, br) ->
+        let r' = f1 r in
+        if UVars.Instance.is_empty u then
+          if r' == r then Constr.map aux t
+          else (changed := true; Constr.map aux (mkCase (ci, u, pms, (p, r'), NoInvert, c, br)))
         else
           let u' = f u in
-          if u' == u then Constr.map aux t
+          if u' == u && r' == r then Constr.map aux t
           else
-            (changed := true; Constr.map aux (mkCase (ci, u', pms, p, NoInvert, c, br)))
+            (changed := true; Constr.map aux (mkCase (ci, u', pms, (p, r'), NoInvert, c, br)))
 
       | Array (u,elems,def,ty) ->
         let u' = f u in
@@ -429,6 +430,7 @@ let subst_univs_level_context s ctx =
 let subst_instance_constr subst c =
   if UVars.Instance.is_empty subst then c
   else
+    let f1 = UVars.subst_instance_qualuniv subst in
     let f u = UVars.subst_instance_instance subst u in
     let rec aux t =
       let t = if CArray.is_empty (fst (UVars.Instance.to_array subst)) then t
@@ -457,10 +459,11 @@ let subst_instance_constr subst c =
         let s' = UVars.subst_instance_sort subst s in
         if s' == s then t else mkSort s'
 
-      | Case (ci, u, pms, p, iv, c, br) ->
+      | Case (ci, u, pms, (p, r), iv, c, br) ->
         let u' = f u in
-        if u' == u then Constr.map aux t
-        else Constr.map aux (mkCase (ci,u',pms,p,iv,c,br))
+        let r' = f1 r in
+        if u' == u && r' == r then Constr.map aux t
+        else Constr.map aux (mkCase (ci,u',pms,(p,r'),iv,c,br))
 
       | Array (u,elems,def,ty) ->
         let u' = f u in
@@ -499,6 +502,17 @@ let add_qvars_and_univs_of_instance (qs,us) u =
   let us = Array.fold_left (fun acc x -> Univ.Level.Set.add x acc) us us' in
   qs, us
 
+let add_qvars_and_univs_of_qualuniv (qs,us) u =
+  let q, u = UVars.QualUniv.to_quality_level u in
+  let qs =
+    let open Sorts.Quality in
+    match q with
+    | QVar q -> Sorts.QVar.Set.add q qs
+    | QConstant _ -> qs
+  in
+  let us = Univ.Level.Set.add u us in
+  qs, us
+
 let add_relevance (qs,us as v) = let open Sorts in function
   | Irrelevant | Relevant -> v
   | RelevanceVar q -> QVar.Set.add q qs, us
@@ -517,8 +531,9 @@ let sort_and_universes_of_constr c =
     | Array (u,_,_,_) ->
       let s = add_qvars_and_univs_of_instance s u in
       Constr.fold aux s c
-    | Case (_, u, _, _, _,_ ,_) ->
+    | Case (_, u, _, (_, r), _,_ ,_) ->
       let s = add_qvars_and_univs_of_instance s u in
+      let s = add_qvars_and_univs_of_qualuniv s r in
       Constr.fold aux s c
     | _ -> Constr.fold aux s c
   in aux (Sorts.QVar.Set.empty,Level.Set.empty) c

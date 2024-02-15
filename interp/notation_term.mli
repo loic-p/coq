@@ -33,12 +33,12 @@ type notation_constr =
   | NProd of Name.t * notation_constr option * notation_constr
   | NBinderList of Id.t * Id.t * notation_constr * notation_constr * (* associativity: *) bool
   | NLetIn of Name.t * notation_constr * notation_constr option * notation_constr
-  | NCases of Constr.case_style * notation_constr option *
+  | NCases of Constr.case_style * notation_predicate_return *
       (notation_constr * (Name.t * (inductive * Name.t list) option)) list *
       (cases_pattern list * notation_constr) list
-  | NLetTuple of Name.t list * (Name.t * notation_constr option) *
+  | NLetTuple of Name.t list * (Name.t * notation_predicate_return) *
       notation_constr * notation_constr
-  | NIf of notation_constr * (Name.t * notation_constr option) *
+  | NIf of notation_constr * (Name.t * notation_predicate_return) *
       notation_constr * notation_constr
   | NRec of glob_fix_kind * Id.t array *
       (Name.t * notation_constr option * notation_constr) list array *
@@ -48,6 +48,8 @@ type notation_constr =
   | NInt of Uint63.t
   | NFloat of Float64.t
   | NArray of notation_constr array * notation_constr * notation_constr
+
+and notation_predicate_return = (notation_constr * glob_qualuniv option) option
 
 (** Note concerning NList: first constr is iterator, second is terminator;
     first id is where each argument of the list has to be substituted

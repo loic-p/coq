@@ -1712,8 +1712,9 @@ let make_projection env sigma params cstr sign elim i n c (ind, u) =
       then
         let (_, mip) as specif = Inductive.lookup_mind_specif env ind in
         let t = lift (i + 1 - n) t in
-        let ksort = Retyping.get_sort_family_of (push_rel_context sign env) sigma t in
-        if Sorts.family_leq ksort (Inductiveops.elim_sort specif) then
+        let ksort = Retyping.get_sort_of (push_rel_context sign env) sigma t in
+        let ksortfam = ESorts.family sigma ksort in
+        if Sorts.family_leq ksortfam (Inductiveops.elim_sort specif) then
           let arity = List.firstn mip.mind_nrealdecls mip.mind_arity_ctxt in
           let mknas ctx = Array.of_list (List.rev_map get_annot ctx) in
           let ci = Inductiveops.make_case_info env ind RegularStyle in
@@ -1721,8 +1722,9 @@ let make_projection env sigma params cstr sign elim i n c (ind, u) =
           let args = Context.Rel.instance mkRel 0 sign in
           let pnas = Array.append (mknas arity) [|make_annot Anonymous (Inductive.relevance_of_ind_body mip (EConstr.Unsafe.to_instance u))|] in
           let p = (pnas, lift (Array.length pnas) t) in
-          let c = mkCase (ci, u, Array.of_list params, (p, get_relevance decl), NoInvert, mkApp (c, args), br) in
-          Some (it_mkLambda_or_LetIn c sign, it_mkProd_or_LetIn t sign)
+          let sigma, qu = Evd.fresh_geq_qualuniv_of_sort env sigma ksort in
+          let c = mkCase (ci, u, Array.of_list params, (p, EQualUniv.make qu), NoInvert, mkApp (c, args), br) in
+          Some (sigma, it_mkLambda_or_LetIn c sign, it_mkProd_or_LetIn t sign)
         else None
       else
         None
@@ -1741,7 +1743,7 @@ let make_projection env sigma params cstr sign elim i n c (ind, u) =
           in
           let app = it_mkLambda_or_LetIn proj sign in
           let t = Retyping.get_type_of env sigma app in
-            Some (app, t)
+            Some (sigma, app, t)
       | None -> None
   in elim
 
@@ -1775,7 +1777,8 @@ let descend_in_conjunctions avoid tac (err, info) c =
             match make_projection env sigma params cstr sign elim i n c (ind, u) with
             | None ->
               Proofview.tclZERO ~info err
-            | Some (p,pt) ->
+            | Some (sigma, p, pt) ->
+              Proofview.Unsafe.tclEVARS sigma <*>
               Tacticals.tclTHENS
                 (Proofview.tclORELSE
                   (assert_before_gen false (NamingAvoid avoid) pt)

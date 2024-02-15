@@ -409,7 +409,7 @@ let fold_arity f acc params arity indices = match arity with
     fold_ctx (fold_ctx acc params) indices
 
 let fold_inductive_blocks f acc params inds =
-  Array.fold_left (fun acc ((arity,lc),(indices,_),_) ->
+  Array.fold_left (fun acc ((arity,lc),(indices,_),_,_) ->
       fold_arity f (Array.fold_left f acc lc) params arity indices)
     acc inds
 
@@ -424,8 +424,10 @@ let rel_vect n m = Array.init m (fun i -> mkRel(n+m-i))
     build an expansion function.
     The term built is expecting to be substituted first by
     a substitution of the form [params, x : ind params] *)
-let compute_projections (_, i as ind) mib =
+let compute_projections (_, i as ind) mib inds =
   let pkt = mib.mind_packets.(i) in
+  let _,_,qus,_ = inds.(i) in
+  let qus = Option.get qus in
   let (ctx, _) = pkt.mind_nf_lc.(0) in
   let ctx, paramslet = List.chop pkt.mind_consnrealdecls.(0) ctx in
   (** We build a substitution smashing the lets in the record parameters so
@@ -441,9 +443,9 @@ let compute_projections (_, i as ind) mib =
       mkRel 1 :: List.map (lift 1) subst in
     subst
   in
-  let projections decl (i, j, labs, rs, pbs, letsubst) =
-    match decl with
-    | LocalDef (_na,c,_t) ->
+  let projections decl (i, j, qus, labs, filtered_qus, pbs, letsubst) =
+    match qus, decl with
+    | qus, LocalDef (_na,c,_t) ->
         (* From [params, field1,..,fieldj |- c(params,field1,..,fieldj)]
            to [params, x:I, field1,..,fieldj |- c(params,field1,..,fieldj)] *)
         let c = liftn 1 j c in
@@ -453,9 +455,9 @@ let compute_projections (_, i as ind) mib =
         (* From [params-wo-let, x:I |- subst:(params, x:I, field1,..,fieldj)]
            to [params-wo-let, x:I |- subst:(params, x:I, field1,..,fieldj+1)] *)
         let letsubst = c2 :: letsubst in
-        (i, j+1, labs, rs, pbs, letsubst)
-    | LocalAssum (na,t) ->
-      match na.Context.binder_name with
+        (i, j+1, qus, labs, filtered_qus, pbs, letsubst)
+    | qu :: qus, LocalAssum (na,t) ->
+      begin match na.Context.binder_name with
       | Name id ->
         let r = na.Context.binder_relevance in
         let lab = Label.of_id id in
@@ -469,14 +471,16 @@ let compute_projections (_, i as ind) mib =
         (* from [params, x:I, field1,..,fieldj |- t(field1,..,fieldj)]
            to [params, x:I |- t(proj1 x,..,projj x)] *)
         let fterm = mkProj (Projection.make kn false, r, mkRel 1) in
-        (i + 1, j + 1, lab :: labs, r :: rs, projty :: pbs, fterm :: letsubst)
+        (i + 1, j + 1, qus, lab :: labs, qu :: filtered_qus, projty :: pbs, fterm :: letsubst)
       | Anonymous -> assert false (* checked by indTyping *)
+      end
+    | [], LocalAssum _ -> assert false (* checked by indTyping *)
   in
-  let (_, _, labs, rs, pbs, _letsubst) =
-    List.fold_right projections ctx (0, 1, [], [], [], paramsletsubst)
+  let (_, _, _, labs, qus, pbs, _letsubst) =
+    List.fold_right projections ctx (0, 1, List.rev qus, [], [], [], paramsletsubst)
   in
   Array.of_list (List.rev labs),
-  Array.of_list (List.rev rs),
+  Array.of_list (List.rev qus),
   Array.of_list (List.rev pbs)
 
 let build_inductive env ~sec_univs names prv univs template variance
@@ -488,7 +492,7 @@ let build_inductive env ~sec_univs names prv univs template variance
   let u = UVars.make_abstract_instance (universes_context univs) in
   let subst = List.init ntypes (fun i -> mkIndU ((kn, ntypes - i - 1), u)) in
   (* Check one inductive *)
-  let build_one_packet (id,cnames) ((arity,lc),(indices,splayed_lc),squashed) recarg =
+  let build_one_packet (id,cnames) ((arity,lc),(indices,splayed_lc),_,squashed) recarg =
     let lc = Array.map (substl subst) lc in
     (* Type of constructors in normal form *)
     let nf_lc =
@@ -574,7 +578,7 @@ let build_inductive env ~sec_univs names prv univs template variance
   | Some (Some rid) ->
     (** The elimination criterion ensures that all projections can be defined. *)
     let map i id =
-      let labs, rs, projs = compute_projections (kn, i) mib in
+      let labs, rs, projs = compute_projections (kn, i) mib inds in
       (id, labs, rs, projs)
     in
     PrimRecord (Array.mapi map rid)
@@ -598,7 +602,7 @@ let check_inductive env ~sec_univs kn mie =
   in
   let (nmr,recargs) = check_positivity ~chkpos kn names
       env_ar_par paramsctxt mie.mind_entry_finite
-      (Array.map (fun ((_,lc),(indices,_),_) -> Context.Rel.nhyps indices,lc) inds)
+      (Array.map (fun ((_,lc),(indices,_),_,_) -> Context.Rel.nhyps indices,lc) inds)
   in
   (* Build the inductive packets *)
     build_inductive env ~sec_univs names mie.mind_entry_private univs template variance

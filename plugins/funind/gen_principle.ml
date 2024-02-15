@@ -1997,7 +1997,7 @@ let rec add_args id new_args =
     | CCases (sty, b_option, cel, cal) ->
       CCases
         ( sty
-        , Option.map (add_args id new_args) b_option
+        , Option.map (on_fst @@ add_args id new_args) b_option
         , List.map
             (fun (b, na, b_option) -> (add_args id new_args b, na, b_option))
             cel
@@ -2007,13 +2007,13 @@ let rec add_args id new_args =
     | CLetTuple (nal, (na, b_option), b1, b2) ->
       CLetTuple
         ( nal
-        , (na, Option.map (add_args id new_args) b_option)
+        , (na, Option.map (on_fst @@ add_args id new_args) b_option)
         , add_args id new_args b1
         , add_args id new_args b2 )
     | CIf (b1, (na, b_option), b2, b3) ->
       CIf
         ( add_args id new_args b1
-        , (na, Option.map (add_args id new_args) b_option)
+        , (na, Option.map (on_fst @@ add_args id new_args) b_option)
         , add_args id new_args b2
         , add_args id new_args b3 )
     | (CHole _ | CGenarg _ | CGenargGlob _ | CPatVar _ | CEvar _ | CPrim _ | CSort _) as b -> b

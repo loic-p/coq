@@ -135,6 +135,12 @@ module Quality = struct
     | _, QVar _ -> 1
     | QConstant a, QConstant b -> Constants.compare a b
 
+  let family = function
+    | QConstant QSProp -> InSProp
+    | QConstant QProp -> InProp
+    | QConstant QType -> InType
+    | QVar _ -> InQSort
+
   let pr prv = function
     | QVar v -> prv v
     | QConstant q -> Constants.pr q
@@ -436,6 +442,13 @@ let relevance_equal r1 r2 = match r1,r2 with
 let relevance_of_sort_family = function
   | InSProp -> Irrelevant
   | _ -> Relevant
+
+let relevance_of_quality =
+  let open Quality in
+  function
+  | QConstant QSProp -> Irrelevant
+  | QConstant (QProp | QType) -> Relevant
+  | QVar qv -> RelevanceVar qv
 
 let relevance_hash = function
   | Relevant -> 0

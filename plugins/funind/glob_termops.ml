@@ -91,7 +91,7 @@ let change_vars =
           in
           GLetTuple
             ( nal
-            , (na, Option.map (change_vars mapping) rto)
+            , (na, Option.map (on_fst @@ change_vars mapping) rto)
             , change_vars mapping b
             , change_vars new_mapping e )
         | GCases (sty, infos, el, brl) ->
@@ -103,7 +103,7 @@ let change_vars =
         | GIf (b, (na, e_option), lhs, rhs) ->
           GIf
             ( change_vars mapping b
-            , (na, Option.map (change_vars mapping) e_option)
+            , (na, Option.map (on_fst @@ change_vars mapping) e_option)
             , change_vars mapping lhs
             , change_vars mapping rhs )
         | GRec _ -> user_err ?loc Pp.(str "Local (co)fixes are not supported")
@@ -266,11 +266,11 @@ let rec alpha_rt excluded rt =
         if Id.Map.is_empty mapping then (rto, t, b)
         else
           let replace = change_vars mapping in
-          (Option.map replace rto, t, replace b)
+          (Option.map (on_fst @@ replace) rto, t, replace b)
       in
       let new_t = alpha_rt new_excluded new_t in
       let new_b = alpha_rt new_excluded new_b in
-      let new_rto = Option.map (alpha_rt new_excluded) new_rto in
+      let new_rto = Option.map (on_fst @@ alpha_rt new_excluded) new_rto in
       GLetTuple (new_nal, (na, new_rto), new_t, new_b)
     | GCases (sty, infos, el, brl) ->
       let new_el =
@@ -280,7 +280,7 @@ let rec alpha_rt excluded rt =
     | GIf (b, (na, e_o), lhs, rhs) ->
       GIf
         ( alpha_rt excluded b
-        , (na, Option.map (alpha_rt excluded) e_o)
+        , (na, Option.map (on_fst @@ alpha_rt excluded) e_o)
         , alpha_rt excluded lhs
         , alpha_rt excluded rhs )
     | GRec _ -> user_err Pp.(str "Not handled GRec")
@@ -406,7 +406,7 @@ let replace_var_by_term x_id term =
         | GLetTuple (nal, (na, rto), def, b) ->
           GLetTuple
             ( nal
-            , (na, Option.map replace_var_by_pattern rto)
+            , (na, Option.map (on_fst @@ replace_var_by_pattern) rto)
             , replace_var_by_pattern def
             , replace_var_by_pattern b )
         | GCases (sty, infos, el, brl) ->
@@ -418,7 +418,7 @@ let replace_var_by_term x_id term =
         | GIf (b, (na, e_option), lhs, rhs) ->
           GIf
             ( replace_var_by_pattern b
-            , (na, Option.map replace_var_by_pattern e_option)
+            , (na, Option.map (on_fst @@ replace_var_by_pattern) e_option)
             , replace_var_by_pattern lhs
             , replace_var_by_pattern rhs )
         | GRec _ -> CErrors.user_err (Pp.str "Not handled GRec")
@@ -521,13 +521,13 @@ let expand_as =
       | GLetTuple (nal, (na, po), v, b) ->
         GLetTuple
           ( nal
-          , (na, Option.map (expand_as map) po)
+          , (na, Option.map (on_fst @@ expand_as map) po)
           , expand_as map v
           , expand_as map b )
       | GIf (e, (na, po), br1, br2) ->
         GIf
           ( expand_as map e
-          , (na, Option.map (expand_as map) po)
+          , (na, Option.map (on_fst @@ expand_as map) po)
           , expand_as map br1
           , expand_as map br2 )
       | GRec _ -> user_err Pp.(str "Not handled GRec")
@@ -536,7 +536,7 @@ let expand_as =
       | GCases (sty, po, el, brl) ->
         GCases
           ( sty
-          , Option.map (expand_as map) po
+          , Option.map (on_fst @@ expand_as map) po
           , List.map (fun (rt, t) -> (expand_as map rt, t)) el
           , List.map (expand_as_br map) brl )
       | GArray (u, t, def, ty) ->

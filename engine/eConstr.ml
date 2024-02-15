@@ -52,17 +52,25 @@ module EInstance = struct
     UVars.Instance.equal (kind sigma i1) (kind sigma i2)
 end
 
+module EQualUniv = struct
+  include Evd.MiniEConstr.EQualUniv
+
+  let equal sigma i1 i2 =
+    UVars.QualUniv.equal (kind sigma i1) (kind sigma i2)
+end
+
 include (Evd.MiniEConstr : module type of Evd.MiniEConstr
          with module ESorts := ESorts
-          and module EInstance := EInstance)
+          and module EInstance := EInstance
+          and module EQualUniv := EQualUniv)
 
 type types = t
 type constr = t
 type existential = t pexistential
-type case_return = t pcase_return
+type case_return = (t, EQualUniv.t) pcase_return
 type case_branch = t pcase_branch
 type case_invert = t pcase_invert
-type case = (t, t, EInstance.t) pcase
+type case = (t, t, EInstance.t, EQualUniv.t) pcase
 type fixpoint = (t, t) pfixpoint
 type cofixpoint = (t, t) pcofixpoint
 type unsafe_judgment = (constr, types) Environ.punsafe_judgment
@@ -359,12 +367,12 @@ let unsafe_to_branches : case_branch array -> Constr.case_branch array =
   | Refl -> fun x -> x
 
 let of_return : Constr.case_return -> case_return =
-  match Evd.MiniEConstr.unsafe_eq with
-  | Refl -> fun x -> x
+  match Evd.MiniEConstr.unsafe_eq, Evd.MiniEConstr.EQualUniv.unsafe_eq with
+  | Refl, Refl -> fun x -> x
 
 let unsafe_to_return : case_return -> Constr.case_return =
-  match Evd.MiniEConstr.unsafe_eq with
-  | Refl -> fun x -> x
+  match Evd.MiniEConstr.unsafe_eq, Evd.MiniEConstr.EQualUniv.unsafe_eq with
+  | Refl, Refl -> fun x -> x
 
 let map_branches f br =
   let f c = unsafe_to_constr (f (of_constr c)) in
@@ -437,12 +445,13 @@ let expand_case env _sigma (ci, u, pms, p, iv, c, bl) =
   let iv = unsafe_to_case_invert iv in
   let c = unsafe_to_constr c in
   let bl = unsafe_to_branches bl in
-  let (ci, (p,r), iv, c, bl) = Inductive.expand_case env (ci, u, pms, p, iv, c, bl) in
+  let (ci, (p, r), iv, c, bl) = Inductive.expand_case env (ci, u, pms, p, iv, c, bl) in
   let p = of_constr p in
+  let r = EQualUniv.make r in
   let c = of_constr c in
   let iv = of_case_invert iv in
   let bl = of_constr_array bl in
-  (ci, (p,r), iv, c, bl)
+  (ci, (p, r), iv, c, bl)
 
 let annotate_case env sigma (ci, u, pms, p, iv, c, bl as case) =
   let (_, (p,r), _, _, bl) = expand_case env sigma case in
@@ -471,6 +480,7 @@ let expand_branch env _sigma u pms (ind, i) (nas, _br) =
 
 let contract_case env _sigma (ci, (p,r), iv, c, bl) =
   let p = unsafe_to_constr p in
+  let r = EQualUniv.unsafe_to_qualuniv r in
   let iv = unsafe_to_case_invert iv in
   let c = unsafe_to_constr c in
   let bl = unsafe_to_constr_array bl in
@@ -538,8 +548,8 @@ let fold_with_binders sigma g f e acc c =
     List.fold_left (fun acc c -> f e acc c) acc args
   | _ -> Constr.fold_constr_with_binders g f e acc c
 
-let compare_gen k eq_inst eq_sort eq_constr eq_evars nargs c1 c2 =
-  (c1 == c2) || Constr.compare_head_gen_with k k eq_inst eq_sort eq_constr eq_evars nargs c1 c2
+let compare_gen k eq_univ eq_inst eq_sort eq_constr eq_evars nargs c1 c2 =
+  (c1 == c2) || Constr.compare_head_gen_with k k eq_univ eq_inst eq_sort eq_constr eq_evars nargs c1 c2
 
 let eq_existential sigma eq (evk1, args1) (evk2, args2) =
   if Evar.equal evk1 evk2 then
@@ -550,11 +560,12 @@ let eq_existential sigma eq (evk1, args1) (evk2, args2) =
 
 let eq_constr sigma c1 c2 =
   let kind c = kind sigma c in
+  let eq_univ u1 u2 = EQualUniv.equal sigma u1 u2 in
   let eq_inst _ i1 i2 = EInstance.equal sigma i1 i2 in
   let eq_sorts s1 s2 = ESorts.equal sigma s1 s2 in
   let eq_existential eq e1 e2 = eq_existential sigma (eq 0) e1 e2 in
   let rec eq_constr nargs c1 c2 =
-    compare_gen kind eq_inst eq_sorts (eq_existential eq_constr) eq_constr nargs c1 c2
+    compare_gen kind eq_univ eq_inst eq_sorts (eq_existential eq_constr) eq_constr nargs c1 c2
   in
   eq_constr 0 c1 c2
 
@@ -562,17 +573,18 @@ let eq_constr_nounivs sigma c1 c2 =
   let kind c = kind sigma c in
   let eq_existential eq e1 e2 = eq_existential sigma (eq 0) e1 e2 in
   let rec eq_constr nargs c1 c2 =
-    compare_gen kind (fun _ _ _ -> true) (fun _ _ -> true) (eq_existential eq_constr) eq_constr nargs c1 c2
+    compare_gen kind (fun _ _ -> true) (fun _ _ _ -> true) (fun _ _ -> true) (eq_existential eq_constr) eq_constr nargs c1 c2
   in
   eq_constr 0 c1 c2
 
 let compare_constr sigma cmp c1 c2 =
   let kind c = kind sigma c in
+  let eq_univ u1 u2 = EQualUniv.equal sigma u1 u2 in
   let eq_inst _ i1 i2 = EInstance.equal sigma i1 i2 in
   let eq_sorts s1 s2 = ESorts.equal sigma s1 s2 in
   let eq_existential eq e1 e2 = eq_existential sigma (eq 0) e1 e2 in
   let cmp nargs c1 c2 = cmp c1 c2 in
-  compare_gen kind eq_inst eq_sorts (eq_existential cmp) cmp 0 c1 c2
+  compare_gen kind eq_univ eq_inst eq_sorts (eq_existential cmp) cmp 0 c1 c2
 
 let cmp_inductives cv_pb (mind,ind as spec) nargs u1 u2 cstrs =
   let open UnivProblem in
@@ -597,6 +609,12 @@ let cmp_constructors (mind, ind, cns as spec) nargs u1 u2 cstrs =
       let cstrs = enforce_eq_qualities qs1 qs2 cstrs in
       Array.fold_left2 (fun cstrs u1 u2 -> UnivProblem.(Set.add (UWeak (u1,u2)) cstrs))
         cstrs us1 us2
+
+let eq_universe env sigma cstrs cv_pb l l' =
+  let l = EQualUniv.kind sigma l
+  and l' = EQualUniv.kind sigma l' in
+  cstrs := UnivProblem.compare_irrelevant_qualuniv l l' !cstrs;
+  true
 
 let eq_universes env sigma cstrs cv_pb refargs l l' =
   if EInstance.is_empty l then (assert (EInstance.is_empty l'); true)
@@ -628,6 +646,8 @@ let test_constr_universes env sigma leq ?(nargs=0) m n =
   else
     let cstrs = ref Set.empty in
     let cv_pb = if leq then Conversion.CUMUL else Conversion.CONV in
+    let eq_universe l l' = eq_universe env sigma cstrs Conversion.CONV l l'
+    and leq_universe l l' = eq_universe env sigma cstrs cv_pb l l' in
     let eq_universes refargs l l' = eq_universes env sigma cstrs Conversion.CONV refargs l l'
     and leq_universes refargs l l' = eq_universes env sigma cstrs cv_pb refargs l l' in
     let eq_sorts s1 s2 =
@@ -648,16 +668,16 @@ let test_constr_universes env sigma leq ?(nargs=0) m n =
          true)
     in
     let eq_existential eq e1 e2 = eq_existential sigma (eq 0) e1 e2 in
-    let rec eq_constr' nargs m n = compare_gen kind eq_universes eq_sorts (eq_existential eq_constr') eq_constr' nargs m n in
+    let rec eq_constr' nargs m n = compare_gen kind eq_universe eq_universes eq_sorts (eq_existential eq_constr') eq_constr' nargs m n in
     let res =
       if leq then
         let rec compare_leq nargs m n =
-          Constr.compare_head_gen_leq_with kind kind leq_universes leq_sorts (eq_existential eq_constr')
+          Constr.compare_head_gen_leq_with kind kind leq_universe leq_universes leq_sorts (eq_existential eq_constr')
             eq_constr' leq_constr' nargs m n
         and leq_constr' nargs m n = m == n || compare_leq nargs m n in
         compare_leq nargs m n
       else
-        Constr.compare_head_gen_with kind kind eq_universes eq_sorts (eq_existential eq_constr') eq_constr' nargs m n
+        Constr.compare_head_gen_with kind kind eq_universe eq_universes eq_sorts (eq_existential eq_constr') eq_constr' nargs m n
     in
     if res then Some !cstrs else None
 
@@ -666,7 +686,7 @@ let eq_constr_universes env sigma ?nargs m n =
 let leq_constr_universes env sigma ?nargs m n =
   test_constr_universes env sigma true ?nargs m n
 
-let compare_head_gen_proj env sigma equ eqs eqev eqc' nargs m n =
+let compare_head_gen_proj env sigma equ1 equ eqs eqev eqc' nargs m n =
   let kind c = kind sigma c in
   match kind m, kind n with
   | Proj (p, _, c), App (f, args)
@@ -678,13 +698,14 @@ let compare_head_gen_proj env sigma equ eqs eqev eqc' nargs m n =
             eqc' 0 c args.(npars)
           else false
       | _ -> false)
-  | _ -> Constr.compare_head_gen_with kind kind equ eqs eqev eqc' nargs m n
+  | _ -> Constr.compare_head_gen_with kind kind equ1 equ eqs eqev eqc' nargs m n
 
 let eq_constr_universes_proj env sigma m n =
   let open UnivProblem in
   if m == n then Some Set.empty
   else
     let cstrs = ref Set.empty in
+    let eq_univ l l' = eq_universe env sigma cstrs Conversion.CONV l l' in
     let eq_universes ref l l' = eq_universes env sigma cstrs Conversion.CONV ref l l' in
     let eq_sorts s1 s2 =
       let s1 = ESorts.kind sigma s1 in
@@ -697,7 +718,7 @@ let eq_constr_universes_proj env sigma m n =
     in
     let eq_existential eq e1 e2 = eq_existential sigma (eq 0) e1 e2 in
     let rec eq_constr' nargs m n =
-      m == n || compare_head_gen_proj env sigma eq_universes eq_sorts (eq_existential eq_constr') eq_constr' nargs m n
+      m == n || compare_head_gen_proj env sigma eq_univ eq_universes eq_sorts (eq_existential eq_constr') eq_constr' nargs m n
     in
     let res = eq_constr' 0 m n in
     if res then Some !cstrs else None
@@ -705,6 +726,16 @@ let eq_constr_universes_proj env sigma m n =
 let add_universes_of_instance sigma (qs,us) u =
   let u = EInstance.kind sigma u in
   let qs', us' = UVars.Instance.levels u in
+  let qs = Sorts.Quality.(Set.fold (fun q qs -> match q with
+      | QVar q -> Sorts.QVar.Set.add q qs
+      | QConstant _ -> qs)
+      qs' qs)
+  in
+  qs, Univ.Level.Set.union us us'
+
+let add_universes_of_qualuniv sigma (qs,us) u =
+  let u = EQualUniv.kind sigma u in
+  let qs', us' = UVars.QualUniv.levels u in
   let qs = Sorts.Quality.(Set.fold (fun q qs -> match q with
       | QVar q -> Sorts.QVar.Set.add q qs
       | QConstant _ -> qs)
@@ -731,8 +762,7 @@ let fold_constr_relevance sigma f acc c =
   | Prod (na,_,_) | Lambda (na,_,_) | LetIn (na,_,_,_) ->
     fold_annot_relevance f acc na
 
-  | Case (_,_u,_params,(ret,r),_iv,_v,brs) ->
-    let acc = f acc r in
+  | Case (_,_u,_params,(ret,_r),_iv,_v,brs) ->
     let acc = fold_case_under_context_relevance f acc ret in
     let acc = CArray.fold_left (fold_case_under_context_relevance f) acc brs in
     acc
@@ -768,8 +798,9 @@ let universes_of_constr sigma c =
     | Array (u,_,_,_) ->
       let s = add_universes_of_instance sigma s u in
       fold sigma aux s c
-    | Case (_,u,_,_,_,_,_) ->
+    | Case (_,u,_,(_ret, r),_,_,_) ->
       let s = add_universes_of_instance sigma s u in
+      let s = add_universes_of_qualuniv sigma s r in
       fold sigma aux s c
     | _ -> fold sigma aux s c
   in aux (Sorts.QVar.Set.empty,Level.Set.empty) c
@@ -1068,6 +1099,7 @@ module Unsafe =
 struct
 let to_sorts = ESorts.unsafe_to_sorts
 let to_instance = EInstance.unsafe_to_instance
+let to_qualuniv = EQualUniv.unsafe_to_qualuniv
 let to_constr = unsafe_to_constr
 let to_constr_array = unsafe_to_constr_array
 let to_rel_decl = unsafe_to_rel_decl

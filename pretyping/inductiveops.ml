@@ -455,7 +455,7 @@ let make_case_or_project env sigma indt ci pred c branches =
   let projs = get_projections env ind in
   match projs with
   | None ->
-     let invert = make_case_invert env indt ~case_relevance:(snd pred) ci in
+     let invert = make_case_invert env indt ~case_relevance:(EQualUniv.relevance sigma (snd pred)) ci in
      mkCase (EConstr.contract_case env sigma (ci, pred, invert, c, branches))
   | Some ps -> make_project env sigma ind (fst pred) c branches ps
 

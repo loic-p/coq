@@ -63,7 +63,6 @@ let infer_assumption env t ty =
 
 type ('constr,'types) bad_relevance =
 | BadRelevanceBinder of Sorts.relevance * ('constr,'types) Context.Rel.Declaration.pt
-| BadRelevanceCase of Sorts.relevance * 'constr
 
 let warn_bad_relevance_name = "bad-relevance"
 
@@ -73,20 +72,12 @@ let bad_relevance_warning =
 let bad_relevance_msg = CWarnings.create_msg bad_relevance_warning ()
 
 let default_print_bad_relevance = function
-  | BadRelevanceCase _ -> Pp.str "Bad relevance in case annotation."
   | BadRelevanceBinder (_, na) ->
     Pp.(str "Bad relevance for binder " ++ Name.print (RelDecl.get_name na) ++ str ".")
 
 (* used eg in the checker *)
 let () = CWarnings.register_printer bad_relevance_msg
     (fun (_env,b) -> default_print_bad_relevance b)
-
-let warn_bad_relevance_case ?loc env rlv case =
-  match CWarnings.warning_status bad_relevance_warning with
-| CWarnings.Disabled | CWarnings.Enabled ->
-  CWarnings.warn bad_relevance_msg ?loc (env, BadRelevanceCase (rlv, mkCase case))
-| CWarnings.AsError ->
-  error_bad_case_relevance env rlv case
 
 let warn_bad_relevance_binder ?loc env rlv bnd =
   match CWarnings.warning_status bad_relevance_warning with
@@ -523,31 +514,26 @@ let type_case_scrutinee env (mib, _mip) (u', largs) u pms (pctx, p) c =
   let subst = Vars.subst_of_rel_context_instance_list pctx (realargs @ [c]) in
   Vars.substl subst p
 
-let type_of_case env (mib, mip as specif) ci u pms (pctx, pnas, p, rp, pt) iv c ct lf lft =
+let type_of_case env (mib, mip as specif) ci u pms (pctx, p, rp, pt) iv c ct _lf lft =
   let ((ind, u'), largs) =
     try find_rectype env ct
     with Not_found -> error_case_not_inductive env (make_judge c ct) in
   (* Various well-formedness conditions *)
   let () = if Inductive.is_private specif then error_case_on_private_ind env ind in
-  let sp = match destSort (Reduction.whd_all (push_rel_context pctx env) pt) with
+  let env' = push_rel_context pctx env in
+  let sp = match destSort (Reduction.whd_all env' pt) with
   | sp -> sp
   | exception DestKO ->
     error_elim_arity env (ind, u') c None
   in
-  let rp =
-    let expected = Sorts.relevance_of_sort sp in
-    if Sorts.relevance_equal rp expected then rp
-    else
-      let () = warn_bad_relevance_case env expected (ci, u, pms, ((pnas, p), rp), iv, c, lf) in
-      expected
-  in
+  check_cast env p (mkSort sp) DEFAULTcast (Constr.mkSort (UVars.QualUniv.to_sort rp));
   let () = check_case_info env (ind, u') ci in
   let () =
     let is_inversion = match iv with
       | NoInvert -> false
       | CaseInvert _ -> true (* contents already checked *)
     in
-    if not (is_inversion = should_invert_case env rp ci)
+    if not (is_inversion = should_invert_case env (UVars.QualUniv.relevance rp) ci)
     then error_bad_invert env
   in
   let () = if not (is_allowed_elimination (specif,u) sp) then begin
@@ -779,7 +765,7 @@ let rec execute env cstr =
           if br == br' then b else (nas, br')
         in
         let lf' = Array.Smart.map_i build_one_branch lf in
-        let rp', t = type_of_case env (mib, mip) ci u pms' (pctx, fst p, p', rp, pt) iv' c' ct lf' lft in
+        let rp', t = type_of_case env (mib, mip) ci u pms' (pctx, p', rp, pt) iv' c' ct lf' lft in
         let eqbr (_, br1) (_, br2) = br1 == br2 in
         let cstr = if rp == rp' && pms == pms' && c == c' && snd p == p' && iv == iv' && Array.equal eqbr lf lf' then cstr
           else mkCase (ci, u, pms', ((fst p, p'), rp'), iv', c', lf')

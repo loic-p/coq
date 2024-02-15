@@ -139,6 +139,31 @@ let fresh_sort_in_family = function
     let u = fresh_level () in
       Sorts.mkType_of_level u, ((QVar.Set.empty,Level.Set.singleton u),Constraints.empty)
 
+let fresh_qualuniv_of_family = function
+  | InSProp -> QualUniv.sprop, empty_sort_context
+  | InProp -> QualUniv.prop, empty_sort_context
+  | InSet -> QualUniv.set, empty_sort_context
+  | InType ->
+      let u = fresh_level () in
+      QualUniv.mkType u, ((QVar.Set.empty, Level.Set.singleton u), Constraints.empty)
+  | InQSort -> CErrors.anomaly (Pp.str"Requested qualuniv of QSort with no quality")
+
+let fresh_qualuniv_of_sort = function
+| SProp -> QualUniv.sprop, empty_sort_context
+| Prop -> QualUniv.prop, empty_sort_context
+| Set -> QualUniv.set, empty_sort_context
+| Type _ ->
+    let u = fresh_level () in
+    QualUniv.mkType u, ((QVar.Set.empty, Level.Set.singleton u), Constraints.empty)
+| QSort (q, _) ->
+    let u = fresh_level () in
+    QualUniv.mkQSort q u, ((QVar.Set.empty, Level.Set.singleton u), Constraints.empty)
+
+let fresh_qualuniv () =
+  let q = new_sort_global ()
+  and u = fresh_level () in
+  QualUniv.mkQSort q u, ((QVar.Set.singleton q, Level.Set.singleton u), Constraints.empty)
+
 let new_global_univ () =
   let u = fresh_level () in
   (Univ.Universe.make u, ContextSet.singleton u)

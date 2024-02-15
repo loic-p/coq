@@ -407,10 +407,10 @@ let expand_arity (mib, mip) (ind, u) params nas =
   let realdecls = LocalAssum (na, self) :: realdecls in
   instantiate_context u params nas realdecls
 
-type ('constr,'types) pexpanded_case =
-  (case_info * ('constr * Sorts.relevance) * 'constr pcase_invert * 'constr * 'constr array)
+type ('constr, 'types, 'qualuniv) pexpanded_case =
+  (case_info * ('constr * 'qualuniv) * 'constr pcase_invert * 'constr * 'constr array)
 
-type expanded_case = (constr,types) pexpanded_case
+type expanded_case = (constr, types, UVars.QualUniv.t) pexpanded_case
 
 let expand_case_specif mib (ci, u, params, (p,rp), iv, c, br) =
   (* Γ ⊢ c : I@{u} params args *)

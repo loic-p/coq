@@ -2,9 +2,11 @@
 ;
 ; If we don't pack checker we will have a problem here due to
 ; duplicate module names in the whole build.
+
 (library
  (name coq_checklib)
  (synopsis "Coq's Standalone Proof Checker")
+ (public_name coq-core.checker)
  (modules :standard \ coqchk votour)
  (wrapped true)
  (libraries coq-core.boot coq-core.kernel))
@@ -26,4 +28,3 @@
  (modules votour)
  (flags :standard -open Coq_checklib)
  (libraries coq_checklib))
-

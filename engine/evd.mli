@@ -664,6 +664,7 @@ val make_nonalgebraic_variable : evar_map -> Univ.Level.t -> evar_map
 val is_flexible_level : evar_map -> Univ.Level.t -> bool
 
 val normalize_universe_instance : evar_map -> UVars.Instance.t -> UVars.Instance.t
+val normalize_qualuniv : evar_map -> UVars.QualUniv.t -> UVars.QualUniv.t
 
 val set_leq_sort : env -> evar_map -> esorts -> esorts -> evar_map
 val set_eq_sort : env -> evar_map -> esorts -> esorts -> evar_map
@@ -723,6 +724,10 @@ val update_sigma_univs : UGraph.t -> evar_map -> evar_map
 
 val fresh_sort_in_family : ?loc:Loc.t -> ?rigid:rigid
   -> evar_map -> Sorts.family -> evar_map * esorts
+val fresh_qualuniv_of_family : ?loc:Loc.t -> ?rigid:rigid
+  -> evar_map -> Sorts.family -> evar_map * UVars.QualUniv.t
+val fresh_qualuniv_of_sort : ?loc:Loc.t -> ?rigid:rigid
+  -> evar_map -> esorts -> evar_map * UVars.QualUniv.t
 val fresh_constant_instance : ?loc:Loc.t -> ?rigid:rigid
   -> env -> evar_map -> Constant.t -> evar_map * pconstant
 val fresh_inductive_instance : ?loc:Loc.t -> ?rigid:rigid
@@ -734,6 +739,11 @@ val fresh_array_instance : ?loc:Loc.t -> ?rigid:rigid
 
 val fresh_global : ?loc:Loc.t -> ?rigid:rigid -> ?names:UVars.Instance.t -> env ->
   evar_map -> GlobRef.t -> evar_map * econstr
+
+val fresh_leq_qualuniv_of_sort : ?loc:Loc.t -> ?rigid:rigid -> ?qu:UVars.QualUniv.t
+  -> env -> evar_map -> esorts -> evar_map * UVars.QualUniv.t
+val fresh_geq_qualuniv_of_sort : ?loc:Loc.t -> ?rigid:rigid -> ?qu:UVars.QualUniv.t
+-> env -> evar_map -> esorts -> evar_map * UVars.QualUniv.t
 
 (********************************************************************)
 (* constr with holes and pending resolution of classes, conversion  *)
@@ -777,10 +787,24 @@ module MiniEConstr : sig
     val unsafe_to_instance : t -> UVars.Instance.t
   end
 
+  module EQualUniv : sig
+    type t
+    val make : UVars.QualUniv.t -> t
+    val kind : evar_map -> t -> UVars.QualUniv.t
+    val unsafe_to_qualuniv : t -> UVars.QualUniv.t
+    val unsafe_eq : (t, UVars.QualUniv.t) eq
+    val quality : evar_map -> t -> Sorts.Quality.t
+    val family : evar_map -> t -> Sorts.family
+    val relevance : evar_map -> t -> Sorts.relevance
+    val univ : evar_map -> t -> Univ.Level.t
+    val to_sort : evar_map -> t -> esorts
+    val to_instance : evar_map -> t -> UVars.Instance.t
+  end
+
   type t = econstr
 
-  val kind : evar_map -> t -> (t, t, ESorts.t, EInstance.t) Constr.kind_of_term
-  val kind_upto : evar_map -> constr -> (constr, types, Sorts.t, UVars.Instance.t) Constr.kind_of_term
+  val kind : evar_map -> t -> (t, t, ESorts.t, EInstance.t, EQualUniv.t) Constr.kind_of_term
+  val kind_upto : evar_map -> constr -> (constr, types, Sorts.t, UVars.Instance.t, UVars.QualUniv.t) Constr.kind_of_term
 
   val whd_evar : evar_map -> t -> t
 
@@ -788,7 +812,7 @@ module MiniEConstr : sig
 
   val replace_vars : evar_map -> (Id.t * t) list -> t -> t
 
-  val of_kind : (t, t, ESorts.t, EInstance.t) Constr.kind_of_term -> t
+  val of_kind : (t, t, ESorts.t, EInstance.t, EQualUniv.t) Constr.kind_of_term -> t
 
   val of_constr : Constr.t -> t
   val of_constr_array : Constr.t array -> t array

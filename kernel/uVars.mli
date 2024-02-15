@@ -80,6 +80,39 @@ sig
 
 end
 
+module QualUniv :
+sig
+  type t
+  (** Represents a pair of a sort quality and
+    an argument universe for match return annotation. *)
+
+  val make : Quality.t -> Level.t -> t
+
+  val sprop : t
+  val prop : t
+  val set : t
+  val mkType : Univ.Level.t -> t
+  val mkQSort : Sorts.QVar.t -> Univ.Level.t -> t
+
+  val to_quality_level : t -> Quality.t * Level.t
+  val quality : t -> Quality.t
+  val family : t -> Sorts.family
+  val relevance : t -> Sorts.relevance
+  val univ : t -> Level.t
+  val to_sort : t -> Sorts.t
+  val to_instance : t -> Instance.t
+
+  val equal : t -> t -> bool
+  val hash : t -> int
+  val hcons : t -> t
+  val share : t -> t * int
+
+  val subst_fn : (Sorts.QVar.t -> Quality.t) * (Level.t -> Level.t) -> t -> t
+
+  val levels : t -> Quality.Set.t * Level.Set.t
+  val pr : (Sorts.QVar.t -> Pp.t) -> (Univ.Level.t -> Pp.t) -> t -> Pp.t
+end
+
 val eq_sizes : int * int -> int * int -> bool
 (** Convenient function to compare the result of Instance.length, UContext.size etc *)
 
@@ -210,6 +243,8 @@ val subst_sort_level_quality : sort_level_subst -> Sorts.Quality.t -> Sorts.Qual
 
 val subst_sort_level_sort : sort_level_subst -> Sorts.t -> Sorts.t
 
+val subst_sort_level_qualuniv : sort_level_subst -> QualUniv.t -> QualUniv.t
+
 val subst_sort_level_relevance : sort_level_subst -> Sorts.relevance -> Sorts.relevance
 
 (** Substitution of instances *)
@@ -217,6 +252,7 @@ val subst_instance_instance : Instance.t -> Instance.t -> Instance.t
 val subst_instance_universe : Instance.t -> Universe.t -> Universe.t
 val subst_instance_quality : Instance.t -> Sorts.Quality.t -> Sorts.Quality.t
 val subst_instance_sort : Instance.t -> Sorts.t -> Sorts.t
+val subst_instance_qualuniv : Instance.t -> QualUniv.t -> QualUniv.t
 val subst_instance_relevance : Instance.t -> Sorts.relevance -> Sorts.relevance
 
 val make_instance_subst : Instance.t -> sort_level_subst

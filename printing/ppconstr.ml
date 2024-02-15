@@ -259,6 +259,14 @@ let tag_var = tag Tag.variable
   let pr_universe_instance l =
     pr_opt_no_spc (pr_univ_annot pr_inside_universe_instance) l
 
+  let pr_qualuniv : qualuniv_expr -> Pp.t =
+    pr_univ_annot (fun (q, u) ->
+    match q with
+    | None -> pr_univ_level_expr u
+    | Some q ->  pr_quality_expr q ++ spc() ++ str "|" ++ spc () ++ pr_univ_level_expr u
+    )
+
+
   let pr_reference qid =
     if qualid_is_ident qid then tag_var (pr_id @@ qualid_basename qid)
     else pr_qualid qid
@@ -561,9 +569,9 @@ let tag_var = tag Tag.variable
   let pr_case_type pr po =
     match po with
       | None -> mt ()
-      | Some { CAst.v = CHole h } when is_anonymous_hole h -> mt()
-      | Some p ->
-        spc() ++ hov 2 (keyword "return" ++ pr_sep_com spc (pr no_after lsimpleconstr) p)
+      | Some ({ CAst.v = CHole h }, None) when is_anonymous_hole h -> mt()
+      | Some (p, qu) ->
+        spc() ++ hov 2 (keyword "return" ++ pr_opt pr_qualuniv qu ++ pr_sep_com spc (pr no_after lsimpleconstr) p)
 
   let pr_simple_return_type pr na po =
     (match na with

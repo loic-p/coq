@@ -325,7 +325,9 @@ and nf_atom_type env sigma atom =
         let nas = List.rev_map get_annot realdecls @ [nameR (Id.of_string "c")] in
         expand_arity (mib, mip) (ind, u) params (Array.of_list nas)
       in
-      let p, relevance = nf_predicate env sigma ind mip params p pctx in
+      let p, s = nf_predicate env sigma ind mip params p pctx in
+      let sigma, qualuniv = Evd.fresh_geq_qualuniv_of_sort ~rigid:Evd.univ_flexible env sigma s in
+      let relevance = UVars.QualUniv.relevance qualuniv in
       (* Calcul du type des branches *)
       let btypes = build_branches_type env sigma mib mip (ind, u) params (pctx, p) in
       (* calcul des branches *)
@@ -343,7 +345,7 @@ and nf_atom_type env sigma atom =
           CaseInvert {indices=realargs}
         else NoInvert
       in
-      mkCase (ci, u, params, (p,relevance), iv, a, branchs), tcase
+      mkCase (ci, u, params, (p, qualuniv), iv, a, branchs), tcase
   | Afix(tt,ft,rp,s) ->
       let tt = Array.map (fun t -> nf_type_sort env sigma t) tt in
       let tt = Array.map fst tt and rt = Array.map snd tt in
@@ -390,8 +392,8 @@ and nf_predicate env sigma ind mip params v pctx =
   let (_, v) = List.fold_right fold pctx (nb_rel env, v) in
   let env = push_rel_context pctx env in
   let body = nf_type env sigma v in
-  let rel = Retyping.relevance_of_type env sigma (EConstr.of_constr body) in
-  body, rel
+  let s = Retyping.get_sort_of env sigma (EConstr.of_constr body) in
+  body, s
 
 and nf_evar env sigma evk args =
   let evi = try Evd.find_undefined sigma evk with Not_found -> assert false in

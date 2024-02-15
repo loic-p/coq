@@ -793,13 +793,13 @@ type case_analysis =
 | RealCase of case_node
 | PrimitiveEta of EConstr.t array
 
-let build_case_analysis env sigma (ind, u) params pred indices indarg dep knd =
+let build_case_analysis env sigma (ind, u) params pred indices indarg dep qualuniv =
   let open Inductiveops in
   let open Context.Rel.Declaration in
   (* Assumes that the arguments do not contain free rels *)
   let indf = make_ind_family ((ind, EConstr.Unsafe.to_instance u), Array.map_to_list EConstr.Unsafe.to_constr params) in
   let projs = get_projections env ind in
-  let relevance = Sorts.relevance_of_sort knd in
+  let relevance = EQualUniv.relevance sigma qualuniv in
 
   let pnas, deparsign =
     let arsign = get_arity env indf in
@@ -838,7 +838,7 @@ let build_case_analysis env sigma (ind, u) params pred indices indarg dep knd =
       if Typeops.should_invert_case env relevance ci then CaseInvert { indices = indices }
       else NoInvert
     in
-    RealCase (ci, u, params, ((pnas, pbody), relevance), iv, indarg)
+    RealCase (ci, u, params, ((pnas, pbody), qualuniv), iv, indarg)
   | Some ps ->
     let args = Array.map (fun (p,r) ->
         let r = UVars.subst_instance_relevance (Unsafe.to_instance u) r in
@@ -859,11 +859,13 @@ let case_pf ?(with_evars=false) ~dep (indarg, typ) =
   let sigma, _ = Typing.checked_appvect env sigma hd args in
   let ind, u = destInd sigma hd in
   let u0 = EInstance.kind sigma u in
-  let s = ESorts.kind sigma @@ Retyping.get_sort_of env sigma concl in
+  let s = Retyping.get_sort_of env sigma concl in
+  let sigma, qualuniv = Evd.fresh_geq_qualuniv_of_sort ~rigid:univ_flexible env sigma s in
+  let qualuniv = EQualUniv.make qualuniv in
   let (mib, mip) = Inductive.lookup_mind_specif env ind in
   let params, indices = Array.chop mib.mind_nparams args in
 
-  let () = Indrec.check_valid_elimination env (ind, u0) ~dep (Sorts.family s) in
+  let () = Indrec.check_valid_elimination env (ind, u0) ~dep (EQualUniv.family sigma qualuniv) in
 
   let indf =
     let params = EConstr.Unsafe.to_constr_array params in
@@ -871,7 +873,7 @@ let case_pf ?(with_evars=false) ~dep (indarg, typ) =
   in
 
   (* Extract the return clause using unification with the conclusion *)
-  let typP = Inductiveops.make_arity env sigma dep indf (ESorts.make s) in
+  let typP = Inductiveops.make_arity env sigma dep indf s in
   let mvP = new_meta () in
   let sigma = meta_declare mvP typP sigma in
   let depargs = Array.append indices [|indarg|] in
@@ -898,7 +900,7 @@ let case_pf ?(with_evars=false) ~dep (indarg, typ) =
   in
 
   (* Build the case node proper *)
-  let body = build_case_analysis env sigma (ind, u) params pred indices indarg dep s in
+  let body = build_case_analysis env sigma (ind, u) params pred indices indarg dep qualuniv in
 
   (* After an apply, all the subgoals including those dependent shelved ones are in
     the hands of the user and resolution won't be called implicitely on them. *)

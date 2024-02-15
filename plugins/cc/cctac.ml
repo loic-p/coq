@@ -252,7 +252,10 @@ let fresh_id env id =
 
 let build_projection env sigma intype (cstr : pconstructor) special default =
   let ci = (snd (fst cstr)) in
-  let body=Equality.build_selector env sigma ci (mkRel 1) intype special default in
+  let typ = Retyping.get_type_of env sigma default in
+  let sort = Retyping.get_sort_of env sigma typ in
+  let sigma, qu = Evd.fresh_geq_qualuniv_of_sort env sigma sort in
+  let body=Equality.build_selector env sigma ci (mkRel 1) intype special default typ (EQualUniv.make qu) in
   let id = fresh_id env (Id.of_string "t") in
   sigma, mkLambda (make_annot (Name id) Sorts.Relevant, intype, body)
 

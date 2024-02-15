@@ -516,11 +516,11 @@ let rec pat_of_raw metas vars : _ -> pkind constr_pattern_r = DAst.with_loc_val 
       let ext,brs = pats_of_glob_branches loc metas vars ind brs
       in
       let pred = match p,indnames with
-        | Some p, Some {CAst.v=(_,nal)} ->
+        | Some (p,_), Some {CAst.v=(_,nal)} ->
           let nvars = na :: List.rev nal @ vars in
           Some (Array.rev_of_list (na :: List.rev nal), pat_of_raw metas nvars p)
         | None, _ -> None
-        | Some p, None ->
+        | Some (p,_), None ->
           match DAst.get p with
           | GHole _ -> None
           | _ ->
