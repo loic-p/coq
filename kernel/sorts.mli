@@ -65,6 +65,8 @@ module Quality : sig
 
   val var_index : t -> int option
 
+  val family : t -> family
+
   val equal : t -> t -> bool
 
   val compare : t -> t -> int
@@ -137,7 +139,12 @@ val sprop : t
 val set  : t
 val prop : t
 val type1  : t
+val mkType : Univ.Universe.t -> t
 val qsort : QVar.t -> Univ.Universe.t -> t
+
+val mkType_of_level : Univ.Level.t -> t
+
+val make : Quality.t -> Univ.Universe.t -> t
 
 val equal : t -> t -> bool
 val compare : t -> t -> int
@@ -156,8 +163,6 @@ val family_compare : family -> family -> int
 val family_equal : family -> family -> bool
 val family_leq : family -> family -> bool
 
-val sort_of_univ : Univ.Universe.t -> t
-
 val levels : t -> Univ.Level.Set.t
 
 val super : t -> t
@@ -175,6 +180,7 @@ val relevance_equal : relevance -> relevance -> bool
 
 val relevance_subst_fn : (QVar.t -> Quality.t) -> relevance -> relevance
 
+val relevance_of_quality : Quality.t -> relevance
 val relevance_of_sort : t -> relevance
 val relevance_of_sort_family : family -> relevance
 

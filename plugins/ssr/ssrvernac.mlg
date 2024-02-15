@@ -76,7 +76,7 @@ let aliasvar = function
   | _ -> None
 let mk_cnotype mp = aliasvar mp, None
 let mk_ctype mp t = aliasvar mp, Some t
-let mk_rtype t = Some t
+let mk_rtype qu t = Some (t, qu)
 let mk_dthen ?loc (mp, ct, rt) c = (CAst.make ?loc (mp, c)), ct, rt
 let mk_let ?loc rt ct mp c1 =
   CAst.make ?loc @@ CCases (LetPatternStyle, rt, ct, [CAst.make ?loc (mp, c1)])
@@ -86,7 +86,7 @@ let mk_pat c (na, t) = (c, na, t)
 
 GRAMMAR EXTEND Gram
   GLOBAL: binder_constr;
-  ssr_rtype: [[ "return"; t = term LEVEL "100" -> { mk_rtype t } ]];
+  ssr_rtype: [[ "return"; qu = qualuniv_annot; t = term LEVEL "100" -> { mk_rtype qu t } ]];
   ssr_mpat: [[ p = pattern -> { [[p]] } ]];
   ssr_dpat: [
     [ mp = ssr_mpat; "in"; t = pattern; rt = ssr_rtype -> { mp, mk_ctype mp t, rt }

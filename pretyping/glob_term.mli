@@ -56,6 +56,8 @@ type glob_level = glob_sort_name glob_sort_gen
 
 type glob_instance = glob_quality list * glob_level list
 
+type glob_qualuniv = glob_quality option * glob_level
+
 (** sort expressions *)
 type glob_sort = (glob_qvar option * (glob_sort_name * int) list) glob_sort_gen
 
@@ -105,10 +107,10 @@ type 'a glob_constr_r =
   | GLambda of Name.t * relevance_info * binding_kind *  'a glob_constr_g * 'a glob_constr_g
   | GProd   of Name.t * relevance_info * binding_kind * 'a glob_constr_g * 'a glob_constr_g
   | GLetIn  of Name.t * relevance_info * 'a glob_constr_g * 'a glob_constr_g option * 'a glob_constr_g
-  | GCases  of Constr.case_style * 'a glob_constr_g option * 'a tomatch_tuples_g * 'a cases_clauses_g
+  | GCases  of Constr.case_style * 'a predicate_return_g * 'a tomatch_tuples_g * 'a cases_clauses_g
       (** [GCases(style,r,tur,cc)] = "match 'tur' return 'r' with 'cc'" (in [MatchStyle]) *)
-  | GLetTuple of Name.t list * (Name.t * 'a glob_constr_g option) * 'a glob_constr_g * 'a glob_constr_g
-  | GIf   of 'a glob_constr_g * (Name.t * 'a glob_constr_g option) * 'a glob_constr_g * 'a glob_constr_g
+  | GLetTuple of Name.t list * (Name.t * 'a predicate_return_g) * 'a glob_constr_g * 'a glob_constr_g
+  | GIf   of 'a glob_constr_g * (Name.t * 'a predicate_return_g) * 'a glob_constr_g * 'a glob_constr_g
   | GRec  of glob_fix_kind * Id.t array * 'a glob_decl_g list array *
              'a glob_constr_g array * 'a glob_constr_g array
   | GSort of glob_sort
@@ -122,6 +124,8 @@ type 'a glob_constr_r =
 and 'a glob_constr_g = ('a glob_constr_r, 'a) DAst.t
 
 and 'a glob_decl_g = Name.t * relevance_info * binding_kind * 'a glob_constr_g option * 'a glob_constr_g
+
+and 'a predicate_return_g = ('a glob_constr_g * glob_qualuniv option) option
 
 and 'a predicate_pattern_g =
     Name.t * (inductive * Name.t list) CAst.t option
@@ -138,6 +142,7 @@ and 'a cases_clause_g = (Id.t list * 'a cases_pattern_g list * 'a glob_constr_g)
 and 'a cases_clauses_g = 'a cases_clause_g list
 
 type glob_constr = [ `any ] glob_constr_g
+type predicate_return = [ `any ] predicate_return_g
 type tomatch_tuple = [ `any ] tomatch_tuple_g
 type tomatch_tuples = [ `any ] tomatch_tuples_g
 type cases_clause = [ `any ] cases_clause_g

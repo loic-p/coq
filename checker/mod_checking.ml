@@ -92,14 +92,20 @@ let check_instance_mask udecl umask lincheck =
         lincheck
     | _ -> CErrors.anomaly Pp.(str "Bad univ mask length.")
 
+let check_qualuniv_mask (qmask, umask) lincheck =
+  let lincheck = Partial_subst.maybe_add_quality qmask () lincheck in
+  let lincheck = Partial_subst.maybe_add_univ umask () lincheck in
+  lincheck
+
 let rec get_holes_profiles env nargs ndecls lincheck el =
   List.fold_left (get_holes_profiles_elim env nargs ndecls) lincheck el
 
 and get_holes_profiles_elim env nargs ndecls lincheck = function
   | PEApp args -> Array.fold_left (get_holes_profiles_parg env nargs ndecls) lincheck args
-  | PECase (ind, u, ret, brs) ->
+  | PECase (ind, u, ret, qu, brs) ->
       let mib, mip = Inductive.lookup_mind_specif env ind in
       let lincheck = check_instance_mask mib.mind_universes u lincheck in
+      let lincheck = check_qualuniv_mask qu lincheck in
       let lincheck = get_holes_profiles_parg env (nargs + mip.mind_nrealargs +1) (ndecls + mip.mind_nrealdecls) lincheck ret in
       Array.fold_left3 (fun lincheck nargs_b ndecls_b -> get_holes_profiles_parg env (nargs + nargs_b) (ndecls + ndecls_b) lincheck) lincheck mip.mind_consnrealargs mip.mind_consnrealdecls brs
   | PEProj proj ->
@@ -108,7 +114,11 @@ and get_holes_profiles_elim env nargs ndecls lincheck = function
 
 and get_holes_profiles_parg env nargs ndecls lincheck = function
   | EHoleIgnored -> lincheck
-  | EHole i -> Partial_subst.add_term i nargs lincheck
+  | EHole i ->
+    begin match Partial_subst.get_term lincheck i with
+    | None -> Partial_subst.add_term i nargs lincheck
+    | Some depth' -> ignore depth'; lincheck
+    end
   | ERigid (h, el) ->
       let lincheck = get_holes_profiles_head env nargs ndecls lincheck h in
       get_holes_profiles env nargs ndecls lincheck el

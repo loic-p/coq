@@ -207,7 +207,7 @@ let subst_univs_sort subs = function
     Sorts.prop
   | (u,n) :: rest ->
     let fold accu (u, n) = Universe.sup accu (supern u n) in
-    Sorts.sort_of_univ (List.fold_left fold (supern u n) rest)
+    Sorts.mkType (List.fold_left fold (supern u n) rest)
 
 let instantiate_universes ctx (templ, ar) args =
   let subst = make_subst (ctx,templ.template_param_levels,args) in
@@ -383,10 +383,10 @@ let expand_arity = Environ.expand_arity
 
 let expand_branch_contexts = Environ.expand_branch_contexts
 
-type ('constr,'types) pexpanded_case =
-  (case_info * ('constr * Sorts.relevance) * 'constr pcase_invert * 'constr * 'constr array)
+type ('constr, 'types, 'qualuniv) pexpanded_case =
+  (case_info * ('constr * 'qualuniv) * 'constr pcase_invert * 'constr * 'constr array)
 
-type expanded_case = (constr,types) pexpanded_case
+type expanded_case = (constr, types, UVars.QualUniv.t) pexpanded_case
 
 let expand_case_specif mib (ci, u, params, (p,rp), iv, c, br) =
   (* Γ ⊢ c : I@{u} params args *)

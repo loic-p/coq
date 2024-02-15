@@ -43,7 +43,7 @@ let { Goptions.get = typeclasses_unique } =
 let interp_fields_evars env sigma ~ninds ~nparams impls_env nots l =
   let _, sigma, impls, newfs, _ =
     List.fold_left2
-      (fun (env, sigma, uimpls, params, impls_env) no d ->
+      (fun (env, sigma, uimpls, fields, impls_env) no d ->
          let sigma, (i, b, t), impl = match d with
            | Vernacexpr.AssumExpr({CAst.v=id},bl,t) ->
              (* Temporary compatibility with the type-classes heuristics *)
@@ -58,7 +58,9 @@ let interp_fields_evars env sigma ~ninds ~nparams impls_env nots l =
                ComDefinition.interp_definition ~program_mode:false env sigma impls_env bl None b t in
              let t = match t with Some t -> t | None -> Retyping.get_type_of env sigma b in
              sigma, (id, Some b, t), impl in
-          let r = Retyping.relevance_of_type env sigma t in
+         let s = Retyping.get_sort_of env sigma t in
+         let sigma, qu = Evd.fresh_geq_qualuniv_of_sort ~rigid:UState.univ_flexible env sigma s in
+         let r = UVars.QualUniv.relevance qu in
          let impls_env =
            match i with
            | Anonymous -> impls_env
@@ -70,16 +72,17 @@ let interp_fields_evars env sigma ~ninds ~nparams impls_env nots l =
            | Some b -> LocalDef (make_annot i r,b,t)
          in
          List.iter (Metasyntax.set_notation_for_interpretation env impls_env) no;
-         (EConstr.push_rel d env, sigma, impl :: uimpls, d::params, impls_env))
+         (EConstr.push_rel d env, sigma, impl :: uimpls, (d, qu)::fields, impls_env))
       (env, sigma, [], [], impls_env) nots l
   in
-  let _, _, sigma = Context.Rel.fold_outside ~init:(env,0,sigma) (fun f (env,k,sigma) ->
+  let _, _, sigma = List.fold_right (fun (f, _qu) (env,k,sigma) ->
       let sigma = RelDecl.fold_constr (fun c sigma ->
           ComInductive.maybe_unify_params_in env sigma ~ninds ~nparams ~binders:k c)
           f sigma
       in
       EConstr.push_rel f env, k+1, sigma)
       newfs
+      (env,0,sigma)
   in
   sigma, (impls, newfs)
 
@@ -122,7 +125,7 @@ module DataR = struct
   type t =
     { arity : Constr.t
     ; implfs : Impargs.manual_implicits list
-    ; fields : Constr.rel_declaration list
+    ; fields : (Constr.rel_declaration * UVars.QualUniv.t) list
     }
 end
 
@@ -186,7 +189,7 @@ type tc_result =
 let def_class_levels ~def env_ar sigma aritysorts ctors =
   let s, ctor = match aritysorts, ctors with
     | [s], [_,ctor] -> begin match ctor with
-        | [LocalAssum (_,t)] -> s, t
+        | [LocalAssum (_,t), _qu] -> s, t
         | _ -> assert false
       end
     | _ -> CErrors.user_err Pp.(str "Mutual definitional classes are not supported.")
@@ -240,7 +243,7 @@ let typecheck_params_and_fields def poly udecl ps (records : DataI.t list) : tc_
   let sigma, typs =
     if def then def_class_levels ~def env_ar sigma aritysorts data
     else (* each inductive has one constructor *)
-      let ctors = List.map (fun (_,newfs) -> [newfs]) data in
+      let ctors = List.map (fun (_,newfs) -> [List.map fst newfs]) data in
       ComInductive.Internal.inductive_levels env_ar sigma typs ctors
   in
   (* TODO: Have this use Declaredef.prepare_definition *)
@@ -255,13 +258,18 @@ let typecheck_params_and_fields def poly udecl ps (records : DataI.t list) : tc_
       c
     in
     let nf_rel r = Evarutil.nf_relevance sigma r in
+    let nf_qualuniv r =
+      let r = UState.nf_qualuniv (Evd.evar_universe_context sigma) r in
+      uvars := Univ.Level.Set.add (UVars.QualUniv.univ r) !uvars;
+      r
+    in
     let map_decl = function
     | LocalAssum (na, t) -> LocalAssum (UnivSubst.nf_binder_annot nf_rel na, nf t)
     | LocalDef (na, c, t) -> LocalDef (UnivSubst.nf_binder_annot nf_rel na, nf c, nf t)
     in
     let newps = List.map map_decl newps in
     let map (implfs, fields) typ =
-      let fields = List.map map_decl fields in
+      let fields = List.map (fun (d, qu) -> map_decl d, nf_qualuniv qu) fields in
       let arity = nf typ in
       { DataR.arity; implfs; fields }
     in
@@ -404,7 +412,7 @@ let declare_proj_coercion_instance ~flags ref from ~with_coercion =
    this could be refactored as noted above by moving to the
    higher-level declare constant API *)
 let build_named_proj ~primitive ~flags ~poly ~univs ~uinstance ~kind env paramdecls
-    paramargs decl impls fid subst nfi ti i indsp mib lifted_fields x rp =
+    paramargs decl qu impls fid subst nfi ti i indsp mib lifted_fields x rp =
   let ccl = subst_projection fid subst ti in
   let body, p_opt = match decl with
     | LocalDef (_,ci,_) -> subst_projection fid subst ci, None
@@ -422,7 +430,7 @@ let build_named_proj ~primitive ~flags ~poly ~univs ~uinstance ~kind env paramde
         let ci = Inductiveops.make_case_info env indsp LetStyle in
         (* Record projections are always NoInvert because they're at
            constant relevance *)
-        mkCase (Inductive.contract_case env (ci, (p, rci), NoInvert, mkRel 1, [|branch|])), None
+        mkCase (Inductive.contract_case env (ci, (p, qu), NoInvert, mkRel 1, [|branch|])), None
   in
   let proj = it_mkLambda_or_LetIn (mkLambda (x,rp,body)) paramdecls in
   let projtyp = it_mkProd_or_LetIn (mkProd (x,rp,ccl)) paramdecls in
@@ -458,7 +466,7 @@ let build_named_proj ~primitive ~flags ~poly ~univs ~uinstance ~kind env paramde
 (** [build_proj] will build a projection for each field, or skip if
    the field is anonymous, i.e. [_ : t] *)
 let build_proj env mib indsp primitive x rp lifted_fields ~poly paramdecls paramargs ~uinstance ~kind ~univs
-    (nfi,i,kinds,subst) flags decl impls =
+    (nfi,i,kinds,subst) flags decl qu impls =
   let fi = RelDecl.get_name decl in
   let ti = RelDecl.get_type decl in
   let (sp_proj,i,subst) =
@@ -467,7 +475,7 @@ let build_proj env mib indsp primitive x rp lifted_fields ~poly paramdecls param
       (None,i,NoProjection fi::subst)
     | Name fid ->
       try build_named_proj
-            ~primitive ~flags ~poly ~univs ~uinstance ~kind env paramdecls paramargs decl impls fid
+            ~primitive ~flags ~poly ~univs ~uinstance ~kind env paramdecls paramargs decl qu impls fid
             subst nfi ti i indsp mib lifted_fields x rp
       with NotDefinable why as exn ->
         let _, info = Exninfo.capture exn in
@@ -483,7 +491,7 @@ let build_proj env mib indsp primitive x rp lifted_fields ~poly paramdecls param
 
 (** [declare_projections] prepares the common context for all record
    projections and then calls [build_proj] for each one. *)
-let declare_projections indsp univs ?(kind=Decls.StructureComponent) inhabitant_id flags fieldimpls fields =
+let declare_projections indsp univs ?(kind=Decls.StructureComponent) inhabitant_id flags fieldimpls (fields, field_qus) =
   let env = Global.env() in
   let (mib,mip) = Global.lookup_inductive indsp in
   let poly = Declareops.inductive_is_polymorphic mib in
@@ -504,9 +512,9 @@ let declare_projections indsp univs ?(kind=Decls.StructureComponent) inhabitant_
     | FakeRecord | NotRecord -> false
   in
   let (_,_,canonical_projections,_) =
-    List.fold_left3
+    List.fold_left4
       (build_proj env mib indsp primitive x rp lifted_fields ~poly paramdecls paramargs ~uinstance ~kind ~univs)
-      (List.length fields,0,[],[]) flags (List.rev fields) (List.rev fieldimpls)
+      (List.length fields,0,[],[]) flags (List.rev fields) (List.rev field_qus) (List.rev fieldimpls)
   in
     List.rev canonical_projections
 
@@ -553,7 +561,7 @@ let rec add_bound_names_constr (names : Id.Set.t) (t : constr) : Id.Set.t =
 
 (** Get all names bound in any record field. *)
 let bound_names_rdata { DataR.fields; _ } : Id.Set.t =
-  let add_names names field = add_bound_names_constr names (RelDecl.get_type field) in
+  let add_names names field = add_bound_names_constr names (RelDecl.get_type (fst field)) in
   List.fold_left add_names Id.Set.empty fields
 
 (** Pick a variable name for a record, avoiding names bound in its fields. *)
@@ -775,11 +783,13 @@ let interp_structure_core ~cumulative finite ~univs ~variances ~primitive_proj i
     let nfields = List.length fields in
     let args = Context.Rel.instance_list mkRel nfields params in
     let ind = applist (mkRel (ntypes - i + nparams + nfields), args) in
-    let type_constructor = it_mkProd_or_LetIn ind fields in
+    let type_constructor = it_mkProd_or_LetIn ind (List.map fst fields) in
     { mind_entry_typename = id;
       mind_entry_arity = arity;
       mind_entry_consnames = [idbuild];
-      mind_entry_lc = [type_constructor] }
+      mind_entry_lc = [type_constructor];
+      mind_entry_proj_qus = Some (List.filter_map (function LocalAssum _, qu -> Some qu | LocalDef _, _ -> None) fields);
+    }
   in
   let blocks = List.mapi mk_block data in
   let ind_univs, global_univ_decls = match blocks, data with
@@ -799,7 +809,7 @@ let interp_structure_core ~cumulative finite ~univs ~variances ~primitive_proj i
   in
   let primitive =
     primitive_proj  &&
-    List.for_all (fun { Data.rdata = { DataR.fields; _ }; _ } -> List.exists is_local_assum fields) data
+    List.for_all (fun { Data.rdata = { DataR.fields; _ }; _ } -> List.exists (fst %> is_local_assum) fields) data
   in
   let globnames, global_univ_decls = match ind_univs with
   | Monomorphic_ind_entry -> (univs, ubinders), Some global_univ_decls
@@ -840,7 +850,7 @@ let declare_structure { Record_decl.mie; primitive_proj; impls; globnames; globa
   let map i { Data.is_coercion; proj_flags; rdata = { DataR.implfs; fields; _}; inhabitant_id; _ } =
     let rsp = (kn, i) in (* This is ind path of idstruc *)
     let cstr = (rsp, 1) in
-    let projections = declare_projections rsp (projunivs,ubinders) ~kind:projections_kind inhabitant_id proj_flags implfs fields in
+    let projections = declare_projections rsp (projunivs,ubinders) ~kind:projections_kind inhabitant_id proj_flags implfs (List.split fields) in
     let build = GlobRef.ConstructRef cstr in
     let () = if is_coercion then ComCoercion.try_add_new_coercion build ~local:false ~reversible:true in
     let struc = Structure.make (Global.env ()) rsp projections in
@@ -862,8 +872,8 @@ let declare_class_constant ~univs paramimpls params data =
   assert (not is_coercion);  (* should be ensured by caller *)
   let implfs = rdata.DataR.implfs in
   let field, binder, proj_name, proj_flags = match rdata.DataR.fields, proj_flags with
-    | [ LocalAssum ({binder_name=Name proj_name} as binder, field)
-      | LocalDef ({binder_name=Name proj_name} as binder, _, field) ], [proj_flags] ->
+    | [ LocalAssum ({binder_name=Name proj_name} as binder, field), _
+      | LocalDef ({binder_name=Name proj_name} as binder, _, field), _ ], [proj_flags] ->
       let binder = {binder with binder_name=Name inhabitant_id} in
       field, binder, proj_name, proj_flags
     | _ -> assert false in  (* should be ensured by caller *)
@@ -930,7 +940,7 @@ let declare_class_constant ~univs paramimpls params data =
   *)
 let declare_class ~univs params inds def data =
   let { Data.rdata } = get_class_params data in
-  let fields = rdata.DataR.fields in
+  let fields = List.map fst rdata.DataR.fields in
   let map ind =
     let map decl y = {
       meth_name = RelDecl.get_name decl;

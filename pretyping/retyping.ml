@@ -198,7 +198,7 @@ let retype ?(polyprop=true) sigma =
     | Sort s ->
       begin match ESorts.kind sigma s with
       | SProp | Prop | Set -> ESorts.type1
-      | Type u | QSort (_, u) -> ESorts.make (Sorts.sort_of_univ (Univ.Universe.super u))
+      | Type u | QSort (_, u) -> ESorts.make (Sorts.mkType (Univ.Universe.super u))
       end
     | Prod (name,t,c2) ->
       let dom = sort_of env t in
@@ -350,7 +350,7 @@ let relevance_of_term env sigma c =
       | Construct (c,u) ->
         let u = Unsafe.to_instance u in
         Relevanceops.relevance_of_constructor env (c,u)
-      | Case (_, _, _, (_, r), _, _, _) -> r
+      | Case (_, _, _, (_, r), _, _, _) -> EQualUniv.relevance sigma r
       | Fix ((_,i),(lna,_,_)) -> (lna.(i)).binder_relevance
       | CoFix (i,(lna,_,_)) -> (lna.(i)).binder_relevance
       | Proj (p, r, _) -> r

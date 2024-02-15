@@ -455,7 +455,7 @@ let make_case_or_project env sigma indt ci pred c branches =
   let projs = get_projections env ind in
   match projs with
   | None ->
-     let invert = make_case_invert env indt ~case_relevance:(snd pred) ci in
+     let invert = make_case_invert env indt ~case_relevance:(EQualUniv.relevance sigma (snd pred)) ci in
      mkCase (EConstr.contract_case env sigma (ci, pred, invert, c, branches))
   | Some ps -> make_project env sigma ind (fst pred) c branches ps
 
@@ -684,7 +684,7 @@ let rec instantiate_universes env evdref scl is = function
         else
           (* unconstrained sort: replace by fresh universe *)
           let evm, s = Evd.new_sort_variable Evd.univ_flexible !evdref in
-          let evm = Evd.set_leq_sort env evm s (EConstr.ESorts.make (Sorts.sort_of_univ u)) in
+          let evm = Evd.set_leq_sort env evm s (EConstr.ESorts.make (Sorts.mkType u)) in
             evdref := evm; s
       in
       let s = EConstr.ESorts.kind !evdref s in

@@ -152,6 +152,7 @@ val ppqvarset : Sorts.QVar.Set.t -> unit
 val ppuniverse_set : Univ.Level.Set.t -> unit
 val ppuniverse_instance : UVars.Instance.t -> unit
 val ppuniverse_ainstance : UVars.AInstance.t -> unit
+val ppqualuniv : UVars.QualUniv.t -> unit
 val ppuniverse_context : UVars.UContext.t -> unit
 val ppaucontext : UVars.AbstractContext.t -> unit
 val ppuniverse_context_set : Univ.ContextSet.t -> unit

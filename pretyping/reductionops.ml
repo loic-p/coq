@@ -182,9 +182,9 @@ sig
   type app_node
   val pr_app_node : (EConstr.t -> Pp.t) -> app_node -> Pp.t
 
-  type case_stk = case_info * EInstance.t * EConstr.t array * EConstr.t pcase_return * EConstr.t pcase_invert * EConstr.t pcase_branch array
+  type case_stk = case_info * EInstance.t * EConstr.t array * (EConstr.t, EQualUniv.t) pcase_return * EConstr.t pcase_invert * EConstr.t pcase_branch array
 
-  val mkCaseStk : case_info * EInstance.t * EConstr.t array * EConstr.t pcase_return * EConstr.t pcase_invert * EConstr.t pcase_branch array -> case_stk
+  val mkCaseStk : case_info * EInstance.t * EConstr.t array * (EConstr.t, EQualUniv.t) pcase_return * EConstr.t pcase_invert * EConstr.t pcase_branch array -> case_stk
 
   type member =
   | App of app_node
@@ -216,7 +216,7 @@ sig
   val zip : evar_map -> constr * t -> constr
   val check_native_args : CPrimitives.t -> t -> bool
   val get_next_primitive_args : CPrimitives.args_red -> t -> CPrimitives.args_red * (t * EConstr.t * t) option
-  val expand_case : env -> evar_map -> case_stk -> case_info * EInstance.t * constr array * ((rel_context * constr) * Sorts.relevance) * (rel_context * constr) array
+  val expand_case : env -> evar_map -> case_stk -> case_info * EInstance.t * constr array * ((rel_context * constr) * EQualUniv.t) * (rel_context * constr) array
 end =
 struct
   open EConstr
@@ -237,7 +237,7 @@ struct
 
 
   type case_stk =
-    case_info * EInstance.t * EConstr.t array * EConstr.t pcase_return * EConstr.t pcase_invert * EConstr.t pcase_branch array
+    case_info * EInstance.t * EConstr.t array * (EConstr.t, EQualUniv.t) pcase_return * EConstr.t pcase_invert * EConstr.t pcase_branch array
 
   let mkCaseStk x = x
 
@@ -691,6 +691,9 @@ let is_conv_ref = ref (fun _ _ _ _ -> assert false)
 let match_einstance sigma pu u psubst =
   UVars.Instance.pattern_match pu (EInstance.kind sigma u) psubst
 
+let match_equaluniv sigma pu u psubst =
+  UVars.QualUniv.pattern_match pu (EQualUniv.kind sigma u) psubst
+
 let match_sort ps s psubst =
   match Sorts.pattern_match ps s psubst with
   | Some psubst -> psubst
@@ -772,12 +775,13 @@ and apply_rule whrec env sigma ctx psubst es stk =
       let args, s = extract_n_stack [] np s in
       let psubst = List.fold_left2 (match_arg_pattern whrec env sigma ctx) psubst pargs args in
       apply_rule whrec env sigma ctx psubst e s
-  | Declarations.PECase (pind, pu, pret, pbrs) :: e, Stack.Case (ci, u, pms, p, iv, brs) :: s ->
+  | Declarations.PECase (pind, pu, pret, pqu, pbrs) :: e, Stack.Case (ci, u, pms, p, iv, brs) :: s ->
       if not @@ Ind.CanOrd.equal pind ci.ci_ind then raise PatternFailure;
       let dummy = mkProp in
       let psubst = match_einstance sigma pu u psubst in
-      let (_, _, _, ((ntys_ret, ret), _), _, _, brs) = EConstr.annotate_case env sigma (ci, u, pms, p, NoInvert, dummy, brs) in
+      let (_, _, _, ((ntys_ret, ret), qu), _, _, brs) = EConstr.annotate_case env sigma (ci, u, pms, p, NoInvert, dummy, brs) in
       let psubst = match_arg_pattern whrec env sigma (ntys_ret @ ctx) psubst pret ret in
+      let psubst = match_equaluniv sigma pqu qu psubst in
       let psubst = Array.fold_left2 (fun psubst pat (ctx', br) -> match_arg_pattern whrec env sigma (ctx' @ ctx) psubst pat br) psubst pbrs brs in
       apply_rule whrec env sigma ctx psubst e s
   | Declarations.PEProj proj :: e, Stack.Proj (proj', r) :: s ->

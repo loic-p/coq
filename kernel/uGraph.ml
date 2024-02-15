@@ -20,7 +20,7 @@ module G = AcyclicGraph.Make(struct
     let compare = Level.compare
 
     let raw_pr = Level.raw_pr
-  end) [@@inlined] (* without inline, +1% ish on HoTT, compcert. See jenkins 594 vs 596 *)
+  end)
 (* Do not include G to make it easier to control universe specific
    code (eg add_universe with a constraint vs G.add with no
    constraint) *)
@@ -101,7 +101,7 @@ let enforce_constraint cst g = match enforce_constraint0 cst g with
   if not (type_in_type g) then
     let (u, c, v) = cst in
     let e = lazy (G.get_explanation cst g.graph) in
-    let mk u = Sorts.sort_of_univ @@ Universe.make u in
+    let mk = Sorts.mkType_of_level in
     raise (UniverseInconsistency (c, mk u, mk v, Some (Path e)))
   else g
 | Some g -> g
@@ -151,7 +151,7 @@ let enforce_leq_alg u v g =
   | Inl x -> x
   | Inr ((u, c, v), g) ->
     let e = lazy (G.get_explanation (u, c, v) g.graph) in
-    let mk u = Sorts.sort_of_univ @@ Universe.make u in
+    let mk = Sorts.mkType_of_level in
     let e = UniverseInconsistency (c, mk u, mk v, Some (Path e)) in
     raise e
 
@@ -203,6 +203,13 @@ let check_eq_instances g t1 t2 =
   let qt2, ut2 = Instance.to_array t2 in
   CArray.equal Sorts.Quality.equal qt1 qt2
   && CArray.equal (check_eq_level g) ut1 ut2
+
+let check_eq_qualuniv g t1 t2 =
+  let qt1, ut1 = QualUniv.to_quality_level t1 in
+  let qt2, ut2 = QualUniv.to_quality_level t2 in
+  Sorts.Quality.equal qt1 qt2
+  && check_eq_level g ut1 ut2
+
 
 let domain g = G.domain g.graph
 let choose p g u = G.choose p g.graph u

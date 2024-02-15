@@ -896,7 +896,7 @@ let descend_then env sigma head dirn =
   let dirn_env = Environ.push_rel_context cstr.(dirn-1).cs_args env in
   (dirn_nlams,
    dirn_env,
-   (fun sigma dirnval (dfltval,resty) ->
+   (fun sigma dirnval (dfltval,resty, res_qualuniv) ->
       let deparsign = make_arity_signature env sigma true indf in
       let p =
         it_mkLambda_or_LetIn (lift (mip.mind_nrealargs+1) resty) deparsign in
@@ -908,9 +908,8 @@ let descend_then env sigma head dirn =
       let brl =
         List.map build_branch
           (List.interval 1 (Array.length mip.mind_consnames)) in
-      let rci = Sorts.Relevant in (* TODO relevance *)
       let ci = make_case_info env ind RegularStyle in
-      Inductiveops.make_case_or_project env sigma indt ci (p, rci) head (Array.of_list brl)))
+      Inductiveops.make_case_or_project env sigma indt ci (p, res_qualuniv) head (Array.of_list brl)))
 
 (* Now we need to construct the discriminator, given a discriminable
    position.  This boils down to:
@@ -929,7 +928,7 @@ let descend_then env sigma head dirn =
    constructs a case-split on [c] of type [ind], with the [dirn]-th
    branch giving [special], and all the rest giving [default]. *)
 
-let build_selector env sigma dirn c ind special default =
+let build_selector env sigma dirn c ind special default defaulttyp defaultqu =
   let IndType(indf,_) as indt =
     try find_rectype env sigma ind
     with Not_found ->
@@ -943,10 +942,9 @@ let build_selector env sigma dirn c ind special default =
                  dependent types.") in
   let (ind, _),_ = dest_ind_family indf in
   let () = check_privacy env ind in
-  let typ = Retyping.get_type_of env sigma default in
   let (mib,mip) = lookup_mind_specif env ind in
   let deparsign = make_arity_signature env sigma true indf in
-  let p = it_mkLambda_or_LetIn typ deparsign in
+  let p = it_mkLambda_or_LetIn defaulttyp deparsign in
   let cstrs = get_constructors env indf in
   let build_branch i =
     let endpt = if Int.equal i dirn then special else default in
@@ -954,9 +952,8 @@ let build_selector env sigma dirn c ind special default =
     it_mkLambda_or_LetIn endpt args in
   let brl =
     List.map build_branch(List.interval 1 (Array.length mip.mind_consnames)) in
-  let rci = Sorts.Relevant in (* TODO relevance *)
   let ci = make_case_info env ind RegularStyle in
-  let ans = Inductiveops.make_case_or_project env sigma indt ci (p, rci) c (Array.of_list brl) in
+  let ans = Inductiveops.make_case_or_project env sigma indt ci (p, defaultqu) c (Array.of_list brl) in
   ans
 
 let build_coq_False () = pf_constr_of_global (lib_ref "core.False.type")
@@ -966,7 +963,8 @@ let build_coq_I () = pf_constr_of_global (lib_ref "core.True.I")
 let rec build_discriminator env sigma true_0 false_0 dirn c = function
   | [] ->
       let ind = get_type_of env sigma c in
-      build_selector env sigma dirn c ind true_0 (fst false_0)
+      let false_0,false_ty,false_qu = false_0 in
+      build_selector env sigma dirn c ind true_0 false_0 false_ty false_qu
   | ((sp,cnum),argnum)::l ->
       let (cnum_nlams,cnum_env,kont) = descend_then env sigma c cnum in
       let newc = mkRel(cnum_nlams-argnum) in
@@ -1037,12 +1035,17 @@ let discr_positions env sigma { eq_data = (lbeq,(t,t1,t2)); eq_term = v; eq_evar
   build_coq_False () >>= fun false_0 ->
   let false_ty = Retyping.get_type_of env sigma false_0 in
   let false_kind = Retyping.get_sort_family_of env sigma false_0 in
+  let false_ty_sort = Retyping.get_sort_of env sigma false_ty in
+  (Proofview.tclEVARMAP >>= fun sigma ->
+  let (sigma, c) = Evd.fresh_geq_qualuniv_of_sort env sigma false_ty_sort in
+  Proofview.Unsafe.tclEVARS sigma <*> Proofview.tclUNIT (EQualUniv.make c)
+  ) >>= fun qualuniv ->
   let e = next_ident_away eq_baseid (vars_of_env env) in
   let e_env = push_named (Context.Named.Declaration.LocalAssum (make_annot e Sorts.Relevant,t)) env in
   let discriminator =
     try
       Proofview.tclUNIT
-        (build_discriminator e_env sigma true_0 (false_0,false_ty) dirn (mkVar e) cpath)
+        (build_discriminator e_env sigma true_0 (false_0,false_ty,qualuniv) dirn (mkVar e) cpath)
     with
       UserError _ as ex ->
       let _, info = Exninfo.capture ex in
@@ -1341,7 +1344,9 @@ let rec build_injrec env sigma dflt c = function
       let (cnum_nlams,cnum_env,kont) = descend_then env sigma c cnum in
       let newc = mkRel(cnum_nlams-argnum) in
       let sigma, (subval,tuplety,dfltval) = build_injrec cnum_env sigma dflt newc l in
-      let res = kont sigma subval (dfltval,tuplety) in
+      let sort = Retyping.get_sort_of env sigma tuplety in
+      let sigma, tuple_qualuniv = Evd.fresh_geq_qualuniv_of_sort env sigma sort in
+      let res = kont sigma subval (dfltval,tuplety, EQualUniv.make tuple_qualuniv) in
       sigma, (res, tuplety,dfltval)
     with
         UserError _ -> failwith "caught"

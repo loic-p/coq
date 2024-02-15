@@ -701,7 +701,7 @@ let lookup_projection p env =
   | PrimRecord infos ->
     let _,_,rs,typs = infos.(i) in
     let arg = Projection.arg p in
-    rs.(arg), typs.(arg)
+    UVars.QualUniv.relevance rs.(arg), typs.(arg)
 
 let get_projection env ind ~proj_arg =
   let mib = lookup_mind (fst ind) env in
@@ -955,6 +955,7 @@ sig
   val equal : env -> t -> t -> bool
   val compare : env -> t -> t -> int
   val hash : env -> t -> int
+  val canonize : env -> t -> t
 end
 
 module QConstant =
@@ -963,6 +964,7 @@ struct
   let equal _env c1 c2 = Constant.CanOrd.equal c1 c2
   let compare _env c1 c2 = Constant.CanOrd.compare c1 c2
   let hash _env c = Constant.CanOrd.hash c
+  let canonize _env c = Constant.canonize c
 end
 
 module QMutInd =
@@ -971,6 +973,7 @@ struct
   let equal _env c1 c2 = MutInd.CanOrd.equal c1 c2
   let compare _env c1 c2 = MutInd.CanOrd.compare c1 c2
   let hash _env c = MutInd.CanOrd.hash c
+  let canonize _env c = MutInd.canonize c
 end
 
 module QInd =
@@ -979,6 +982,7 @@ struct
   let equal _env c1 c2 = Ind.CanOrd.equal c1 c2
   let compare _env c1 c2 = Ind.CanOrd.compare c1 c2
   let hash _env c = Ind.CanOrd.hash c
+  let canonize _env c = Ind.canonize c
 end
 
 module QConstruct =
@@ -987,6 +991,7 @@ struct
   let equal _env c1 c2 = Construct.CanOrd.equal c1 c2
   let compare _env c1 c2 = Construct.CanOrd.compare c1 c2
   let hash _env c = Construct.CanOrd.hash c
+  let canonize _env c = Construct.canonize c
 end
 
 module QProjection =
@@ -995,12 +1000,14 @@ struct
   let equal _env c1 c2 = Projection.CanOrd.equal c1 c2
   let compare _env c1 c2 = Projection.CanOrd.compare c1 c2
   let hash _env c = Projection.CanOrd.hash c
+  let canonize _env c = Projection.canonize c
   module Repr =
   struct
     type t = Projection.Repr.t
     let equal _env c1 c2 = Projection.Repr.CanOrd.equal c1 c2
     let compare _env c1 c2 = Projection.Repr.CanOrd.compare c1 c2
     let hash _env c = Projection.Repr.CanOrd.hash c
+    let canonize _env c = Projection.Repr.canonize c
   end
 end
 
@@ -1010,4 +1017,5 @@ struct
   let equal _env c1 c2 = GlobRef.CanOrd.equal c1 c2
   let compare _env c1 c2 = GlobRef.CanOrd.compare c1 c2
   let hash _env c = GlobRef.CanOrd.hash c
+  let canonize _env c = GlobRef.canonize c
 end

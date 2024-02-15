@@ -220,7 +220,7 @@ let sort_info ?loc sigma q l = match l with
   let (sigma, u) = get_level sigma u n in
   let (sigma, u) = List.fold_left fold (sigma, u) us in
   let s = match q with
-    | None -> Sorts.sort_of_univ u
+    | None -> Sorts.mkType u
     | Some q -> Sorts.qsort q u
   in
   sigma, s
@@ -492,6 +492,17 @@ let instance ?loc evd (ql,ul) =
   in
   evd, Some (UVars.Instance.of_array (Array.rev_of_list ql', Array.rev_of_list ul'))
 
+let qualuniv ?loc evd (qo, u : glob_qualuniv) =
+  let evd, q' = Option.fold_left_map (glob_quality ?loc) evd qo in
+  let q' = Option.default Sorts.Quality.qtype q' in
+  let evd, u' = glob_level ?loc evd u in
+  evd, UVars.QualUniv.make q' u'
+
+let pretype_qualuniv ?loc env evd qu s =
+  let evd, qu = Option.fold_left_map (qualuniv ?loc) evd qu in
+  let evd, qu = Evd.fresh_geq_qualuniv_of_sort ?loc !!env evd ~rigid:univ_flexible ?qu s in
+  evd, EQualUniv.make qu
+
 let pretype_global ?loc rigid env evd gr us =
   let evd, instance =
     match us with
@@ -528,7 +539,7 @@ let pretype_ref ?loc sigma env ref us =
 let sort ?loc evd : glob_sort -> _ = function
   | UAnonymous {rigid} ->
     let evd, l = new_univ_level_variable ?loc rigid evd in
-    evd, ESorts.make (Sorts.sort_of_univ (Univ.Universe.make l))
+    evd, ESorts.make (Sorts.mkType_of_level l)
   | UNamed (q, l) ->
     let evd, s = sort_info ?loc evd q l in
     evd, ESorts.make s
@@ -581,9 +592,9 @@ type pretyper = {
   pretype_lambda : pretyper -> Name.t * binding_kind * glob_constr * glob_constr -> unsafe_judgment pretype_fun;
   pretype_prod : pretyper -> Name.t * binding_kind * glob_constr * glob_constr -> unsafe_judgment pretype_fun;
   pretype_letin : pretyper -> Name.t * glob_constr * glob_constr option * glob_constr -> unsafe_judgment pretype_fun;
-  pretype_cases : pretyper -> Constr.case_style * glob_constr option * tomatch_tuples * cases_clauses -> unsafe_judgment pretype_fun;
-  pretype_lettuple : pretyper -> Name.t list * (Name.t * glob_constr option) * glob_constr * glob_constr -> unsafe_judgment pretype_fun;
-  pretype_if : pretyper -> glob_constr * (Name.t * glob_constr option) * glob_constr * glob_constr -> unsafe_judgment pretype_fun;
+  pretype_cases : pretyper -> Constr.case_style * predicate_return * tomatch_tuples * cases_clauses -> unsafe_judgment pretype_fun;
+  pretype_lettuple : pretyper -> Name.t list * (Name.t * predicate_return) * glob_constr * glob_constr -> unsafe_judgment pretype_fun;
+  pretype_if : pretyper -> glob_constr * (Name.t * predicate_return) * glob_constr * glob_constr -> unsafe_judgment pretype_fun;
   pretype_rec : pretyper -> glob_fix_kind * Id.t array * glob_decl list array * glob_constr array * glob_constr array -> unsafe_judgment pretype_fun;
   pretype_sort : pretyper -> glob_sort -> unsafe_judgment pretype_fun;
   pretype_hole : pretyper -> Evar_kinds.glob_evar_kind -> unsafe_judgment pretype_fun;
@@ -1168,7 +1179,8 @@ struct
       if not record then
         let f = it_mkLambda_or_LetIn f fsign in
         let ci = make_case_info !!env (ind_of_ind_type indt) LetStyle in
-          mkCase (EConstr.contract_case !!env sigma (ci, (p,rci), make_case_invert !!env indt ~case_relevance:rci ci, cj.uj_val,[|f|]))
+          mkCase (EConstr.contract_case !!env sigma (ci, (p, rci),
+          make_case_invert !!env indt ~case_relevance:(EQualUniv.relevance sigma rci) ci, cj.uj_val,[|f|]))
       else it_mkLambda_or_LetIn f fsign
     in
     (* Make dependencies from arity signature impossible *)
@@ -1183,7 +1195,7 @@ struct
       let nar = List.length arsgn in
       let psign',env_p = push_rel_context ~hypnaming ~force_names:true sigma psign predenv in
           (match po with
-          | Some p ->
+          | Some (p, qu) ->
             let sigma, pj = pretype_type empty_valcon env_p sigma p in
             let ccl = nf_evar sigma pj.utj_val in
             let p = it_mkLambda_or_LetIn ccl psign' in
@@ -1193,11 +1205,10 @@ struct
             let lp = lift cs.cs_nargs p in
             let fty = hnf_lam_applist !!env sigma lp inst in
             let sigma, fj = pretype (mk_tycon fty) env_f sigma d in
-            let v =
-              let ind,_ = dest_ind_family indf in
-                let rci = Typing.check_allowed_sort !!env sigma ind cj.uj_val p in
-                obj indty rci p cj.uj_val fj.uj_val
-            in
+            let ind,_ = dest_ind_family indf in
+            let s = Typing.check_allowed_sort !!env sigma ind cj.uj_val p in
+            let sigma, qualuniv = pretype_qualuniv env sigma qu s in
+            let v = obj indty qualuniv p cj.uj_val fj.uj_val in
             sigma, { uj_val = v; uj_type = (substl (realargs@[cj.uj_val]) ccl) }
 
           | None ->
@@ -1212,15 +1223,16 @@ struct
                   cj.uj_val in
                  (* let ccl = refresh_universes ccl in *)
             let p = it_mkLambda_or_LetIn (lift (nar+1) ccl) psign' in
-            let v =
-              let ind,_ = dest_ind_family indf in
-                let rci = Typing.check_allowed_sort !!env sigma ind cj.uj_val p in
-                obj indty rci p cj.uj_val fj.uj_val
-            in sigma, { uj_val = v; uj_type = ccl })
+            let ind,_ = dest_ind_family indf in
+            let s = Typing.check_allowed_sort !!env sigma ind cj.uj_val p in
+            let sigma, qualuniv = pretype_qualuniv env sigma None s in
+            let v = obj indty qualuniv p cj.uj_val fj.uj_val in
+            sigma, { uj_val = v; uj_type = ccl })
 
   let pretype_cases self (sty, po, tml, eqns)  =
     fun ?loc ~flags tycon env sigma ->
     let pretype tycon env sigma c = eval_pretyper self ~flags tycon env sigma c in
+    let sigma, po = Option.fold_left_map (fun acc (a, b) -> let acc, b = (Option.fold_left_map (qualuniv ?loc)) acc b in acc, (a, b)) sigma po in
     Cases.compile_cases ?loc ~program_mode:flags.program_mode sty (pretype, sigma) tycon env (po,tml,eqns)
 
   let pretype_if self (c, (na, po), b1, b2) =
@@ -1251,19 +1263,19 @@ struct
       let vars = VarSet.variables (Global.env ()) in
       let hypnaming = if flags.program_mode then ProgramNaming vars else RenameExistingBut vars in
       let psign,env_p = push_rel_context ~hypnaming sigma psign predenv in
-      let sigma, pred, p = match po with
-        | Some p ->
+      let sigma, pred, p, qu = match po with
+        | Some (p, qu) ->
           let sigma, pj = eval_type_pretyper self ~flags empty_valcon env_p sigma p in
           let ccl = nf_evar sigma pj.utj_val in
           let pred = it_mkLambda_or_LetIn ccl psign in
           let typ = lift (- nar) (beta_applist sigma (pred,[cj.uj_val])) in
-          sigma, pred, typ
+          sigma, pred, typ, qu
         | None ->
           let sigma, p = match tycon with
             | Some ty -> sigma, ty
             | None -> new_type_evar env sigma ~src:(loc,Evar_kinds.CasesType false)
           in
-          sigma, it_mkLambda_or_LetIn (lift (nar+1) p) psign, p in
+          sigma, it_mkLambda_or_LetIn (lift (nar+1) p) psign, p, None in
       let pred = nf_evar sigma pred in
       let p = nf_evar sigma p in
       let f sigma cs b =
@@ -1280,14 +1292,16 @@ struct
         sigma, it_mkLambda_or_LetIn bj.uj_val cs_args in
       let sigma, b1 = f sigma cstrs.(0) b1 in
       let sigma, b2 = f sigma cstrs.(1) b2 in
-      let v =
+      let sigma, v =
         let ind,_ = dest_ind_family indf in
         let pred = nf_evar sigma pred in
-        let rci = Typing.check_allowed_sort !!env sigma ind cj.uj_val pred in
+        let s = Typing.check_allowed_sort !!env sigma ind cj.uj_val pred in
+        let sigma, qualuniv = pretype_qualuniv env sigma qu s in
         let ci = make_case_info !!env (fst ind) IfStyle in
+        sigma,
         mkCase (EConstr.contract_case !!env sigma
-                  (ci, (pred,rci),
-                   make_case_invert !!env indty ~case_relevance:rci ci, cj.uj_val,
+                  (ci, (pred, qualuniv),
+                   make_case_invert !!env indty ~case_relevance:(EQualUniv.relevance sigma qualuniv) ci, cj.uj_val,
                    [|b1;b2|]))
       in
       let cj = { uj_val = v; uj_type = p } in
@@ -1421,7 +1435,7 @@ let pretype_type self c ?loc ~flags valcon (env : GlobEnv.t) sigma = match DAst.
         (* we retype because it may be an evar which has been defined, resulting in a lower sort
            cf #18480 *)
         (Retyping.get_sort_of !!env sigma jty.utj_val)
-        (ESorts.make (Sorts.sort_of_univ (Univ.Universe.make u)))
+        (ESorts.make (Sorts.mkType (Univ.Universe.make u)))
     in
     let u = UVars.Instance.of_array ([||],[| u |]) in
     let ta = EConstr.of_constr @@ Typeops.type_of_array !!env u in

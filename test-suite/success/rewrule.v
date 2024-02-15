@@ -20,37 +20,37 @@ Eval cbn   in fun n n' => 2 + n ++ 3 + n'.
 Eval simpl in fun n n' => 2 + n ++ 3 + n'. (* Does not reduce *)
 
 (* Example with more pattern constructions and higher-order in patterns *)
-#[unfold_fix] Symbol raise : forall P: Type, P.
+#[unfold_fix,universes(polymorphic)] Symbol raise@{q|u|} : forall P: Type@{q|u}, P.
 
 Rewrite Rules raise_rew :=
-  raise (forall (x : ?A), ?P) ==> fun x => raise ?P
+  @{q|u+|+} |- raise@{q|u} (forall (x : ?A), ?P) ==> fun x => raise@{q|u} ?P
 
-| raise (?A * ?B) ==> (raise ?A, raise ?B)
+| @{|u+|+} |- raise@{Type|u} (?A * ?B) ==> (raise@{_|u} ?A, raise@{_|u} ?B)
 
-| raise unit ==> tt
+| @{|u+|+} |- raise@{_|u} unit ==> tt
 
-| match raise bool as b return ?P with
+| @{q|u+|+} |- match raise bool as b return@{q|u} ?P with
     true => _ | false => _
-  end ==> raise ?P@{b := raise bool}
+  end ==> raise@{q|u} ?P@{b := raise bool}
 
-| match raise nat as n return ?P with
+| @{q|u+|+} |- match raise nat as n return@{q|u} ?P with
     0 => ?p | S n => ?p'
-  end ==> raise ?P@{n := raise nat}
+  end ==> raise@{q|u} ?P@{n := raise nat}
 
-| match raise (@eq ?A ?a ?b) as e in _ = b return ?P with
+| @{q|u+|+} |- match raise (@eq ?A ?a ?b) as e in _ = b return@{q|u} ?P with
   | eq_refl => _
-  end ==> raise ?P@{b := _; e := raise (?a = ?b)}
+  end ==> raise@{q|u} ?P@{b := _; e := raise (?a = ?b)}
 
-| match raise (list ?A) as l return ?P with
+| @{q|u u'+|+} |- match raise@{_|u'} (list ?A) as l return@{q|u} ?P with
   | nil => _ | cons _ _ => _
-  end ==> raise ?P@{l := raise (list ?A)}
+  end ==> raise@{q|u} ?P@{l := raise@{_|u'} (list ?A)}
 
-| match raise False as e return ?P with
-  end ==> raise ?P@{e := raise False}
+| @{q|u+|+} |- match raise False as e return@{q|u} ?P with
+  end ==> raise@{q|u} ?P@{e := raise False}
 
-| match raise (?A + ?B) as e return ?P with
+| @{q|u u'+|+} |- match raise@{_|u'} (?A + ?B) as e return@{q|u} ?P with
   | inl _ => _ | inr _ => _
-  end ==> raise ?P@{e := raise (?A + ?B)}.
+  end ==> raise@{q|u} ?P@{e := raise@{_|u'} (?A + ?B)}.
 (* There is currently no way to write these rules without the universe inconcistency *)
 
 Eval simpl in match raise bool with true | false => 0 end. (* Does not reduce *)

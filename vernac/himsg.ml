@@ -839,19 +839,10 @@ let explain_bad_binder_relevance env sigma rlv decl =
     strbrk " but was expected to be " ++ pr_relevance sigma rlv ++
     spc () ++ str "(maybe a bugged tactic)."
 
-let explain_bad_case_relevance env sigma rlv case =
-  let (_, _, _, (_,badr), _, _, _) = EConstr.destCase sigma case in
-  strbrk "Pattern-matching" ++ spc () ++ pr_leconstr_env env sigma case ++
-    strbrk " has relevance mark set to " ++ pr_relevance sigma badr ++
-    strbrk " but was expected to be " ++ pr_relevance sigma rlv ++
-    spc () ++ str "(maybe a bugged tactic)."
-
 let explain_bad_relevance env sigma = function
-  | Typeops.BadRelevanceCase (r,c) -> explain_bad_case_relevance env sigma r c
-  | BadRelevanceBinder (r,d) -> explain_bad_binder_relevance env sigma r d
+  | Typeops.BadRelevanceBinder (r,d) -> explain_bad_binder_relevance env sigma r d
 
 let ecast_bad_relevance = let open Typeops in function
-  | BadRelevanceCase (r,c) -> BadRelevanceCase (r, EConstr.of_constr c)
   | BadRelevanceBinder (r,d) -> BadRelevanceBinder (r, RelDecl.map_constr_het EConstr.of_constr d)
 
 let () =
@@ -936,7 +927,6 @@ let explain_type_error env sigma err =
     explain_undeclared_qualities env sigma l
   | DisallowedSProp -> explain_disallowed_sprop ()
   | BadBinderRelevance (rlv, decl) -> explain_bad_binder_relevance env sigma rlv decl
-  | BadCaseRelevance (rlv, case) -> explain_bad_case_relevance env sigma rlv case
   | BadInvert -> explain_bad_invert env
   | BadVariance {lev;expected;actual} -> explain_bad_variance env sigma ~lev ~expected ~actual
   | UndeclaredUsedVariables {declared_vars;inferred_vars} ->

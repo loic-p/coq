@@ -300,7 +300,7 @@ let inductive_make_projection ind mib ~proj_arg =
   | NotRecord | FakeRecord ->
     CErrors.anomaly Pp.(str "inductive_make_projection: not a primitive record.")
   | PrimRecord infos ->
-    let _, labs, rs, _ = infos.(snd ind) in
+    let _, labs, qu, _ = infos.(snd ind) in
     if proj_arg < 0 || Array.length labs <= proj_arg
     then CErrors.anomaly Pp.(str "inductive_make_projection: invalid proj_arg.");
     let p = Names.Projection.Repr.make ind
@@ -308,16 +308,17 @@ let inductive_make_projection ind mib ~proj_arg =
       ~proj_arg
       labs.(proj_arg)
     in
-    p, rs.(proj_arg)
+    p, UVars.QualUniv.relevance qu.(proj_arg)
 
 let inductive_make_projections ind mib =
   match mib.mind_record with
   | NotRecord | FakeRecord -> None
   | PrimRecord infos ->
-    let _, labs, relevances, _ = infos.(snd ind) in
-    let projs = Array.map2_i (fun proj_arg lab r ->
-        Names.Projection.Repr.make ind ~proj_npars:mib.mind_nparams ~proj_arg lab, r)
-        labs relevances
+    let _, labs, qualunivs, _ = infos.(snd ind) in
+    let projs = Array.map2_i (fun proj_arg lab qu ->
+        Names.Projection.Repr.make ind ~proj_npars:mib.mind_nparams ~proj_arg lab,
+        UVars.QualUniv.relevance qu)
+        labs qualunivs
     in
     Some projs
 

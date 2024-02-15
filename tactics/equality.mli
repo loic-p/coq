@@ -119,7 +119,8 @@ val replace_term : bool option -> constr -> clause -> unit Proofview.tactic
 
 val set_eq_dec_scheme_kind : mutual scheme_kind -> unit
 
-(* [build_selector env sigma i c t u v] matches on [c] of
-   type [t] and returns [u] in branch [i] and [v] on other branches *)
+(* [build_selector env sigma i c t u v ty qu] matches on [c] of
+   type [t] and returns [u] in branch [i] and [v] on other branches
+   [vty] is the shared type of [u] and [v] and [qu] a qualuniv for [ty] *)
 val build_selector : env -> evar_map -> int -> constr -> types ->
-  constr -> constr -> constr
+  constr -> constr -> constr -> EQualUniv.t -> constr

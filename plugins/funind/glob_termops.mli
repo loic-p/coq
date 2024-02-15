@@ -33,7 +33,7 @@ val mkGLetIn :
   Name.t * glob_constr * glob_constr option * glob_constr -> glob_constr
 
 val mkGCases :
-  glob_constr option * tomatch_tuples * cases_clauses -> glob_constr
+  predicate_return * tomatch_tuples * cases_clauses -> glob_constr
 
 val mkGHole : unit -> glob_constr
 

@@ -64,14 +64,11 @@ let rec decompose_term env sigma t =
         ATerm.mkAppli (ATerm.mkAppli (ATerm.mkProduct (sort_a,sort_b),
                     decompose_term env sigma a),
               decompose_term env sigma b)
-    | Construct c ->
-        let (((mind,i_ind),i_con),u)= c in
+    | Construct ((ind, _ as cstr), u) ->
         let u = EInstance.kind sigma u in
-        let canon_mind = MutInd.make1 (MutInd.canonical mind) in
-        let canon_ind = canon_mind,i_ind in
-        let (oib,_)=Global.lookup_inductive (canon_ind) in
-        let nargs=constructor_nallargs env (canon_ind,i_con) in
-          ATerm.mkConstructor {ci_constr= ((canon_ind,i_con),u);
+        let oib = Environ.lookup_mind (fst ind) env in
+        let nargs = constructor_nallargs env cstr in
+        ATerm.mkConstructor env {ci_constr = (cstr, u);
                        ci_arity=nargs;
                        ci_nhyps=nargs-oib.mind_nparams}
     | Ind c ->
@@ -255,7 +252,10 @@ let fresh_id env id =
 
 let build_projection env sigma intype (cstr : pconstructor) special default =
   let ci = (snd (fst cstr)) in
-  let body=Equality.build_selector env sigma ci (mkRel 1) intype special default in
+  let typ = Retyping.get_type_of env sigma default in
+  let sort = Retyping.get_sort_of env sigma typ in
+  let sigma, qu = Evd.fresh_geq_qualuniv_of_sort env sigma sort in
+  let body=Equality.build_selector env sigma ci (mkRel 1) intype special default typ (EQualUniv.make qu) in
   let id = fresh_id env (Id.of_string "t") in
   sigma, mkLambda (make_annot (Name id) Sorts.Relevant, intype, body)
 

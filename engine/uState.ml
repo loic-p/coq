@@ -376,7 +376,7 @@ let { Goptions.get = drop_weak_constraints } =
     ()
 
 let level_inconsistency cst l r =
-  let mk u = Sorts.sort_of_univ @@ Universe.make u in
+  let mk = Sorts.mkType_of_level in
   raise (UGraph.UniverseInconsistency (cst, mk l, mk r, None))
 
 let nf_universe uctx u =
@@ -393,6 +393,9 @@ let nf_sort uctx s =
   let normalize u = nf_universe uctx u in
   let qnormalize q = QState.repr q uctx.sort_variables in
   Sorts.subst_fn (qnormalize, normalize) s
+
+let nf_qualuniv uctx r =
+  QualUniv.subst_fn (nf_qvar uctx, nf_level uctx) r
 
 let nf_relevance uctx r = match r with
 | Relevant | Irrelevant -> r
@@ -534,7 +537,7 @@ let process_universe_constraints uctx cstrs =
     else
       if univ_level_mem l ru then
         enforce_leq_up inst l local
-      else sort_inconsistency Eq (sort_of_univ (Universe.make l)) (sort_of_univ ru)
+      else sort_inconsistency Eq (mkType_of_level l) (mkType ru)
   in
   let equalize_universes l r local = match classify l, classify r with
   | USmall l', (USmall _ | ULevel _ | UMax _ | UAlgebraic _) ->
@@ -606,7 +609,7 @@ let process_universe_constraints uctx cstrs =
         | UMax (_, levels) ->
           if is_uset r' then
             let fold l' local =
-              let l = sort_of_univ @@ Universe.make l' in
+              let l = mkType_of_level l' in
               if Level.is_set l' || is_local l' then
                 equalize_variables false l' Level.set local
               else sort_inconsistency Le l r
@@ -677,13 +680,13 @@ let add_universe_constraints uctx cstrs =
 
 let problem_of_constraints cstrs =
   Constraints.fold (fun (l,d,r) acc ->
-      let l = Universe.make l and r = sort_of_univ @@ Universe.make r in
+      let l = Universe.make l and r = mkType_of_level r in
       let cstr' = let open UnivProblem in
         match d with
         | Lt ->
-          ULe (sort_of_univ @@ Universe.super l, r)
-        | Le -> ULe (sort_of_univ l, r)
-        | Eq -> UEq (sort_of_univ l, r)
+          ULe (mkType @@ Universe.super l, r)
+        | Le -> ULe (mkType l, r)
+        | Eq -> UEq (mkType l, r)
       in UnivProblem.Set.add cstr' acc)
     cstrs UnivProblem.Set.empty
 

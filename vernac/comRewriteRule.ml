@@ -116,6 +116,18 @@ let update_invtblu ~loc evd (qsubst, usubst) (state, stateq, stateu : state) u :
   let mask = if Array.exists Option.has_some maskq || Array.exists Option.has_some masku then Some (maskq, masku) else None in
   (state, stateq, stateu), mask
 
+let update_invtblqu ~loc evd (qsubst, usubst) (state, stateq, stateu : state) u : state * _ =
+  let (q, u) = u |> UVars.QualUniv.to_quality_level in
+  let stateq, maskq =
+    let qnew = Sorts.Quality.(var_index @@ subst (subst_fn qsubst) q) in
+    Option.fold_right (update_invtblq1 ~loc evd q) qnew stateq, qnew
+  in
+  let stateu, masku =
+      let lvlnew = Univ.Level.var_index @@ Univ.subst_univs_level_level usubst u in
+      Option.fold_right (update_invtblu1 ~loc ~alg:false evd u) lvlnew stateu, lvlnew
+  in
+  (state, stateq, stateu), (maskq, masku)
+
 let universe_level_subst_var_index usubst u =
   match Univ.Universe.level u with
     | None -> None
@@ -187,12 +199,13 @@ let rec safe_pattern_of_constr_aux ~loc env evd usubst depth state t = Constr.ki
       let state, (head, elims) = safe_pattern_of_constr_aux ~loc env evd usubst depth state f in
       let state, pargs = Array.fold_left_map (safe_arg_pattern_of_constr ~loc env evd usubst depth) state args in
       state, (head, elims @ [PEApp pargs])
-  | Case (ci, u, _, (ret, _), _, c, brs) ->
+  | Case (ci, u, _, (ret, qu), _, c, brs) ->
       let state, mask = update_invtblu ~loc evd usubst state u in
       let state, (head, elims) = safe_pattern_of_constr_aux ~loc env evd usubst depth state c in
       let state, pret = safe_deep_pattern_of_constr ~loc env evd usubst depth state ret in
+      let state, maskqu = update_invtblqu ~loc evd usubst state qu in
       let state, pbrs = Array.fold_left_map (safe_deep_pattern_of_constr ~loc env evd usubst depth) state brs in
-      state, (head, elims @ [PECase (ci.ci_ind, mask, pret, pbrs)])
+      state, (head, elims @ [PECase (ci.ci_ind, mask, pret, maskqu, pbrs)])
   | Proj (p, _, c) ->
       let state, (head, elims) = safe_pattern_of_constr_aux ~loc env evd usubst depth state c in
       state, (head, elims @ [PEProj p])
@@ -313,7 +326,7 @@ let rec test_pattern_redex env evd ~loc = function
   | PHLambda _, _ -> warn_redex_in_rewrite_rules ?loc (Pp.str " lambda pattern")
   | PHConstr (c, _) as head, PEApp args :: elims -> test_projection_apps env evd ~loc (fst c) args; Array.iter (test_pattern_redex_aux env evd ~loc) args; test_pattern_redex env evd ~loc (head, elims)
   | head, PEApp args :: elims -> Array.iter (test_pattern_redex_aux env evd ~loc) args; test_pattern_redex env evd ~loc (head, elims)
-  | head, PECase (_, _, ret, brs) :: elims -> test_pattern_redex_aux env evd ~loc ret; Array.iter (test_pattern_redex_aux env evd ~loc) brs; test_pattern_redex env evd ~loc (head, elims)
+  | head, PECase (_, _, ret, _, brs) :: elims -> test_pattern_redex_aux env evd ~loc ret; Array.iter (test_pattern_redex_aux env evd ~loc) brs; test_pattern_redex env evd ~loc (head, elims)
   | head, PEProj _ :: elims -> test_pattern_redex env evd ~loc (head, elims)
   | PHProd (tys, bod), [] -> Array.iter (test_pattern_redex_aux env evd ~loc) tys; test_pattern_redex_aux env evd ~loc bod
   | (PHRel _ | PHInt _ | PHFloat _ | PHSort _ | PHInd _ | PHConstr _ | PHSymbol _), [] -> ()

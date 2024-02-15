@@ -1254,6 +1254,13 @@ let intern_instance ~local_univs = function
     let us = List.map (map_glob_sort_gen (intern_sort_name ~local_univs)) us in
     Some (qs, us)
 
+let intern_qualuniv ~local_univs = function
+  | None -> None
+  | Some (q, u) ->
+    let q = Option.map (intern_quality ~local_univs) q in
+    let u = map_glob_sort_gen (intern_sort_name ~local_univs) u in
+    Some (q, u)
+
 let intern_name_alias = function
   | { CAst.v = CRef(qid,u) } ->
       let r =
@@ -2333,7 +2340,7 @@ let internalize globalenv env pattern_mode (_, ntnvars as lvar) c =
           (Option.fold_left (fun acc { CAst.v = y } -> Name.fold_right Id.Set.add y acc) acc na))
           Id.Set.empty tms in
         (* as, in & return vars *)
-        let forbidden_vars = Option.cata free_vars_of_constr_expr as_in_vars rtnpo in
+        let forbidden_vars = Option.cata (fst %> free_vars_of_constr_expr) as_in_vars rtnpo in
         let tms,ex_ids,aliases,match_from_in = List.fold_right
           (fun citm (inds,ex_ids,asubst,matchs) ->
             let ((tm,ind),extra_id,(ind_ids,alias_subst,match_td)) =
@@ -2355,12 +2362,14 @@ let internalize globalenv env pattern_mode (_, ntnvars as lvar) c =
             | (_, c) :: q when is_patvar c -> aux q
             | l -> l
           in aux match_from_in in
-        let rtnpo = Option.map (replace_vars_constr_expr aliases) rtnpo in
+        let rtnpo = Option.map (on_fst @@ replace_vars_constr_expr aliases) rtnpo in
         let rtnpo = match stripped_match_from_in with
-          | [] -> Option.map (intern_type (slide_binders env')) rtnpo (* Only PatVar in "in" clauses *)
+          | [] -> Option.map (intern_return_type (slide_binders env')) rtnpo (* Only PatVar in "in" clauses *)
           | l ->
              (* Build a return predicate by expansion of the patterns of the "in" clause *)
              let thevars, thepats = List.split l in
+             let rtnpo, rtqu = match rtnpo with None -> None, None | Some (rt, qu) -> Some rt, qu in
+             let rtqu = intern_qualuniv ~local_univs:env.local_univs rtqu in
              let sub_rtn = (* Some (GSort (Loc.ghost,GType None)) *) None in
              let sub_tms = List.map (fun id -> (DAst.make @@ GVar id),(Name id,None)) thevars (* "match v1,..,vn" *) in
              let main_sub_eqn = CAst.make @@
@@ -2372,7 +2381,7 @@ let internalize globalenv env pattern_mode (_, ntnvars as lvar) c =
                if List.for_all (irrefutable globalenv) thepats then [] else
                   [CAst.make @@ ([],List.make (List.length thepats) (DAst.make @@ PatVar Anonymous), (* "|_,..,_" *)
                    DAst.make @@ GHole(GImpossibleCase))]   (* "=> _" *) in
-             Some (DAst.make @@ GCases(RegularStyle,sub_rtn,sub_tms,main_sub_eqn::catch_all_sub_eqn))
+             Some (DAst.make @@ GCases(RegularStyle,sub_rtn,sub_tms,main_sub_eqn::catch_all_sub_eqn), rtqu)
         in
         let eqns' = List.map (intern_eqn (List.length tms) env) eqns in
         DAst.make ?loc @@
@@ -2384,7 +2393,7 @@ let internalize globalenv env pattern_mode (_, ntnvars as lvar) c =
         let p' = Option.map (fun u ->
           let env'' = push_name_env ntnvars [] env'
             (CAst.make na') in
-          intern_type (slide_binders env'') u) po in
+          intern_return_type (slide_binders env'') u) po in
         DAst.make ?loc @@
         GLetTuple (List.map (fun { CAst.v } -> v) nal, (na', p'), b',
                    intern (List.fold_left (push_name_env ntnvars []) env nal) c)
@@ -2394,7 +2403,7 @@ let internalize globalenv env pattern_mode (_, ntnvars as lvar) c =
       let p' = Option.map (fun p ->
           let env'' = push_name_env ntnvars [] env
             (CAst.make na') in
-          intern_type (slide_binders env'') p) po in
+          intern_return_type (slide_binders env'') p) po in
         DAst.make ?loc @@
         GIf (c', (na', p'), intern env b1, intern env b2)
     | CHole k ->
@@ -2467,6 +2476,8 @@ let internalize globalenv env pattern_mode (_, ntnvars as lvar) c =
   and intern_type env = intern (set_type_scope env)
 
   and intern_type_no_implicit env = intern (restart_no_binders (set_type_scope env))
+
+  and intern_return_type env (r, qu) = intern (set_type_scope env) r, intern_qualuniv ~local_univs:env.local_univs qu
 
   and intern_no_implicit env = intern (restart_no_binders env)
 

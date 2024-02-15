@@ -267,6 +267,7 @@ let ppqvarset l = pp (hov 1 (str "{" ++ prlist_with_sep spc QVar.raw_pr (QVar.Se
 let ppuniverse_set l = pp (Level.Set.pr prlev l)
 let ppuniverse_instance l = pp (Instance.pr prqvar prlev l)
 let ppuniverse_ainstance l = pp (AInstance.pr prqvar (Universe.pr prlev) l)
+let ppqualuniv l = pp (QualUniv.pr prqvar prlev l)
 let ppuniverse_context l = pp (pr_universe_context prqvar prlev l)
 let ppuniverse_context_set l = pp (pr_universe_context_set prlev l)
 let ppuniverse_subst l = pp (UnivSubst.pr_universe_subst Level.raw_pr l)

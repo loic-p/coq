@@ -79,7 +79,6 @@ type ('constr, 'types) ptype_error =
   | UndeclaredUniverse of Level.t
   | DisallowedSProp
   | BadBinderRelevance of Sorts.relevance * ('constr, 'types) Context.Rel.Declaration.pt
-  | BadCaseRelevance of Sorts.relevance * 'constr
   | BadInvert
   | BadVariance of { lev : Level.t; expected : Variance.t; actual : Variance.t }
   | UndeclaredUsedVariables of { declared_vars : Id.Set.t; inferred_vars : Id.Set.t }
@@ -160,8 +159,6 @@ val error_undeclared_universe : env -> Level.t -> 'a
 val error_disallowed_sprop : env -> 'a
 
 val error_bad_binder_relevance : env -> Sorts.relevance -> rel_declaration -> 'a
-
-val error_bad_case_relevance : env -> Sorts.relevance -> Constr.case -> 'a
 
 val error_bad_invert : env -> 'a
 

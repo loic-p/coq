@@ -47,7 +47,7 @@ val compile_cases :
   ?loc:Loc.t -> program_mode:bool -> case_style ->
   (type_constraint -> GlobEnv.t -> evar_map -> glob_constr -> evar_map * unsafe_judgment) * evar_map ->
   type_constraint ->
-  GlobEnv.t -> glob_constr option * tomatch_tuples * cases_clauses ->
+  GlobEnv.t -> (glob_constr * UVars.QualUniv.t option) option * tomatch_tuples * cases_clauses ->
   evar_map * unsafe_judgment
 
 val constr_of_pat :
@@ -109,6 +109,7 @@ and pattern_continuation =
 type 'a pattern_matching_problem =
     { env       : GlobEnv.t;
       pred      : constr;
+      qualuniv  : UVars.QualUniv.t option;
       tomatch   : tomatch_stack;
       history   : pattern_continuation;
       mat       : 'a matrix;
@@ -127,7 +128,7 @@ val prepare_predicate : ?loc:Loc.t -> program_mode:bool ->
            (types * tomatch_type) list ->
            rel_context list ->
            constr option ->
-           glob_constr option -> (Evd.evar_map * (Name.t * Name.t list) list * constr) list
+           (glob_constr * UVars.QualUniv.t option) option -> (Evd.evar_map * (Name.t * Name.t list) list * constr * UVars.QualUniv.t option) list
 
 val make_return_predicate_ltac_lvar : GlobEnv.t -> Evd.evar_map -> Name.t ->
   Glob_term.glob_constr -> constr -> GlobEnv.t

@@ -735,7 +735,8 @@ let build_beq_scheme env handle kn =
     (* do the [| C1 ... =>  match Y with ... end
                ...
                Cn => match Y with ... end |]  part *)
-    let rci = Sorts.Relevant in (* returning a boolean, hence relevant *)
+    let qualuniv = EConstr.EQualUniv.make UVars.QualUniv.set in
+    (* returning a boolean, hence in Set *)
     let open Inductiveops in
     let constrs =
       let params = Context.Rel.instance_list mkRel 0 params_ctx in
@@ -810,7 +811,7 @@ let build_beq_scheme env handle kn =
           let predj = EConstr.of_constr (translate_term env_lift_recparams_fix_nonrecparams_tomatch_csargsi pred) in
           let case =
             simple_make_case_or_project env (Evd.from_env env)
-              ci (predj,rci) NoInvert (EConstr.mkRel (nb_cstr_args + 1))
+              ci (predj,qualuniv) NoInvert (EConstr.mkRel (nb_cstr_args + 1))
               (EConstr.of_constr_array ar2)
           in
           let cs_argsi = translate_context env_lift_recparams_fix_nonrecparams_tomatch constrs.(i).cs_args in
@@ -819,7 +820,7 @@ let build_beq_scheme env handle kn =
         let predi = EConstr.of_constr (translate_term env_lift_recparams_fix_nonrecparams_tomatch pred) in
         let case =
           simple_make_case_or_project env (Evd.from_env env)
-            ci (predi,rci) NoInvert (EConstr.mkRel 2)
+            ci (predi,qualuniv) NoInvert (EConstr.mkRel 2)
             (EConstr.of_constr_array ar) in
         EConstr.Unsafe.to_constr case
     in
@@ -965,7 +966,7 @@ let do_replace_bl handle (ind,u as indu) aavoid narg lft rgt =
           let (ind',u as indu),v = try destruct_ind env sigma tt1
           (* trick so that the good sequence is returned*)
                 with e when CErrors.noncritical e -> indu,[||]
-          in if Ind.CanOrd.equal ind' ind
+          in if Environ.QInd.equal env ind' ind
              then Tacticals.tclTHENLIST [Equality.replace t1 t2; Auto.default_auto ; aux q1 q2 ]
              else (
                let c = get_scheme handle (!bl_scheme_kind_aux ()) ind' in
@@ -1125,13 +1126,14 @@ repeat ( apply andb_prop in z;let z1:= fresh "Z" in destruct z as [z1 z]).
  replace bi with ai; auto || replace bi with ai by  apply typeofbi_prod ; auto
                *)
               Proofview.Goal.enter begin fun gl ->
+                let env = Proofview.Goal.env gl in
                 let concl = Proofview.Goal.concl gl in
                 let sigma = Tacmach.project gl in
                 match EConstr.kind sigma concl with
                 | App (c,ca) -> (
                   match EConstr.kind sigma c with
                   | Ind (indeq, u) ->
-                     if GlobRef.CanOrd.equal (GlobRef.IndRef indeq) Coqlib.(lib_ref "core.eq.type")
+                     if Environ.QGlobRef.equal env (GlobRef.IndRef indeq) Coqlib.(lib_ref "core.eq.type")
                      then
                        Tacticals.tclTHEN
                          (do_replace_bl handle ind
