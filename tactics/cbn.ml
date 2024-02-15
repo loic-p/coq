@@ -581,7 +581,16 @@ let rec match_arg_pattern whrec env sigma ctx psubst p t =
   let open Declarations in
   let t' = EConstr.it_mkLambda_or_LetIn t ctx in
   match p with
-  | EHole i -> Partial_subst.add_term i t' psubst
+  | EHole i ->
+    begin match Partial_subst.get_term psubst i with
+    | None -> Partial_subst.add_term i t' psubst
+    | Some t0 ->
+      let eq_istrue = Reductionops.is_conv env sigma t' t0 in
+      if eq_istrue then
+        psubst
+      else
+        raise PatternFailure
+    end
   | EHoleIgnored -> psubst
   | ERigid (ph, es) ->
       let (t, stk), _ = whrec Cst_stack.empty (t, Stack.empty) in

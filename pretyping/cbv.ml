@@ -762,7 +762,16 @@ and cbv_match_arg_pattern info env ctx psubst p t =
   let open Declarations in
   let t' = it_mkLambda_or_LetIn info ctx t in
   match p with
-  | EHole i -> Partial_subst.add_term i t' psubst
+  | EHole i ->
+    begin match Partial_subst.get_term psubst i with
+    | None -> Partial_subst.add_term i t' psubst
+    | Some t0 ->
+      let eq_istrue = Reductionops.is_conv info.env info.sigma (EConstr.of_constr @@ reify_value t') (EConstr.of_constr @@ reify_value t0) in
+      if eq_istrue then
+        psubst
+      else
+        raise PatternFailure
+    end
   | EHoleIgnored -> psubst
   | ERigid (ph, es) ->
       let t, stk = destack t TOP in
