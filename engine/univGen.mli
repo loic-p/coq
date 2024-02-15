@@ -48,12 +48,21 @@ val diff_sort_context : sort_context_set -> sort_context_set -> sort_context_set
 
 val fresh_instance : AbstractContext.t -> Instance.t in_sort_context_set
 
+val fresh_qualuniv : unit -> QualUniv.t in_sort_context_set
+
 val fresh_instance_from : ?loc:Loc.t -> AbstractContext.t -> Instance.t option ->
   Instance.t in_sort_context_set
 
 val fresh_sort_in_family : Sorts.family ->
   Sorts.t in_sort_context_set
 (** NB: InQSort is treated as InType *)
+
+val fresh_qualuniv_of_family : Sorts.family ->
+  QualUniv.t in_sort_context_set
+(** NB: InQSort is not accepted as an input *)
+
+val fresh_qualuniv_of_sort : Sorts.t ->
+  QualUniv.t in_sort_context_set
 
 val fresh_constant_instance : env -> Constant.t ->
   pconstant in_sort_context_set

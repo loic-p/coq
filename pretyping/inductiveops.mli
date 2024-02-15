@@ -196,13 +196,13 @@ val make_case_info : env -> inductive -> Constr.case_style -> Constr.case_info
     inductive type does not allow dependent elimination. *)
 val make_case_or_project :
   env -> evar_map -> inductive_type -> Constr.case_info ->
-  (* pred *) EConstr.constr * Sorts.relevance -> (* term *) EConstr.constr -> (* branches *) EConstr.constr array -> EConstr.constr
+  (* pred *) EConstr.constr * EConstr.EQualUniv.t -> (* term *) EConstr.constr -> (* branches *) EConstr.constr array -> EConstr.constr
 
 (** Sometimes [make_case_or_project] is nicer to call with a pre-built
    [case_invert] than [inductive_type]. *)
 val simple_make_case_or_project :
   env -> evar_map -> Constr.case_info ->
-  (* pred *) EConstr.constr * Sorts.relevance -> EConstr.case_invert -> (* term *) EConstr.constr -> (* branches *) EConstr.constr array -> EConstr.constr
+  (* pred *) EConstr.constr * EConstr.EQualUniv.t -> EConstr.case_invert -> (* term *) EConstr.constr -> (* branches *) EConstr.constr array -> EConstr.constr
 
 val make_case_invert : env -> inductive_type -> case_relevance:Sorts.relevance -> Constr.case_info
   -> EConstr.case_invert

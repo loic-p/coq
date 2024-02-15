@@ -73,6 +73,7 @@ install_printer Top_printers.ppuni_level
 install_printer Top_printers.ppqvarset
 install_printer Top_printers.ppuniverse_set
 install_printer Top_printers.ppuniverse_instance
+install_printer Top_printers.ppqualuniv
 install_printer Top_printers.ppuniverse_context
 install_printer Top_printers.ppaucontext
 install_printer Top_printers.ppuniverse_context_set

@@ -112,10 +112,10 @@ val expand_arity : mind_specif -> pinductive -> constr array ->
 val expand_branch_contexts : mind_specif -> UVars.Instance.t -> constr array ->
   (Name.t Context.binder_annot array * 'a) array -> rel_context array
 
-type ('constr,'types) pexpanded_case =
-  (case_info * ('constr * Sorts.relevance) * 'constr pcase_invert * 'constr * 'constr array)
+type ('constr, 'types, 'qualuniv) pexpanded_case =
+  (case_info * ('constr * 'qualuniv) * 'constr pcase_invert * 'constr * 'constr array)
 
-type expanded_case = (constr,types) pexpanded_case
+type expanded_case = (constr, types, UVars.QualUniv.t) pexpanded_case
 
 (** Given a pattern-matching represented compactly, expands it so as to produce
     lambda and let abstractions in front of the return clause and the pattern

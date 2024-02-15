@@ -20,7 +20,6 @@ type t = Evd.econstr
 type types = t
 type constr = t
 type existential = t pexistential
-type case_return = t pcase_return
 type case_branch = t pcase_branch
 type fixpoint = (t, t) pfixpoint
 type cofixpoint = (t, t) pcofixpoint
@@ -82,18 +81,36 @@ sig
   val is_empty : t -> bool
 end
 
+module EQualUniv :
+sig
+  type t
+  (** Type of qualunivs up-to universe unification. Similar to
+      [ESorts.t] for [UVars.QualUniv.t]. *)
+
+  val make : UVars.QualUniv.t -> t
+  val kind : Evd.evar_map -> t -> UVars.QualUniv.t
+  val quality : Evd.evar_map -> t -> Sorts.Quality.t
+  val family : Evd.evar_map -> t -> Sorts.family
+  val relevance : Evd.evar_map -> t -> Sorts.relevance
+  val univ : Evd.evar_map -> t -> Univ.Universe.t
+  val to_sort : Evd.evar_map -> t -> ESorts.t
+  val to_instance : Evd.evar_map -> t -> UVars.Instance.t
+  val of_sort : Evd.evar_map -> ESorts.t -> t
+end
+
 type case_invert = t pcase_invert
-type case = (t, t, EInstance.t) pcase
+type case_return = (t, EQualUniv.t) pcase_return
+type case = (t, t, EInstance.t, EQualUniv.t) pcase
 
 type 'a puniverses = 'a * EInstance.t
 
 (** {5 Destructors} *)
 
-val kind : Evd.evar_map -> t -> (t, t, ESorts.t, EInstance.t) Constr.kind_of_term
+val kind : Evd.evar_map -> t -> (t, t, ESorts.t, EInstance.t, EQualUniv.t) Constr.kind_of_term
 (** Same as {!Constr.kind} except that it expands evars and normalizes
     universes on the fly. *)
 
-val kind_upto : Evd.evar_map -> Constr.t -> (Constr.t, Constr.t, Sorts.t, UVars.Instance.t) Constr.kind_of_term
+val kind_upto : Evd.evar_map -> Constr.t -> (Constr.t, Constr.t, Sorts.t, UVars.Instance.t, UVars.QualUniv.t) Constr.kind_of_term
 
 val to_constr : ?abort_on_undefined_evars:bool -> Evd.evar_map -> t -> Constr.t
 (** Returns the evar-normal form of the argument. Note that this
@@ -118,7 +135,7 @@ val kind_of_type : Evd.evar_map -> t -> kind_of_type
 
 (** {5 Constructors} *)
 
-val of_kind : (t, t, ESorts.t, EInstance.t) Constr.kind_of_term -> t
+val of_kind : (t, t, ESorts.t, EInstance.t, EQualUniv.t) Constr.kind_of_term -> t
 (** Construct a term from a view. *)
 
 val of_constr : Constr.t -> t
@@ -437,10 +454,10 @@ val is_global : Environ.env -> Evd.evar_map -> GlobRef.t -> t -> bool
 [@@ocaml.deprecated "Use [EConstr.isRefX] instead."]
 
 val expand_case : Environ.env -> Evd.evar_map ->
-  case -> (t,t) Inductive.pexpanded_case
+  case -> (t, t, EQualUniv.t) Inductive.pexpanded_case
 
 val annotate_case : Environ.env -> Evd.evar_map -> case ->
-  case_info * EInstance.t * t array * ((rel_context * t) * Sorts.relevance) * case_invert * t * (rel_context * t) array
+  case_info * EInstance.t * t array * ((rel_context * t) * EQualUniv.t) * case_invert * t * (rel_context * t) array
 (** Same as above, but doesn't turn contexts into binders *)
 
 val expand_branch : Environ.env -> Evd.evar_map ->
@@ -449,7 +466,7 @@ val expand_branch : Environ.env -> Evd.evar_map ->
     constructs the typed context in which the branch lives. *)
 
 val contract_case : Environ.env -> Evd.evar_map ->
-  (t,t) Inductive.pexpanded_case -> case
+  (t, t, EQualUniv.t) Inductive.pexpanded_case -> case
 
 (** {5 Extra} *)
 
@@ -494,6 +511,9 @@ sig
   (** Physical identity. Does not care for normalization. *)
 
   val to_instance : EInstance.t -> UVars.Instance.t
+  (** Physical identity. Does not care for normalization. *)
+
+  val to_qualuniv : EQualUniv.t -> UVars.QualUniv.t
   (** Physical identity. Does not care for normalization. *)
 
   val to_case_invert : case_invert -> Constr.case_invert

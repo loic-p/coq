@@ -316,6 +316,18 @@ let inductive_levels env evd arities ctors =
   let arities = List.map (fun (arity,_,_,_) -> arity) inds in
   evd, arities
 
+let make_qus env evd ctors =
+  let levels = List.map (List.map (compute_constructor_levels env evd)) ctors in
+  let evd, qus = List.fold_left_map (fun evd ctors ->
+    match ctors with
+    | [] | _ :: _ :: _ -> evd, None
+    | [ctor] ->
+      List.fold_left_map (Evd.fresh_geq_qualuniv_of_sort ~rigid:UState.univ_flexible env) evd ctor
+      |> (fun (evd, qus) -> evd, Some qus)
+    ) evd levels
+  in
+  evd, qus
+
 (** Template poly ***)
 
 let check_named {CAst.loc;v=na} = match na with
@@ -485,6 +497,7 @@ let interp_mutual_inductive_constr ~sigma ~template ~udecl ~variances ~ctx_param
         tys)
       constructors
   in
+  let sigma, qus = make_qus env_ar_params sigma ctor_args in
   let sigma, arities = inductive_levels env_ar_params sigma arities ctor_args in
   let sigma = Evd.minimize_universes sigma in
   let arities = List.map EConstr.(to_constr sigma) arities in
@@ -495,13 +508,14 @@ let interp_mutual_inductive_constr ~sigma ~template ~udecl ~variances ~ctx_param
   let univ_entry, binders = Evd.check_univ_decl ~poly sigma udecl in
 
   (* Build the inductive entries *)
-  let entries = List.map3 (fun indname arity (cnames,ctypes) ->
+  let entries = List.map4 (fun indname arity (cnames,ctypes) qu ->
       { mind_entry_typename = indname;
         mind_entry_arity = arity;
         mind_entry_consnames = cnames;
-        mind_entry_lc = ctypes
+        mind_entry_lc = ctypes;
+        mind_entry_proj_qus = qu;
       })
-      indnames arities constructors
+      indnames arities constructors qus
   in
   let univ_entry, ctx = match entries, arityconcl with
   | [entry], [concl] ->

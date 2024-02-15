@@ -920,6 +920,13 @@ let extern_instance uvars = function
     Some (ql,ul)
   | _ -> None
 
+let extern_qualuniv uvars : glob_qualuniv option -> qualuniv_expr option = function
+  | Some (qo,u) when !print_universes ->
+    let qo = Option.map extern_glob_quality qo in
+    let u = extern_glob_level uvars u in
+    Some (qo,u)
+  | _ -> None
+
 let extern_ref (vars,uvars) ref us =
   extern_global (select_stronger_impargs (implicits_of_global ref))
     (extern_reference vars ref) (extern_instance uvars us)
@@ -1031,13 +1038,13 @@ let rec extern inctx scopes vars r =
       List.fold_right (Name.fold_right Id.Set.add)
         (cases_predicate_names tml) (fst vars) in
     let vars' = vars', snd vars in
-    let rtntypopt' = Option.map (extern_typ scopes vars') rtntypopt in
+    let rtntypopt' = Option.map (fun (r, qu) -> extern_typ scopes vars' r, extern_qualuniv (snd vars') qu) rtntypopt in
     let tml = List.map (fun (tm,(na,x)) ->
                  let na' = match na, DAst.get tm with
                    | Anonymous, GVar id ->
                       begin match rtntypopt with
                             | None -> None
-                            | Some ntn ->
+                            | Some (ntn, _) ->
                                if occur_glob_constr id ntn then
                                  Some (CAst.make Anonymous)
                                else None
@@ -1061,7 +1068,7 @@ let rec extern inctx scopes vars r =
       let inctx = inctx || typopt <> None in
       CLetTuple (List.map CAst.make nal,
         (Option.map (fun _ -> (make na)) typopt,
-         Option.map (extern_typ scopes (add_vname vars na)) typopt),
+         Option.map (fun (r, qu) -> let vars = add_vname vars na in extern_typ scopes vars r, extern_qualuniv (snd vars) qu) typopt),
         sub_extern false scopes vars tm,
         extern inctx scopes (List.fold_left add_vname vars nal) b)
 
@@ -1069,7 +1076,7 @@ let rec extern inctx scopes vars r =
       let inctx = inctx || typopt <> None in
       CIf (sub_extern false scopes vars c,
         (Option.map (fun _ -> (CAst.make na)) typopt,
-         Option.map (extern_typ scopes (add_vname vars na)) typopt),
+         Option.map (fun (r, qu) -> let vars = add_vname vars na in extern_typ scopes vars r, extern_qualuniv (snd vars) qu) typopt),
         sub_extern inctx scopes vars b1, sub_extern inctx scopes vars b2)
 
   | GRec (fk,idv,blv,tyv,bv) ->
@@ -1515,7 +1522,7 @@ let rec glob_of_pat
         | Some p, Some ind ->
           let nas, p = glob_of_pat_under_context glob_of_pat avoid env sigma p in
           let nas = Array.rev_to_list nas in
-          ((List.hd nas, Some (CAst.make (ind, List.tl nas))), Some p)
+          ((List.hd nas, Some (CAst.make (ind, List.tl nas))), Some (p,None))
         | _ -> anomaly (Pp.str "PCase with non-trivial predicate but unknown inductive.")
       in
       GCases (Constr.RegularStyle,rtn,[glob_of_pat avoid env sigma tm,indnames],mat)

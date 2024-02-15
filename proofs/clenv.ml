@@ -838,7 +838,7 @@ let build_case_analysis env sigma (ind, u) params pred indices indarg dep knd =
       if Typeops.should_invert_case env relevance ci then CaseInvert { indices = indices }
       else NoInvert
     in
-    RealCase (ci, u, params, ((pnas, pbody), relevance), iv, indarg)
+    RealCase (ci, u, params, ((pnas, pbody), EQualUniv.of_sort sigma knd), iv, indarg)
   | Some ps ->
     let args = Array.map (fun (p,r) ->
         let r = UVars.subst_instance_relevance (Unsafe.to_instance u) r in

@@ -383,10 +383,10 @@ let expand_arity = Environ.expand_arity
 
 let expand_branch_contexts = Environ.expand_branch_contexts
 
-type ('constr,'types) pexpanded_case =
-  (case_info * ('constr * Sorts.relevance) * 'constr pcase_invert * 'constr * 'constr array)
+type ('constr, 'types, 'qualuniv) pexpanded_case =
+  (case_info * ('constr * 'qualuniv) * 'constr pcase_invert * 'constr * 'constr array)
 
-type expanded_case = (constr,types) pexpanded_case
+type expanded_case = (constr, types, UVars.QualUniv.t) pexpanded_case
 
 let expand_case_specif mib (ci, u, params, (p,rp), iv, c, br) =
   (* Γ ⊢ c : I@{u} params args *)

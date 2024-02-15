@@ -787,6 +787,10 @@ and match_instance pu u psubst =
   | Some subst -> subst
   | None -> raise PatternFailure
 
+and match_qualuniv pu u psubst =
+  match UVars.QualUniv.pattern_match pu u psubst with
+  | Some subst -> subst
+  | None -> raise PatternFailure
 
 and cbv_match_rigid_arg_pattern info env ctx psubst p t =
   let open Declarations in
@@ -856,13 +860,14 @@ and cbv_apply_rule info env ctx psubst es stk =
         let usedpargs, rempargs = Array.chop na pargs in
         let psubst = Array.fold_left2 (cbv_match_arg_pattern info env ctx) psubst usedpargs args in
         cbv_apply_rule info env ctx psubst (PEApp rempargs :: e) s
-  | Declarations.PECase (pind, pu, pret, pbrs) :: e, CASE (u, pms, (p, _), brs, iv, ci, env, s) ->
+  | Declarations.PECase (pind, pu, pret, pqu, pbrs) :: e, CASE (u, pms, (p, qu), brs, iv, ci, env, s) ->
       if not @@ Ind.CanOrd.equal pind ci.ci_ind then raise PatternFailure;
       let specif = Inductive.lookup_mind_specif info.env ci.ci_ind in
       let ntys_ret = Inductive.expand_arity specif (ci.ci_ind, u) pms (fst p) in
       let ntys_ret = apply_env_context env ntys_ret in
       let ntys_brs = Inductive.expand_branch_contexts specif u pms brs in
       let psubst = match_instance pu u psubst in
+      let psubst = match_qualuniv pqu qu psubst in
       let brs = Array.map2 (fun ctx' br -> List.length ctx', ctx' @ ctx, (snd br)) ntys_brs brs in
       let psubst = cbv_match_arg_pattern_lift info env (ntys_ret @ ctx) (List.length ntys_ret) psubst pret (snd p) in
       let psubst = Array.fold_left2 (fun psubst pat (n, ctx, br) -> cbv_match_arg_pattern_lift info env (apply_env_context env ctx) n psubst pat br) psubst pbrs brs in

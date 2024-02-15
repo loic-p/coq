@@ -122,6 +122,13 @@ let enforce_eq_qualities qs qs' cstrs =
       if Sorts.Quality.equal a b then c else Set.add (QEq (a, b)) c)
     cstrs qs qs'
 
+let compare_irrelevant_qualuniv r r' cstrs =
+  let q, u = UVars.QualUniv.to_quality_univ r
+  and q', u' = UVars.QualUniv.to_quality_univ r' in
+  let cstrs = if Sorts.Quality.equal q q' then cstrs else Set.add (QEq (q, q')) cstrs in
+  let cstrs = Set.add (UWeak (u, u')) cstrs in
+  cstrs
+
 let compare_cumulative_instances  cv_pb variances u u' cstrs =
   let make u = Sorts.mkType u in
   let qs, us = UVars.Instance.to_array u

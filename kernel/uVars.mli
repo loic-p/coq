@@ -130,7 +130,46 @@ sig
 
   val pattern_match : mask -> t -> ('term, Quality.t, Universe.t) Partial_subst.t -> ('term, Quality.t, Universe.t) Partial_subst.t option
   (** Pattern matching, as used by the rewrite rules mechanism *)
-  
+
+end
+
+
+module QualUniv :
+sig
+  type t
+  (** Represents a pair of a sort quality and
+    an argument universe for match return annotation. *)
+
+  val make : Quality.t -> Universe.t -> t
+
+  val sprop : t
+  val prop : t
+  val set : t
+  val mkType : Univ.Universe.t -> t
+  val mkQSort : Sorts.QVar.t -> Universe.t -> t
+
+  val to_quality_univ : t -> Quality.t * Universe.t
+  val quality : t -> Quality.t
+  val family : t -> Sorts.family
+  val relevance : t -> Sorts.relevance
+  val univ : t -> Universe.t
+  val to_sort : t -> Sorts.t
+  val to_instance : t -> Instance.t
+
+  val of_sort : Sorts.t -> t
+
+  val equal : t -> t -> bool
+  val hash : t -> int
+  val hcons : t -> t
+  val share : t -> t * int
+
+  val subst_fn : (Sorts.QVar.t -> Quality.t) * (Level.t -> Universe.t) -> t -> t
+
+  val levels : t -> Quality.Set.t * Level.Set.t
+  val pr : (Sorts.QVar.t -> Pp.t) -> (Univ.Universe.t -> Pp.t) -> t -> Pp.t
+
+  type mask = Quality.pattern * int option
+  val pattern_match : mask -> t -> ('term, Quality.t, Universe.t) Partial_subst.t -> ('term, Quality.t, Universe.t) Partial_subst.t option
 end
 
 val eq_sizes : int * int -> int * int -> bool
@@ -263,6 +302,8 @@ val subst_sort_level_quality : sort_level_subst -> Sorts.Quality.t -> Sorts.Qual
 
 val subst_sort_level_sort : sort_level_subst -> Sorts.t -> Sorts.t
 
+val subst_sort_level_qualuniv : sort_level_subst -> QualUniv.t -> QualUniv.t
+
 val subst_sort_level_relevance : sort_level_subst -> Sorts.relevance -> Sorts.relevance
 
 (** Substitution of instances *)
@@ -270,6 +311,7 @@ val subst_instance_instance : Instance.t -> Instance.t -> Instance.t
 val subst_instance_universe : Instance.t -> Universe.t -> Universe.t
 val subst_instance_quality : Instance.t -> Sorts.Quality.t -> Sorts.Quality.t
 val subst_instance_sort : Instance.t -> Sorts.t -> Sorts.t
+val subst_instance_qualuniv : Instance.t -> QualUniv.t -> QualUniv.t
 val subst_instance_relevance : Instance.t -> Sorts.relevance -> Sorts.relevance
 val subst_instance_sort_level_subst : Instance.t -> sort_level_subst -> sort_level_subst
 
@@ -277,6 +319,7 @@ val subst_instance_sort_level_subst : Instance.t -> sort_level_subst -> sort_lev
 val subst_level_instance_instance : LevelInstance.t -> Instance.t -> Instance.t
 val subst_level_instance_universe : LevelInstance.t -> Universe.t -> Universe.t
 val subst_level_instance_sort : LevelInstance.t -> Sorts.t -> Sorts.t
+val subst_level_instance_qualuniv : LevelInstance.t -> QualUniv.t -> QualUniv.t
 val subst_level_instance_relevance : LevelInstance.t -> Sorts.relevance -> Sorts.relevance
 
 val make_instance_subst : LevelInstance.t -> sort_level_subst

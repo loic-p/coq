@@ -195,7 +195,7 @@ struct
   let equal (xq,xu) (yq,yu) =
     CArray.equal Quality.equal xq yq
     && CArray.equal Level.equal xu yu
-    
+
   let lookup_quality (xq, _) n = xq.(n)
   let lookup_level (_, xu) n = xu.(n)
 
@@ -343,6 +343,102 @@ let pattern_match (qmask, umask) (qs, us) tqus =
 
 end
 
+module QualUniv : sig
+  type t
+
+  val make : Quality.t -> Universe.t -> t
+
+  val sprop : t
+  val prop : t
+  val set : t
+  val mkType : Universe.t -> t
+  val mkQSort : Sorts.QVar.t -> Universe.t -> t
+
+  val to_quality_univ : t -> Quality.t * Universe.t
+  val quality : t -> Quality.t
+  val family : t -> Sorts.family
+  val relevance : t -> Sorts.relevance
+  val univ : t -> Universe.t
+  val to_sort : t -> Sorts.t
+  val to_instance : t -> Instance.t
+
+  val of_sort : Sorts.t -> t
+
+  val equal : t -> t -> bool
+  val hash : t -> int
+  val hcons : t -> t
+  val share : t -> t * int
+
+  val subst_fn : (Sorts.QVar.t -> Quality.t) * (Level.t -> Universe.t) -> t -> t
+
+  val levels : t -> Quality.Set.t * Level.Set.t
+  val pr : (Sorts.QVar.t -> Pp.t) -> (Universe.t -> Pp.t) -> t -> Pp.t
+
+  type mask = Quality.pattern * int option
+
+  val pattern_match : mask -> t -> ('term, Quality.t, Universe.t) Partial_subst.t -> ('term, Quality.t, Universe.t) Partial_subst.t option
+end =
+struct
+type t = Quality.t * Universe.t
+
+let make q l = q, l
+let sprop = Quality.(QConstant QSProp), Universe.type0
+let prop = Quality.(QConstant QProp), Universe.type0
+let set = Quality.(QConstant QType), Universe.type0
+let mkType u = Quality.(QConstant QType), u
+let mkQSort q u = Quality.(QVar q), u
+
+let to_quality_univ ql = ql
+let quality (q, _) = q
+let family (q, _) = Quality.family q
+let relevance (q, _) = Sorts.relevance_of_quality q
+let univ (_, u) = u
+let of_sort = function
+  | Sorts.SProp -> sprop
+  | Sorts.Prop -> prop
+  | Sorts.Set -> set
+  | Sorts.Type u -> mkType u
+  | Sorts.QSort (q, u) -> mkQSort q u
+
+let to_sort (q, u) = Sorts.make q u
+let to_instance (q, u) = Instance.of_array ([|q|], [|u|])
+
+let subst_fn (fq, fn) (q,u as orig : t) : t =
+  let q' = Quality.subst fq q in
+  let u' = Universe.subst_fn fn u in
+  if q' == q && u' == u then orig else q', u'
+
+let levels (xq, xu) =
+  Quality.Set.singleton xq, Universe.levels xu
+
+let hash (r, u) =
+  Hashset.Combine.combine (Quality.hash r) (Universe.hash u)
+let hcons (q, u as i) =
+  let q' = Quality.hcons q in
+  let u' = Universe.hcons u in
+  if q' == q && u' == u then i else (q', u')
+
+let sprop = hcons sprop
+let prop = hcons prop
+let set = hcons set
+
+let share i =
+  (hcons i, hash i)
+
+let equal (xr, xu) (yr, yu) =
+  Quality.equal xr yr
+  && Universe.equal xu yu
+
+let pr prq prl (q, u) =
+  Quality.pr prq q ++ strbrk " | " ++ prl u
+
+type mask = Quality.pattern * int option
+
+let pattern_match (qmask, umask) (q, u) tqus =
+  let tqus = Partial_subst.maybe_add_univ umask u tqus in
+  Quality.pattern_match qmask q tqus
+end
+
 let eq_sizes (a,b) (a',b') = Int.equal a a' && Int.equal b b'
 
 type 'a quconstraint_function = 'a -> 'a -> Sorts.QUConstraints.t -> Sorts.QUConstraints.t
@@ -403,6 +499,9 @@ let subst_instance_universe subst u =
 
 let subst_instance_sort u s =
   Sorts.subst_fn ((subst_instance_qvar u), (subst_instance_level u)) s
+
+let subst_instance_qualuniv u =
+  QualUniv.subst_fn ((subst_instance_qvar u), (subst_instance_level u))
 
 let subst_instance_relevance u r =
   Sorts.relevance_subst_fn (subst_instance_qvar u) r
@@ -466,6 +565,9 @@ let subst_level_instance_instance s i =
 
 let subst_level_instance_sort u s =
   Sorts.subst_fn ((subst_level_instance_qvar u), (subst_level_instance_level_universe u)) s
+
+let subst_level_instance_qualuniv u =
+  QualUniv.subst_fn ((subst_level_instance_qvar u), (subst_level_instance_level_universe u))
 
 let subst_level_instance_relevance u r =
   Sorts.relevance_subst_fn (subst_level_instance_qvar u) r
@@ -641,6 +743,11 @@ let subst_sort_level_sort (_,usubst as subst) s =
   let fu u = subst_univs_level_level usubst u in
   Sorts.subst_fn (fq,fu) s
 
+let subst_sort_level_qualuniv (_,usubst as subst) s =
+  let fq qv = subst_sort_level_qvar subst qv in
+  let fu u = subst_univs_level_level usubst u in
+  QualUniv.subst_fn (fq,fu) s
+
 let subst_sort_level_relevance subst r =
   Sorts.relevance_subst_fn (subst_sort_level_qvar subst) r
 
@@ -663,7 +770,7 @@ let make_abstract_level_instance ctx =
   UContext.instance (AbstractContext.repr ctx)
 let make_abstract_instance ctx =
   Instance.of_level_instance (make_abstract_level_instance ctx)
-  
+
 let abstract_universes uctx =
   let nas = UContext.names uctx in
   let instance = UContext.instance uctx in

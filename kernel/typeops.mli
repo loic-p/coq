@@ -130,7 +130,6 @@ val bad_relevance_warning : CWarnings.warning
 
 type ('constr,'types) bad_relevance =
 | BadRelevanceBinder of Sorts.relevance * ('constr,'types) Context.Rel.Declaration.pt
-| BadRelevanceCase of Sorts.relevance * 'constr
 
 val bad_relevance_msg : (env * (constr,types) bad_relevance) CWarnings.msg
 (** Used by the higher layers to register a nicer printer than the default. *)

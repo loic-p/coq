@@ -46,6 +46,7 @@ type one_inductive_entry = {
   mind_entry_arity : constr;
   mind_entry_consnames : Id.t list;
   mind_entry_lc : constr list;
+  mind_entry_proj_qus: UVars.QualUniv.t list option;
 }
 
 type mutual_inductive_entry = {

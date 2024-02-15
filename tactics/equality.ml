@@ -894,7 +894,7 @@ let descend_then env sigma head dirn =
   let dirn_env = EConstr.push_rel_context cstr.(dirn-1).cs_args env in
   (dirn_nlams,
    dirn_env,
-   (fun sigma dirnval (dfltval,resty) ->
+   (fun sigma dirnval (dfltval,resty, res_qualuniv) ->
       let deparsign = make_arity_signature env sigma true indf in
       let p =
         it_mkLambda_or_LetIn (lift (mip.mind_nrealargs+1) resty) deparsign in
@@ -906,9 +906,8 @@ let descend_then env sigma head dirn =
       let brl =
         List.map build_branch
           (List.interval 1 (Array.length mip.mind_consnames)) in
-      let rci = Sorts.Relevant in (* TODO relevance *)
       let ci = make_case_info env ind RegularStyle in
-      Inductiveops.make_case_or_project env sigma indt ci (p, rci) head (Array.of_list brl)))
+      Inductiveops.make_case_or_project env sigma indt ci (p, res_qualuniv) head (Array.of_list brl)))
 
 (* Now we need to construct the discriminator, given a discriminable
    position.  This boils down to:
@@ -930,7 +929,8 @@ let build_coq_I () = pf_constr_of_global (lib_ref "core.True.I")
 let rec build_discriminator env sigma true_0 false_0 pos c = function
   | [] ->
       let cty = get_type_of env sigma c in
-      make_selector env sigma ~pos ~special:true_0 ~default:(fst false_0) c cty
+      let (false_C, _, _) = false_0 in
+      make_selector env sigma ~pos ~special:true_0 ~default:false_C c cty
   | ((sp,cnum),argnum)::l ->
       let (cnum_nlams,cnum_env,kont) = descend_then env sigma c cnum in
       let newc = mkRel(cnum_nlams-argnum) in
@@ -998,12 +998,14 @@ let discr_positions env sigma { eq_data = (lbeq,(t,t1,t2)); eq_term = v; eq_evar
   build_coq_False () >>= fun false_0 ->
   let false_ty = Retyping.get_type_of env sigma false_0 in
   let false_kind = Retyping.get_sort_family_of env sigma false_0 in
+  let false_ty_sort = Retyping.get_sort_of env sigma false_ty in
+  let qualuniv = EQualUniv.of_sort sigma false_ty_sort in
   let e = next_ident_away eq_baseid (vars_of_env env) in
   let e_env = push_named (Context.Named.Declaration.LocalAssum (make_annot e Sorts.Relevant,t)) env in
   let discriminator =
     try
       Proofview.tclUNIT
-        (build_discriminator e_env sigma true_0 (false_0,false_ty) dirn (mkVar e) cpath)
+        (build_discriminator e_env sigma true_0 (false_0,false_ty,qualuniv) dirn (mkVar e) cpath)
     with
       UserError _ as ex ->
       let _, info = Exninfo.capture ex in
@@ -1146,7 +1148,9 @@ let rec build_injrec env sigma default c = function
       let (cnum_nlams,cnum_env,kont) = descend_then env sigma c cnum in
       let newc = mkRel(cnum_nlams-argnum) in
       let sigma, (subval,tuplety,dfltval) = build_injrec cnum_env sigma default newc l in
-      let res = kont sigma subval (dfltval,tuplety) in
+      let sort = Retyping.get_sort_of env sigma tuplety in
+      let qualuniv = EQualUniv.of_sort sigma sort in
+      let res = kont sigma subval (dfltval,tuplety, qualuniv) in
       sigma, (res, tuplety,dfltval)
     with
         UserError _ -> failwith "caught"

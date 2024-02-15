@@ -28,6 +28,10 @@ let to_entry mind (mb:mutual_inductive_body) : Entries.mutual_inductive_entry =
     | NotRecord -> None | FakeRecord -> Some None
     | PrimRecord data -> Some (Some (Array.map (fun (x,_,_,_) -> x) data))
   in
+  let qus = match mb.mind_record with
+  | NotRecord -> None | FakeRecord -> None
+  | PrimRecord data -> Some (Array.map (fun (_,_,qu,_) -> qu) data)
+  in
   let check_template ind = match ind.mind_arity with
   | RegularArity _ -> false
   | TemplateArity _ -> true
@@ -47,7 +51,7 @@ let to_entry mind (mb:mutual_inductive_body) : Entries.mutual_inductive_entry =
     | Polymorphic auctx -> Polymorphic_ind_entry (AbstractContext.repr auctx)
   in
   let ntyps = Array.length mb.mind_packets in
-  let mind_entry_inds = Array.map_to_list (fun ind ->
+  let mind_entry_inds = Array.to_list @@ Array.mapi (fun i ind ->
       let mind_entry_arity = match ind.mind_arity with
         | RegularArity ar ->
           let ctx, arity = Term.decompose_prod_n_decls nparams ar.mind_user_arity in
@@ -68,6 +72,7 @@ let to_entry mind (mb:mutual_inductive_body) : Entries.mutual_inductive_entry =
             ignore ctx; (* we will check that the produced user_lc is equal to the input *)
             c
           ) ind.mind_user_lc;
+        mind_entry_proj_qus = match qus with Some qus -> Some (Array.rev_to_list qus.(i)) | None -> None
       })
       mb.mind_packets
   in
@@ -176,7 +181,7 @@ let check_same_record r1 r2 = match r1, r2 with
     (* The kernel doesn't care about the names, we just need to check
        that the saved types are correct. *)
     Array.for_all2 (fun (_,_,r1,tys1) (_,_,r2,tys2) ->
-        Array.equal Sorts.relevance_equal r1 r2 &&
+        Array.equal QualUniv.equal r1 r2 &&
         Array.equal Constr.equal tys1 tys2)
       r1 r2
   | (NotRecord | FakeRecord | PrimRecord _), _ -> false

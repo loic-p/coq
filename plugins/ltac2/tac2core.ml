@@ -139,6 +139,18 @@ let to_instance u =
   let u = Tac2ffi.to_pair toqs tous u in
   EConstr.EInstance.make (UVars.Instance.of_array u)
 
+let of_qualuniv u =
+  let u = UVars.QualUniv.to_quality_univ (EConstr.Unsafe.to_qualuniv u) in
+  let toqs = Tac2ffi.of_ext Tac2ffi.val_quality in
+  let tous = Tac2ffi.of_ext Tac2ffi.val_univ in
+  Tac2ffi.of_pair toqs tous u
+
+let to_qualuniv u =
+  let toqs = Tac2ffi.to_ext Tac2ffi.val_quality in
+  let tous = Tac2ffi.to_ext Tac2ffi.val_univ in
+  let q, u = Tac2ffi.to_pair toqs tous u in
+  EConstr.EQualUniv.make (UVars.QualUniv.make q u)
+
 let of_rec_declaration (nas, ts, cs) =
   let binders = Array.map2 (fun na t -> (na, t)) nas ts in
   (Tac2ffi.of_array of_binder binders,
@@ -548,7 +560,7 @@ let () =
     let (ci, c, iv, t, bl) = EConstr.expand_case env sigma (ci, u, pms, c, iv, t, bl) in
     v_blk 13 [|
       Tac2ffi.of_ext Tac2ffi.val_case ci;
-      Tac2ffi.(of_pair of_constr of_relevance c);
+      Tac2ffi.(of_pair of_constr of_qualuniv c);
       of_case_invert iv;
       Tac2ffi.of_constr t;
       Tac2ffi.of_array Tac2ffi.of_constr bl;
@@ -641,7 +653,7 @@ let () =
     EConstr.mkConstructU (cstr, u)
   | (13, [|ci; c; iv; t; bl|]) ->
     let ci = Tac2ffi.to_ext Tac2ffi.val_case ci in
-    let c = Tac2ffi.(to_pair to_constr to_relevance c) in
+    let c = Tac2ffi.(to_pair to_constr to_qualuniv c) in
     let iv = to_case_invert iv in
     let t = Tac2ffi.to_constr t in
     let bl = Tac2ffi.to_array Tac2ffi.to_constr bl in

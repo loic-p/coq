@@ -206,7 +206,6 @@ let build_sym_scheme env _handle ind =
   let indr = UVars.subst_instance_relevance u mip.mind_relevance in
   let realsign_ind =
     name_context env ((LocalAssum (make_annot (Name varH) indr,applied_ind))::realsign) in
-  let rci = Sorts.Relevant in (* TODO relevance *)
   let ci = make_case_info env ind RegularStyle in
   let p =
     my_it_mkLambda_or_LetIn_name env
@@ -217,18 +216,22 @@ let build_sym_scheme env _handle ind =
                  rel_vect 1 nrealargs;
                  rel_vect (2*nrealargs+2) nrealargs]))
   in
+  let qualuniv, ctx = with_context_set ctx (UnivGen.fresh_qualuniv ()) in
   let c =
   (my_it_mkLambda_or_LetIn paramsctxt
   (my_it_mkLambda_or_LetIn_name env realsign_ind
      (mkCase
         (Inductive.contract_case env
            (ci,
-            (p,rci),
+            (p,qualuniv),
             NoInvert,
             mkRel 1 (* varH *),
             [|cstr (nrealargs+1)|])))))
   in
-  c, UState.of_context_set ctx
+  let sigma, _ = Typing.type_of env (Evd.merge_universe_context (Evd.from_env env) (UState.of_context_set ctx)) (EConstr.of_constr c) in
+  assert (Evd.is_empty sigma);
+  let sigma = Evd.minimize_universes sigma in
+  EConstr.to_constr sigma (EConstr.of_constr c), Evd.evar_universe_context sigma
 
 let sym_scheme_kind =
   declare_individual_scheme_object "sym_internal"
@@ -274,7 +277,7 @@ let build_sym_involutive_scheme env handle ind =
          (rel_vect (nrealargs+1) nrealargs)) in
   let realsign_ind =
     name_context env ((LocalAssum (make_annot (Name varH) indr,applied_ind))::realsign) in
-  let rci = Sorts.Relevant in (* TODO relevance *)
+  let qualuniv, ctx = with_context_set ctx (UnivGen.fresh_qualuniv ()) in
   let ci = make_case_info env ind RegularStyle in
   let c =
     (my_it_mkLambda_or_LetIn paramsctxt
@@ -297,11 +300,15 @@ let build_sym_involutive_scheme env handle ind =
                  rel_vect (2*nrealargs+2) nrealargs;
                  rel_vect 1 nrealargs;
                  [|mkRel 1|]])|]]);
-               mkRel 1|])), rci),
+               mkRel 1|])), qualuniv),
                NoInvert,
                mkRel 1 (* varH *),
                [|mkApp(eqrefl,[|applied_ind_C;cstr (nrealargs+1)|])|])))))
-  in (c, UState.of_context_set ctx)
+  in
+  let sigma, _ = Typing.type_of env (Evd.merge_universe_context (Evd.from_env env) (UState.of_context_set ctx)) (EConstr.of_constr c) in
+  assert (Evd.is_empty sigma);
+  let sigma = Evd.minimize_universes sigma in
+  EConstr.to_constr sigma (EConstr.of_constr c), Evd.evar_universe_context sigma
 
 let sym_involutive_scheme_kind =
   declare_individual_scheme_object "sym_involutive"
@@ -410,10 +417,10 @@ let build_l2r_rew_scheme dep env handle ind kind =
                      rel_vect (nrealargs+4) nrealargs;
                      rel_vect 1 nrealargs;
                      [|mkRel 1|]]) in
-  let s, ctx' = UnivGen.fresh_sort_in_family kind in
-  let ctx = UnivGen.sort_context_union ctx ctx' in
+  let s, ctx = with_context_set ctx (UnivGen.fresh_sort_in_family kind) in
   let s = mkSort s in
-  let rci = Sorts.Relevant in (* TODO relevance *)
+  let qualunivdep, ctx = with_context_set ctx (UnivGen.fresh_qualuniv ()) in
+  let qualunivmain, ctx = with_context_set ctx (UnivGen.fresh_qualuniv ()) in
   let ci = make_case_info env ind RegularStyle in
   let cieq = make_case_info env (fst (destInd eq)) RegularStyle in
   let applied_PC =
@@ -437,7 +444,7 @@ let build_l2r_rew_scheme dep env handle ind kind =
                [|mkRel 2|]])|]]) in
   let main_body =
     mkCase (Inductive.contract_case env (ci,
-            (my_it_mkLambda_or_LetIn_name env realsign_ind_G applied_PG, rci),
+            (my_it_mkLambda_or_LetIn_name env realsign_ind_G applied_PG, qualunivmain),
             NoInvert,
             applied_sym_C 3,
             [|mkVar varHC|]))
@@ -454,14 +461,18 @@ let build_l2r_rew_scheme dep env handle ind kind =
        (mkLambda (make_annot (Name varH) indr,lift 3 applied_ind,
          mkLambda (make_annot Anonymous indr,
                    mkApp (eq,[|lift 4 applied_ind;applied_sym_sym;mkRel 1|]),
-                   applied_PR)), rci),
+                   applied_PR)), qualunivdep),
        NoInvert,
        mkApp (sym_involutive,
          Array.append (Context.Rel.instance mkRel 3 mip.mind_arity_ctxt) [|mkVar varH|]),
        [|main_body|]))
    else
      main_body))))))
-  in (c, UState.of_context_set ctx)
+  in
+  let sigma, _ = Typing.type_of env (Evd.merge_universe_context (Evd.from_env env) (UState.of_context_set ctx)) (EConstr.of_constr c) in
+  assert (Evd.is_empty sigma);
+  let sigma = Evd.minimize_universes sigma in
+  EConstr.to_constr sigma (EConstr.of_constr c), Evd.evar_universe_context sigma
 
 (**********************************************************************)
 (* Build the left-to-right rewriting lemma for hypotheses associated  *)
@@ -518,10 +529,9 @@ let build_l2r_forward_rew_scheme dep env ind kind =
     name_context env ((LocalAssum (make_annot (Name varH) indr,applied_ind))::realsign) in
   let realsign_ind_P n aP =
     name_context env ((LocalAssum (make_annot (Name varH) indr,aP))::realsign_P n) in
-  let s, ctx' = UnivGen.fresh_sort_in_family kind in
-  let ctx = UnivGen.sort_context_union ctx ctx' in
+  let s, ctx = with_context_set ctx (UnivGen.fresh_sort_in_family kind) in
   let s = mkSort s in
-  let rci = Sorts.Relevant in
+  let qualuniv, ctx = with_context_set ctx (UnivGen.fresh_qualuniv ()) in
   let ci = make_case_info env ind RegularStyle in
   let applied_PC =
     mkApp (mkVar varP,Array.append
@@ -545,7 +555,7 @@ let build_l2r_forward_rew_scheme dep env ind kind =
        (mkNamedProd (make_annot varP indr)
          (my_it_mkProd_or_LetIn
            (if dep then realsign_ind_P 2 applied_ind_P else realsign_P 2) s)
-       (mkNamedProd (make_annot varHC indr) applied_PC applied_PG)), rci),
+       (mkNamedProd (make_annot varHC indr) applied_PC applied_PG)), qualuniv),
      NoInvert,
      (mkVar varH),
      [|mkNamedLambda (make_annot varP indr)
@@ -553,7 +563,11 @@ let build_l2r_forward_rew_scheme dep env ind kind =
           (if dep then realsign_ind_P 1 applied_ind_P' else realsign_P 2) s)
       (mkNamedLambda (make_annot varHC indr) applied_PC'
         (mkVar varHC))|]))))))
-  in c, UState.of_context_set ctx
+  in
+  let sigma, _ = Typing.type_of env (Evd.merge_universe_context (Evd.from_env env) (UState.of_context_set ctx)) (EConstr.of_constr c) in
+  assert (Evd.is_empty sigma);
+  let sigma = Evd.minimize_universes sigma in
+  EConstr.to_constr sigma (EConstr.of_constr c), Evd.evar_universe_context sigma
 
 (**********************************************************************)
 (* Build the right-to-left rewriting lemma for hypotheses associated  *)
@@ -600,10 +614,9 @@ let build_r2l_forward_rew_scheme dep env ind kind =
   let applied_ind = build_dependent_inductive indu specif in
   let realsign_ind =
     name_context env ((LocalAssum (make_annot (Name varH) indr,applied_ind))::realsign) in
-  let s, ctx' = UnivGen.fresh_sort_in_family kind in
-  let ctx = UnivGen.sort_context_union ctx ctx' in
+  let s, ctx = with_context_set ctx (UnivGen.fresh_sort_in_family kind) in
   let s = mkSort s in
-  let rci = Sorts.Relevant in (* TODO relevance *)
+  let qualuniv, ctx = with_context_set ctx (UnivGen.fresh_qualuniv ()) in
   let ci = make_case_info env ind RegularStyle in
   let applied_PC =
     applist (mkVar varP,if dep then constrargs_cstr else constrargs) in
@@ -622,7 +635,7 @@ let build_r2l_forward_rew_scheme dep env ind kind =
     (mkCase (Inductive.contract_case env (ci,
        (my_it_mkLambda_or_LetIn_name env
          (lift_rel_context (nrealargs+3) realsign_ind)
-         (mkArrow applied_PG indr (lift (2*nrealargs+5) applied_PC)), rci),
+         (mkArrow applied_PG indr (lift (2*nrealargs+5) applied_PC)), qualuniv),
        NoInvert,
        mkRel 3 (* varH *),
        [|mkLambda
@@ -630,7 +643,11 @@ let build_r2l_forward_rew_scheme dep env ind kind =
            lift (nrealargs+3) applied_PC,
            mkRel 1)|])),
     [|mkVar varHC|]))))))
-  in c, UState.of_context_set ctx
+  in
+  let sigma, _ = Typing.type_of env (Evd.merge_universe_context (Evd.from_env env) (UState.of_context_set ctx)) (EConstr.of_constr c) in
+  assert (Evd.is_empty sigma);
+  let sigma = Evd.minimize_universes sigma in
+  EConstr.to_constr sigma (EConstr.of_constr c), Evd.evar_universe_context sigma
 
 (**********************************************************************)
 (* This function "repairs" the non-dependent r2l forward rewriting    *)
@@ -812,7 +829,8 @@ let build_congr env (eq,refl,ctx) ind =
   let varB,avoid = fresh env (Id.of_string "B") Id.Set.empty in
   let varH,avoid = fresh env (Id.of_string "H") avoid in
   let varf,avoid = fresh env (Id.of_string "f") avoid in
-  let rci = Sorts.Relevant in (* TODO relevance *)
+  (* Return eq which is in Prop *)
+  let rci = UVars.QualUniv.prop in
   let ci = make_case_info env ind RegularStyle in
   let uni, ctx' = UnivGen.new_global_univ () in
   let ctx =

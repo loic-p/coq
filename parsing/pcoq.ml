@@ -346,6 +346,7 @@ module Constr =
     let universe = Entry.make "universe"
     let sort = Entry.make "sort"
     let sort_family = Entry.make "sort_family"
+    let qualuniv_annot = Entry.make "qualuniv_annot"
     let pattern = Entry.make "pattern"
     let constr_pattern = Entry.make "constr_pattern"
     let cpattern = Entry.make "cpattern"

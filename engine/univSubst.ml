@@ -151,7 +151,7 @@ let map_universes_opt_subst_with_binders next aux fqual funiv k c =
     if s' == s then c else mkSort s'
   | Case (ci,u,pms,(p,rel),iv,t,br) ->
     let u' = Instance.subst_fn flevel u in
-    let rel' = frel rel in
+    let rel' = QualUniv.subst_fn flevel rel in
     let pms' = Array.Fun1.Smart.map aux k pms in
     let p' = aux_ctx p in
     let iv' = map_invert (aux k) iv in

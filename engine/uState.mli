@@ -106,6 +106,8 @@ val nf_universe : t -> Universe.t -> Universe.t
 val nf_sort : t -> Sorts.t -> Sorts.t
 (** Returns the normal form of the sort. *)
 
+val nf_qualuniv : t -> UVars.QualUniv.t -> UVars.QualUniv.t
+
 val nf_relevance : t -> relevance -> relevance
 (** Returns the normal form of the relevance. *)
 

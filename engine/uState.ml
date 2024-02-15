@@ -393,6 +393,9 @@ let nf_sort uctx s =
   let qnormalize q = QState.repr q uctx.sort_variables in
   Sorts.subst_fn (qnormalize, normalize) s
 
+let nf_qualuniv uctx r =
+  QualUniv.subst_fn (nf_qvar uctx, nf_level uctx) r
+
 let nf_relevance uctx r = match r with
 | Relevant | Irrelevant -> r
 | RelevanceVar q ->

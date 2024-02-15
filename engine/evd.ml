@@ -1180,6 +1180,12 @@ let add_global_univ d u =
 let fresh_sort_in_family ?loc ?(rigid=univ_flexible) evd s =
   with_sort_context_set ?loc rigid evd (UnivGen.fresh_sort_in_family s)
 
+let fresh_qualuniv_of_family ?loc ?(rigid=univ_flexible) evd s =
+  with_sort_context_set ?loc rigid evd (UnivGen.fresh_qualuniv_of_family s)
+
+let fresh_qualuniv_of_sort ?loc ?(rigid=univ_flexible) evd s =
+  with_sort_context_set ?loc rigid evd (UnivGen.fresh_qualuniv_of_sort (UState.nf_sort evd.universes s))
+
 let fresh_constant_instance ?loc ?(rigid=univ_flexible) env evd c =
   with_sort_context_set ?loc rigid evd (UnivGen.fresh_constant_instance env c)
 
@@ -1216,6 +1222,9 @@ let normalize_universe_instance evd l =
 
 let normalize_sort evars s =
   UState.nf_sort evars.universes s
+
+let normalize_qualuniv evd u =
+  UState.nf_qualuniv evd.universes u
 
 (* FIXME inefficient *)
 let set_eq_sort env d s1 s2 =
@@ -1265,6 +1274,24 @@ let check_qconstraints evd csts =
 
 let check_quconstraints evd (qcsts,ucsts) =
   check_qconstraints evd qcsts && check_constraints evd ucsts
+
+let fresh_leq_qualuniv_of_sort ?loc ?(rigid=univ_flexible) ?qu env evd s =
+  let evd, qualuniv =
+    match qu with
+    | None -> fresh_qualuniv_of_sort ?loc ~rigid evd s
+    | Some qu -> evd, qu
+  in
+  let evd = set_leq_sort env evd (UVars.QualUniv.to_sort qualuniv) s in
+  evd, qualuniv
+
+let fresh_geq_qualuniv_of_sort ?loc ?(rigid=univ_flexible) ?qu env evd s =
+  let evd, qualuniv =
+    match qu with
+    | None -> fresh_qualuniv_of_sort ?loc ~rigid evd s
+    | Some qu -> evd, qu
+  in
+  let evd = set_leq_sort env evd s (UVars.QualUniv.to_sort qualuniv) in
+  evd, qualuniv
 
 let fix_undefined_variables evd =
   { evd with universes = UState.fix_undefined_variables evd.universes }
@@ -1689,6 +1716,23 @@ module MiniEConstr = struct
     let empty = UVars.Instance.empty
     let is_empty = UVars.Instance.is_empty
     let unsafe_to_instance t = t
+  end
+
+  module EQualUniv =
+  struct
+    open UVars.QualUniv
+    type t = UVars.QualUniv.t
+    let make u = u
+    let kind = normalize_qualuniv
+    let unsafe_to_qualuniv u = u
+    let unsafe_eq = Refl
+    let quality sigma r = quality (kind sigma r)
+    let family _ r = family r
+    let relevance sigma r = relevance (kind sigma r)
+    let univ sigma r = univ (kind sigma r)
+    let to_sort sigma r = to_sort (kind sigma r)
+    let to_instance sigma r = to_instance (kind sigma r)
+    let of_sort sigma s = of_sort (ESorts.kind sigma s)
   end
 
   type t = econstr

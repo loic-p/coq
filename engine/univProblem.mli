@@ -48,4 +48,6 @@ val enforce_eq_instances_univs : bool -> Instance.t constraint_function
 
 val enforce_eq_qualities : Sorts.Quality.t array constraint_function
 
+val compare_irrelevant_qualuniv : QualUniv.t constraint_function
+
 val compare_cumulative_instances : Conversion.conv_pb -> Variance.t array -> Instance.t constraint_function

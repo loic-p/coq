@@ -147,6 +147,12 @@ let check_eq_instances g t1 t2 =
   CArray.equal Sorts.Quality.equal qt1 qt2
   && CArray.equal (check_eq g) ut1 ut2
 
+let check_eq_qualuniv g t1 t2 =
+  let qt1, ut1 = QualUniv.to_quality_univ t1 in
+  let qt2, ut2 = QualUniv.to_quality_univ t2 in
+  Sorts.Quality.equal qt1 qt2
+  && check_eq g ut1 ut2
+
 let domain g = G.domain g.graph
 let choose p g u = G.choose p g.graph u
 

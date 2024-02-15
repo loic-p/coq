@@ -105,6 +105,35 @@ let compare_glob_universe_instances lt strictly_lt us1 us2 =
          | UAnonymous _, UNamed _ -> false
          | UNamed _, UNamed _ -> glob_univ_eq u1 u2) ul1 ul2
 
+let compare_glob_qualuniv lt strictly_lt (qu1 : glob_qualuniv option) (qu2 : glob_qualuniv option) =
+  match qu1, qu2 with
+  | None, None -> true
+  | Some _, None -> strictly_lt := true; lt
+  | None, Some _ -> false
+  | Some (q1,u1), Some (q2,u2) ->
+    begin
+      let is_anon = function
+      | GQualVar (GLocalQVar {v=Anonymous}) -> true
+      | _ -> false
+      in
+      match q1, q2 with
+      | None, None -> true
+      | Some _, None -> strictly_lt := true; lt
+      | None, Some _ -> false
+      | Some q1, Some q2 ->
+        match is_anon q1, is_anon q2 with
+        | true, true -> true
+        | false, true -> strictly_lt := true; lt
+        | true, false -> false
+        | false, false -> glob_quality_eq q1 q2
+    end
+    &&
+      match u1, u2 with
+      | UAnonymous {rigid}, UAnonymous {rigid=rigid'} -> eq_rigid rigid rigid'
+      | UNamed _, UAnonymous _ -> strictly_lt := true; lt
+      | UAnonymous _, UNamed _ -> false
+      | UNamed _, UNamed _ -> glob_univ_eq u1 u2
+
 (* Compute us1 <= us2, as a boolean *)
 let compare_glob_universe_instances_le us1 us2 =
   compare_glob_universe_instances true (ref false) us1 us2
@@ -226,12 +255,20 @@ let compare_notation_constr lt var_eq_hole (vars1,vars2) t1 t2 =
         List.fold_left2 (check_eq_name vars) renaming n1 n2 in
         Option.fold_left2 eq renaming o1 o2 in
     let renaming = List.fold_left2 eqf renaming r1 r2 in
-    Option.iter2 (aux vars renaming) o1 o2;
+    let check_return (r1, qu1) (r2, qu2) =
+      aux vars renaming r1 r2;
+      if not @@ compare_glob_qualuniv lt strictly_lt qu1 qu2 then raise_notrace Exit
+    in
+    Option.iter2 check_return o1 o2;
     List.iter2 check_pat p1 p2
   | NLetTuple (nas1, (na1, o1), t1, u1), NLetTuple (nas2, (na2, o2), t2, u2) ->
     aux vars renaming t1 t2;
     let renaming = check_eq_name vars renaming na1 na2 in
-    Option.iter2 (aux vars renaming) o1 o2;
+    let check_return (r1, qu1) (r2, qu2) =
+      aux vars renaming r1 r2;
+      if not @@ compare_glob_qualuniv lt strictly_lt qu1 qu2 then raise_notrace Exit
+    in
+    Option.iter2 check_return o1 o2;
     let renaming' = List.fold_left2 (check_eq_name vars) renaming nas1 nas2 in
     aux vars renaming' u1 u2
   | NIf (t1, (na1, o1), u1, r1), NIf (t2, (na2, o2), u2, r2) ->
@@ -239,7 +276,11 @@ let compare_notation_constr lt var_eq_hole (vars1,vars2) t1 t2 =
     aux vars renaming u1 u2;
     aux vars renaming r1 r2;
     let renaming = check_eq_name vars renaming na1 na2 in
-    Option.iter2 (aux vars renaming) o1 o2
+    let check_return (r1, qu1) (r2, qu2) =
+      aux vars renaming r1 r2;
+      if not @@ compare_glob_qualuniv lt strictly_lt qu1 qu2 then raise_notrace Exit
+    in
+    Option.iter2 check_return o1 o2
   | NRec (_, ids1, ts1, us1, rs1), NRec (_, ids2, ts2, us2, rs2) -> (* FIXME? *)
     let eq renaming (na1, o1, t1) (na2, o2, t2) =
       Option.iter2 (aux vars renaming) o1 o2;
@@ -444,16 +485,16 @@ let glob_constr_of_notation_constr_with_binders ?loc g f ?(h=default_binder_stat
           List.fold_left_map (cases_pattern_fold_map ?loc fold) ([],e) patl in
         let disjpatl = product_of_cases_patterns patl in
         List.map (fun patl -> CAst.make (idl,patl,f e rhs)) disjpatl) eqnl in
-      GCases (sty,Option.map (f e') rtntypopt,tml',List.flatten eqnl')
+      GCases (sty,Option.map (on_fst @@ f e') rtntypopt,tml',List.flatten eqnl')
   | NLetTuple (nal,(na,po),b,c) ->
       let e = h.no e in
       let e',nal = List.fold_left_map (protect g) e nal in
       let e'',na = protect g e na in
-      GLetTuple (nal,(na,Option.map (f e'') po),f e b,f e' c)
+      GLetTuple (nal,(na,Option.map (on_fst @@ f e'') po),f e b,f e' c)
   | NIf (c,(na,po),b1,b2) ->
       let e = h.no e in
       let e',na = protect g e na in
-      GIf (f e c,(na,Option.map (f e') po),f e b1,f e b2)
+      GIf (f e c,(na,Option.map (on_fst @@ f e') po),f e b1,f e b2)
   | NRec (fk,idl,dll,tl,bl) ->
       let e = h.no e in
       let e,dll = Array.fold_left_map (List.fold_left_map (fun e (na,oc,b) ->
@@ -676,7 +717,7 @@ let notation_constr_and_vars_of_glob_constr recvars a =
   | GLetIn (na,_,b,t,c) -> add_name found na; NLetIn (na,aux b,Option.map aux t, aux c)
   | GCases (sty,rtntypopt,tml,eqnl) ->
       let f {CAst.v=(idl,pat,rhs)} = List.iter (add_id found) idl; (pat,aux rhs) in
-      NCases (sty,Option.map aux rtntypopt,
+      NCases (sty,Option.map (on_fst @@ aux) rtntypopt,
         List.map (fun (tm,(na,x)) ->
           add_name found na;
           Option.iter
@@ -686,10 +727,10 @@ let notation_constr_and_vars_of_glob_constr recvars a =
   | GLetTuple (nal,(na,po),b,c) ->
       add_name found na;
       List.iter (add_name found) nal;
-      NLetTuple (nal,(na,Option.map aux po),aux b,aux c)
+      NLetTuple (nal,(na,Option.map (on_fst @@ aux) po),aux b,aux c)
   | GIf (c,(na,po),b1,b2) ->
       add_name found na;
-      NIf (aux c,(na,Option.map aux po),aux b1,aux b2)
+      NIf (aux c,(na,Option.map (on_fst @@ aux) po),aux b1,aux b2)
   | GRec (fk,idl,dll,tl,bl) ->
       Array.iter (add_id found) idl;
       let dll = Array.map (List.map (fun (na,_,bk,oc,b) ->
@@ -859,7 +900,7 @@ let rec subst_notation_constr subst bound raw =
           NLetIn (n,r1',t',r2')
 
   | NCases (sty,rtntypopt,rl,branches) ->
-      let rtntypopt' = Option.Smart.map (subst_notation_constr subst bound) rtntypopt
+      let rtntypopt' = Option.Smart.map (fun (a, b as ab) -> let a' = subst_notation_constr subst bound a in if a == a' then ab else (a', b)) rtntypopt
       and rl' = List.Smart.map
         (fun (a,(n,signopt) as x) ->
           let a' = subst_notation_constr subst bound a in
@@ -881,14 +922,14 @@ let rec subst_notation_constr subst bound raw =
           NCases (sty,rtntypopt',rl',branches')
 
   | NLetTuple (nal,(na,po),b,c) ->
-      let po' = Option.Smart.map (subst_notation_constr subst bound) po
+      let po' = Option.Smart.map (fun (a, b as ab) -> let a' = subst_notation_constr subst bound a in if a == a' then ab else (a', b)) po
       and b' = subst_notation_constr subst bound b
       and c' = subst_notation_constr subst bound c in
         if po' == po && b' == b && c' == c then raw else
           NLetTuple (nal,(na,po'),b',c')
 
   | NIf (c,(na,po),b1,b2) ->
-      let po' = Option.Smart.map (subst_notation_constr subst bound) po
+      let po' = Option.Smart.map (fun (a, b as ab) -> let a' = subst_notation_constr subst bound a in if a == a' then ab else (a', b)) po
       and b1' = subst_notation_constr subst bound b1
       and b2' = subst_notation_constr subst bound b2
       and c' = subst_notation_constr subst bound c in
@@ -946,7 +987,7 @@ let subst_interpretation subst (metas,pat) =
 (* Pattern-matching a [glob_constr] against a [notation_constr]       *)
 
 let abstract_return_type_context pi mklam tml rtno =
-  Option.map (fun rtn ->
+  Option.map (fun (rtn, qu) ->
     let nal =
       List.flatten (List.map (fun (_,(na,t)) ->
         match t with Some x -> (pi x)@[na] | None -> [na]) tml) in
@@ -1616,7 +1657,7 @@ and match_in u = match_ true u
 
 and match_hd u = match_ false u
 
-and match_binders u alp metas na1 na2 sigma b1 b2 =
+and match_binders u alp metas na1 na2 sigma (b1,_) (b2,_) =
   (* Match binders which cannot be substituted by a pattern *)
   let (alp,sigma) = match_names metas (alp,sigma) na1 na2 in
   match_in u alp metas sigma b1 b2

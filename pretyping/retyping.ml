@@ -348,7 +348,7 @@ let relevance_of_term env sigma c =
       | Construct (c,u) ->
         let u = Unsafe.to_instance u in
         Relevanceops.relevance_of_constructor env (c,u)
-      | Case (_, _, _, (_, r), _, _, _) -> r
+      | Case (_, _, _, (_, r), _, _, _) -> EQualUniv.relevance sigma r
       | Fix ((_,i),(lna,_,_)) -> (lna.(i)).binder_relevance
       | CoFix (i,(lna,_,_)) -> (lna.(i)).binder_relevance
       | Proj (p, r, _) -> r

@@ -107,7 +107,7 @@ sig
     | Cst_proj of Projection.t * Sorts.relevance
 
   type 'a case_stk =
-    case_info * EInstance.t * 'a array * 'a pcase_return * 'a pcase_invert * 'a pcase_branch array
+    case_info * EInstance.t * 'a array * ('a, EQualUniv.t) pcase_return * 'a pcase_invert * 'a pcase_branch array
   type 'a member =
   | App of 'a app_node
   | Case of 'a case_stk * Cst_stack.t
@@ -165,7 +165,7 @@ struct
     | Cst_proj of Projection.t * Sorts.relevance
 
   type 'a case_stk =
-    case_info * EInstance.t * 'a array * 'a pcase_return * 'a pcase_invert * 'a pcase_branch array
+    case_info * EInstance.t * 'a array * ('a, EQualUniv.t) pcase_return * 'a pcase_invert * 'a pcase_branch array
   type 'a member =
   | App of 'a app_node
   | Case of 'a case_stk * Cst_stack.t
@@ -573,6 +573,11 @@ let match_einstance sigma pu u psubst =
   | Some psubst -> psubst
   | None -> raise PatternFailure
 
+let match_equaluniv sigma pu u psubst =
+  match UVars.QualUniv.pattern_match pu (EQualUniv.kind sigma u) psubst with
+  | Some psubst -> psubst
+  | None -> raise PatternFailure
+
 let match_sort ps s psubst =
   match Sorts.pattern_match ps s psubst with
   | Some psubst -> psubst
@@ -647,12 +652,13 @@ and apply_rule whrec env sigma ctx psubst es stk =
       let args, s = extract_n_stack [] np s in
       let psubst = List.fold_left2 (match_arg_pattern whrec env sigma ctx) psubst pargs args in
       apply_rule whrec env sigma ctx psubst e s
-  | Declarations.PECase (pind, pu, pret, pbrs) :: e, Stack.Case ((ci, u, pms, p, iv, brs), cst_l) :: s ->
+  | Declarations.PECase (pind, pu, pret, pqu, pbrs) :: e, Stack.Case ((ci, u, pms, p, iv, brs), cst_l) :: s ->
       if not @@ Ind.CanOrd.equal pind ci.ci_ind then raise PatternFailure;
       let dummy = mkProp in
       let psubst = match_einstance sigma pu u psubst in
-      let (_, _, _, ((ntys_ret, ret), _), _, _, brs) = EConstr.annotate_case env sigma (ci, u, pms, p, NoInvert, dummy, brs) in
+      let (_, _, _, ((ntys_ret, ret), qu), _, _, brs) = EConstr.annotate_case env sigma (ci, u, pms, p, NoInvert, dummy, brs) in
       let psubst = match_arg_pattern whrec env sigma (ntys_ret @ ctx) psubst pret ret in
+      let psubst = match_equaluniv sigma pqu qu psubst in
       let psubst = Array.fold_left2 (fun psubst pat (ctx', br) -> match_arg_pattern whrec env sigma (ctx' @ ctx) psubst pat br) psubst pbrs brs in
       apply_rule whrec env sigma ctx psubst e s
   | Declarations.PEProj proj :: e, Stack.Proj (proj', r, cst_l') :: s ->

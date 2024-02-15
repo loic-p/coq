@@ -40,7 +40,7 @@ let nongoal (_:detyping_flags) = { flg_isgoal = false }
 module RobustExpand :
 sig
 val return_clause : Environ.env -> Evd.evar_map -> Ind.t ->
-  EInstance.t -> EConstr.t array -> EConstr.case_return -> rel_context * EConstr.t
+  EInstance.t -> EConstr.t array -> EConstr.case_return -> rel_context * EConstr.t * EQualUniv.t
 val branch : Environ.env -> Evd.evar_map -> Construct.t ->
   EInstance.t -> EConstr.t array -> EConstr.case_branch -> rel_context * EConstr.t
 end =
@@ -66,7 +66,7 @@ let instantiate_context u subst nas ctx =
   let () = if not (Int.equal (Array.length nas) (List.length ctx)) then raise_notrace Exit in
   instantiate (Array.length nas - 1) ctx
 
-let return_clause env sigma ind u params ((nas, p),_) =
+let return_clause env sigma ind u params ((nas, p), qu) =
   try
     let u = EConstr.Unsafe.to_instance u in
     let params = EConstr.Unsafe.to_constr_array params in
@@ -83,10 +83,10 @@ let return_clause env sigma ind u params ((nas, p),_) =
     in
     let realdecls = LocalAssum (Context.anonR, self) :: realdecls in
     let realdecls = instantiate_context u paramsubst nas realdecls in
-    List.map EConstr.of_rel_decl realdecls, p
+    List.map EConstr.of_rel_decl realdecls, p, qu
   with e when CErrors.noncritical e ->
     let dummy na = LocalAssum (na, EConstr.mkProp) in
-    List.rev (Array.map_to_list dummy nas), p
+    List.rev (Array.map_to_list dummy nas), p, qu
 
 let branch env sigma (ind, i) u params (nas, br) =
   try
@@ -632,7 +632,7 @@ let it_destRLambda_or_LetIn_names l c =
               | _ -> DAst.make @@ GApp (c,[a]))
   in aux l [] c
 
-let detype_case computable detype detype_eqns avoid env sigma (ci, univs, params, p, iv, c, bl) =
+let detype_case computable detype_qualuniv detype detype_eqns avoid env sigma (ci, univs, params, p, iv, c, bl) =
   let synth_type = synthetize_type () in
   let tomatch = detype c in
   let tomatch =
@@ -656,7 +656,7 @@ let detype_case computable detype detype_eqns avoid env sigma (ci, univs, params
     then
       Anonymous, None, None
     else
-      let (ctx, p) = RobustExpand.return_clause (snd env) sigma ci.ci_ind univs params p in
+      let (ctx, p, qu) = RobustExpand.return_clause (snd env) sigma ci.ci_ind univs params p in
       let p = EConstr.it_mkLambda_or_LetIn p ctx in
       let p = detype p in
       let nl,typ = it_destRLambda_or_LetIn_names ci.ci_pp_info.ind_tags p in
@@ -666,7 +666,7 @@ let detype_case computable detype detype_eqns avoid env sigma (ci, univs, params
       let aliastyp =
         if List.for_all (Name.equal Anonymous) nl then None
         else Some (CAst.make (ci.ci_ind,nl)) in
-      n, aliastyp, Some typ
+      n, aliastyp, Some (typ, detype_qualuniv qu)
   in
   let constructs = Array.init (Array.length bl) (fun i -> (ci.ci_ind,i+1)) in
   let tag = let st = ci.ci_pp_info.style in
@@ -823,6 +823,15 @@ let detype_instance sigma l =
       let us = List.map (detype_instance_univ sigma) (Array.to_list us) in
       Some (qs, us)
 
+let detype_qualuniv sigma qu : glob_qualuniv option =
+  if not !print_universes then None
+  else
+    let qu = EQualUniv.kind sigma qu in
+    let q, u = UVars.QualUniv.to_quality_univ qu in
+    let q = detype_quality sigma q in
+    let u = detype_instance_univ sigma u in
+    Some (Some q, u)
+
 let delay (type a) (d : a delay) (f : a delay -> _ -> _ -> _ -> _ -> _ -> a glob_constr_r) flags env avoid sigma t : a glob_constr_g =
   match d with
   | Now -> DAst.make (f d flags env avoid sigma t)
@@ -972,7 +981,7 @@ and detype_r d flags avoid env sigma t =
     | Case (ci,u,pms,p,iv,c,bl) ->
         let comp = computable sigma (fst p) in
         let case = (ci, u, pms, p, iv, c, bl) in
-        detype_case comp (detype d flags avoid env sigma)
+        detype_case comp (detype_qualuniv sigma) (detype d flags avoid env sigma)
           (detype_eqns d flags avoid env sigma comp)
           avoid env sigma case
     | Fix (nvn,recdef) -> detype_fix (detype d) flags avoid env sigma nvn recdef
@@ -1208,7 +1217,7 @@ let rec subst_glob_constr env subst = DAst.map (function
 
   | GCases (sty,rtno,rl,branches) as raw ->
     let open CAst in
-      let rtno' = Option.Smart.map (subst_glob_constr env subst) rtno
+      let rtno' = Option.Smart.map (on_fst @@ subst_glob_constr env subst) rtno
       and rl' = List.Smart.map (fun (a,x as y) ->
         let a' = subst_glob_constr env subst a in
         let (n,topt) = x in
@@ -1230,14 +1239,14 @@ let rec subst_glob_constr env subst = DAst.map (function
           GCases (sty,rtno',rl',branches')
 
   | GLetTuple (nal,(na,po),b,c) as raw ->
-      let po' = Option.Smart.map (subst_glob_constr env subst) po
+      let po' = Option.Smart.map (on_fst @@ subst_glob_constr env subst) po
       and b' = subst_glob_constr env subst b
       and c' = subst_glob_constr env subst c in
         if po' == po && b' == b && c' == c then raw else
           GLetTuple (nal,(na,po'),b',c')
 
   | GIf (c,(na,po),b1,b2) as raw ->
-      let po' = Option.Smart.map (subst_glob_constr env subst) po
+      let po' = Option.Smart.map (on_fst @@ subst_glob_constr env subst) po
       and b1' = subst_glob_constr env subst b1
       and b2' = subst_glob_constr env subst b2
       and c' = subst_glob_constr env subst c in

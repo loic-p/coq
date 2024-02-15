@@ -255,6 +255,7 @@ let push_history_pattern n pci cont =
 type 'a pattern_matching_problem =
     { env       : GlobEnv.t;
       pred      : constr;
+      qualuniv  : UVars.QualUniv.t option;
       tomatch   : tomatch_stack;
       history   : pattern_continuation;
       mat       : 'a matrix;
@@ -1471,10 +1472,12 @@ let compile ~program_mode sigma pb =
               find_predicate pb.caseloc pb.env sigma
                 pred current indt (names,dep) tomatch
             in
-            let rci = Typing.check_allowed_sort !!(pb.env) sigma mind current pred in
+            let s = Typing.check_allowed_sort !!(pb.env) sigma mind current pred in
+            let sigma, qualuniv = Evd.fresh_geq_qualuniv_of_sort ~rigid:univ_flexible !!(pb.env) ?qu:pb.qualuniv sigma s in
+            let qualuniv = EQualUniv.make qualuniv in
             let ci = make_case_info !!(pb.env) (fst mind) pb.casestyle in
             let pred = nf_betaiota !!(pb.env) sigma pred in
-            let case = make_case_or_project !!(pb.env) sigma indt ci (pred,rci) current brvals in
+            let case = make_case_or_project !!(pb.env) sigma indt ci (pred, qualuniv) current brvals in
             let sigma, _ = Typing.type_of !!(pb.env) sigma pred in
             let used = List.flatten (Array.to_list used) in
             used, sigma, { uj_val = applist (case, inst);
@@ -1935,6 +1938,7 @@ let build_inversion_problem ~program_mode loc env sigma tms t =
   let pb =
     { env       = pb_env;
       pred      = (*ty *) mkSort s;
+      qualuniv  = None;
       tomatch   = sub_tms;
       history   = start_history n;
       mat       = main_eqn :: catch_all_eqn;
@@ -2131,15 +2135,17 @@ let prepare_predicate ?loc ~program_mode typing_fun env sigma tomatchs arsign ty
         let pred3 = lift (List.length (List.flatten arsign)) t in
         (match p2 with
          | Some (sigma2,pred2,arsign) when not (EConstr.eq_constr sigma pred2 pred3) ->
-             [sigma1, pred1, arsign; sigma2, pred2, arsign; sigma, pred3, arsign]
+             [sigma1, pred1, None, arsign; sigma2, pred2, None, arsign; sigma, pred3, None, arsign]
          | _ ->
-             [sigma1, pred1, arsign; sigma, pred3, arsign])
+             [sigma1, pred1, None, arsign; sigma, pred3, None, arsign])
     (* Some type annotation *)
-    | Some rtntyp ->
+    | Some (rtntyp, qu) ->
       (* We extract the signature of the arity *)
       let hypnaming = RenameExistingBut (VarSet.variables (Global.env ())) in
       let building_arsign,envar = List.fold_right_map (push_rel_context ~hypnaming sigma) arsign env in
-      let sigma, rtnsort = Evd.new_sort_variable univ_flexible sigma in
+      let sigma, rtnsort = match qu with Some qu -> sigma, ESorts.make @@ UVars.QualUniv.to_sort qu | None ->
+        Evd.new_sort_variable univ_flexible sigma
+      in
       let sigma, predcclj = typing_fun (Some (mkSort rtnsort)) envar sigma rtntyp in
       (* We take into account the elimination constraints coming from the terms
         to match. When there is an elimination constraint and the predicate is
@@ -2178,12 +2184,12 @@ let prepare_predicate ?loc ~program_mode typing_fun env sigma tomatchs arsign ty
           (expected_elimination_sorts !!env sigma tomatchs)
       in
       let predccl = nf_evar sigma predcclj.uj_val in
-      [sigma, predccl, building_arsign]
+      [sigma, predccl, qu, building_arsign]
   in
   List.map
-    (fun (sigma,pred,arsign) ->
+    (fun (sigma,pred,qu,arsign) ->
       let (nal,pred) = build_initial_predicate arsign pred in
-      sigma,nal,pred)
+      sigma,nal,pred,qu)
     preds
 
 (** Program cases *)
@@ -2709,6 +2715,7 @@ let compile_program_cases ?loc style (typing_function, sigma) tycon env
   let pb =
     { env      = env;
       pred     = pred;
+      qualuniv = None;
       tomatch  = initial_pushed;
       history  = start_history (List.length initial_pushed);
       mat      = matx;
@@ -2749,7 +2756,7 @@ let compile_cases ?loc ~program_mode style (typing_fun, sigma) tycon env (predop
   let arsign = extract_arity_signature !!env tomatchs tomatchl in
   let preds = prepare_predicate ?loc ~program_mode typing_fun predenv sigma tomatchs arsign tycon predopt in
 
-  let compile_for_one_predicate (sigma,nal,pred) =
+  let compile_for_one_predicate (sigma,nal,pred,qu) =
     (* We push the initial terms to match and push their alias to rhs' envs *)
     (* names of aliases will be recovered from patterns (hence Anonymous *)
     (* here) *)
@@ -2786,6 +2793,7 @@ let compile_cases ?loc ~program_mode style (typing_fun, sigma) tycon env (predop
     let pb =
       { env       = env;
         pred      = pred;
+        qualuniv  = qu;
         tomatch   = initial_pushed;
         history   = start_history (List.length initial_pushed);
         mat       = matx;

@@ -98,14 +98,20 @@ let check_instance_mask env udecl umask lincheck =
         lincheck
     | _ -> CErrors.anomaly Pp.(str "Bad univ mask length.")
 
+let check_qualuniv_mask env (qmask, umask) lincheck =
+  let lincheck = check_quality_mask env qmask lincheck in
+  let lincheck = Partial_subst.maybe_add_univ umask () lincheck in
+  lincheck
+
 let rec get_holes_profiles env nargs ndecls lincheck el =
   List.fold_left (get_holes_profiles_elim env nargs ndecls) lincheck el
 
 and get_holes_profiles_elim env nargs ndecls lincheck = function
   | PEApp args -> Array.fold_left (get_holes_profiles_parg env nargs ndecls) lincheck args
-  | PECase (ind, u, ret, brs) ->
+  | PECase (ind, u, ret, qu, brs) ->
       let mib, mip = Inductive.lookup_mind_specif env ind in
       let lincheck = check_instance_mask env mib.mind_universes u lincheck in
+      let lincheck = check_qualuniv_mask env qu lincheck in
       let lincheck = get_holes_profiles_parg env (nargs + mip.mind_nrealargs + 1) (ndecls + mip.mind_nrealdecls + 1) lincheck ret in
       Array.fold_left3 (fun lincheck nargs_b ndecls_b -> get_holes_profiles_parg env (nargs + nargs_b) (ndecls + ndecls_b) lincheck) lincheck mip.mind_consnrealargs mip.mind_consnrealdecls brs
   | PEProj proj ->

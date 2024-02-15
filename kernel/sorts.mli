@@ -65,6 +65,8 @@ module Quality : sig
 
   val var_index : t -> int option
 
+  val family : t -> family
+
   val equal : t -> t -> bool
 
   val compare : t -> t -> int
@@ -182,6 +184,7 @@ val relevance_equal : relevance -> relevance -> bool
 
 val relevance_subst_fn : (QVar.t -> Quality.t) -> relevance -> relevance
 
+val relevance_of_quality : Quality.t -> relevance
 val relevance_of_sort : t -> relevance
 val relevance_of_sort_family : family -> relevance
 
