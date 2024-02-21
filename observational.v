@@ -97,10 +97,17 @@ Set Observational Inductives.
 
 Arguments cast A B {e} t.
 
+Unset Universe Polymorphism.
+
+Rewrite Rule rew_nil :=
+| (@cast (list ?A) (list ?B) ?e (@nil _)) ==> (@nil ?B).
+
 (* Declaring an inductive automaticall adds equalities and rewrite rules for cast *)
 Inductive list (A : Type) : Type :=
 | nil : list A
 | cons : forall (a : A) (l : list A), list A.
+
+
 
 Arguments nil {A}.
 Arguments cons {A} a l.
@@ -109,8 +116,8 @@ Arguments cons {A} a l.
 Print obseq_cons_1.
 
 (* The following rewrite rules have been defined *)
-Print rewrite_nil.
-Print rewrite_cons.
+(* Print rewrite_nil. *)
+(* Print rewrite_cons. *)
 
 (* Casting a singleton list *)
 Section List_Test.
@@ -133,8 +140,18 @@ Inductive vect (A : Type) (n : nat) : Type :=
 Arguments vnil {A n e}.
 Arguments vcons {A n} a m v {e}.
 
+About obseq_vnil_0.
+About obseq_vcons_0.
+About obseq_vcons_1.
+About obseq_vcons_2.
+
 Notation vnil' := (vnil (e:= obseq_refl)).
 Notation vcons' a n v := (vcons a n v (e := obseq_refl)).
+
+Inductive stress_test (A : Type) (n : nat) (m := n+n) (v : vect A m) : Type :=
+| stress_cons : (forall (B : Type) (k := 0), stress_test B 0 vnil') -> stress_test A n v.
+
+Print obseq_stress_cons_0.
 
 (* equalities for vectors *)
 Check (obseq_vnil_0:forall (A B : Type) (n m : nat), vect A n ~ vect B m -> (n ~ 0) ~ (m ~ 0)).
