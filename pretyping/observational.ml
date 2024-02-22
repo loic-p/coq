@@ -310,8 +310,10 @@ let declare_one_constructor_rew_rules env ctxt_info ind ctor ctor_name =
                       ++ str " rewrites to "
                       ++ Constr.debug_print rule_right) ;
 
-  let uctx = Evd.evar_universe_context sigma in
-  let uctx = UState.minimize uctx in
+  (** TODO : Replace variables with evars, and add rewrite rule from lhs to rhs *)
+
+  (* let uctx = Evd.evar_universe_context sigma in *)
+  (* let uctx = UState.minimize uctx in *)
   (* let rule_tm = UState.nf_universes uctx rule_tm in *)
   (* let rule_ty = UState.nf_universes uctx rule_ty in *)
   (* declaring the axiom with its local universe context *)
@@ -389,8 +391,7 @@ let declare_inductive_observational_data kn =
   let mib = Global.lookup_mind kn in
   (* check that all options are set correctly *)
   if not (Declareops.inductive_is_polymorphic mib) then
-    (* Is this true, though? The problem is that we need a cast and an obseq for each sort.
-       Maybe we can generate them when needed... *)
+    (** TODO: handle monomorphic universes *)
     user_err Pp.(str "Observational inductives require universe polymorphism. \
                       (Set Universe Polymorphism)");
   if mib.mind_finite = Declarations.CoFinite then
