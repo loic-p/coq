@@ -186,3 +186,12 @@ module List =
     try Some (aux f l) with Exit -> None
 
 end
+
+module Array = struct
+  let fold_left2 f acc a a' =
+    try
+      let acc = ref acc in
+      Array.iter2 (fun a b -> match f !acc a b with Some r -> acc := r | None -> raise_notrace Exit) a a';
+      Some !acc
+    with Exit -> None
+end

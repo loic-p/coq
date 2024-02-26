@@ -1392,6 +1392,10 @@ let conv : (clos_infos -> clos_tab -> fconstr -> fconstr -> bool) ref
   = ref (fun _ _ _ _ -> (assert false : bool))
 let set_conv f = conv := f
 
+let qconv _info q q' = Sorts.Quality.equal q q'
+let uconv info u u' = UGraph.check_eq info.i_cache.i_univs u u'
+let quconv info = (qconv info, uconv info)
+
 type 'constr partial_subst = {
   subst: ('constr, Sorts.Quality.t, Univ.Universe.t) Partial_subst.t;
   rhs: constr;
@@ -1503,8 +1507,10 @@ let rec knr : 'a. _ -> _ -> pat_state:(_, _, _, 'a) depth -> _ -> _ -> 'a =
               (fun r ->
                 let pu, es = r.lhs_pat in
                 let subst = Partial_subst.make r.nvars in
-                let subst = UVars.Instance.pattern_match pu u subst in
-                Live { subst; rhs = r.Declarations.rhs }, Check es
+                let subst = UVars.Instance.pattern_match (quconv info) pu u subst in
+                match subst with
+                | Some subst -> Live { subst; rhs = r.Declarations.rhs }, Check es
+                | None -> Dead, Ignore
               ) (Array.of_list r)
             in
             let loc = LocStart { elims; context=[]; head = m; stack = stk; next = Return (unfold_fix, m, stk) } in
@@ -1721,10 +1727,11 @@ and match_elim : 'a. _ -> _ -> pat_state:(fconstr, stack, _, 'a) depth -> _ -> _
       let prets, pbrss, elims, states = extract_or_kill4 (function [@ocaml.warning "-4"]
       | PECase (pind, pu, pret, pqu, pbrs) :: es, psubst ->
         if not @@ Ind.CanOrd.equal pind ci.ci_ind then None else
-          let subst = UVars.Instance.pattern_match pu u psubst.subst in
-          let subst = UVars.QualUniv.pattern_match pqu r subst in
+          let (let*) = Option.bind in
+          let* subst = UVars.Instance.pattern_match (quconv info) pu u psubst.subst in
+          let* subst = UVars.QualUniv.pattern_match (quconv info) pqu r subst in
           Some (pret, pbrs, es, { psubst with subst })
-          | _ -> None)
+      | _ -> None)
           elims states
       in
       let loc = LocStart { elims; context; head; stack=s; next } in
@@ -1787,8 +1794,8 @@ and match_head : 'a. _ -> _ -> pat_state:(fconstr, stack, _, 'a) depth -> _ -> _
     let elims, states = extract_or_kill2 (function [@ocaml.warning "-4"]
     | (PHInd (ind, pu), elims), psubst ->
       if not @@ Ind.CanOrd.equal ind ind' then None else
-      let subst = UVars.Instance.pattern_match pu u psubst.subst in
-      Some (elims, { psubst with subst })
+      let subst = UVars.Instance.pattern_match (quconv info) pu u psubst.subst in
+      Option.map (fun subst -> elims, { psubst with subst }) subst
     | _ -> None) patterns states
     in
     let loc = LocStart { elims; context; head=t; stack=stk; next=Continue next } in
@@ -1797,8 +1804,8 @@ and match_head : 'a. _ -> _ -> pat_state:(fconstr, stack, _, 'a) depth -> _ -> _
     let elims, states = extract_or_kill2 (function [@ocaml.warning "-4"]
     | (PHConstr (constr, pu), elims), psubst ->
       if not @@ Construct.CanOrd.equal constr constr' then None else
-      let subst = UVars.Instance.pattern_match pu u psubst.subst in
-      Some (elims, { psubst with subst })
+      let subst = UVars.Instance.pattern_match (quconv info) pu u psubst.subst in
+      Option.map (fun subst -> elims, { psubst with subst }) subst
     | _ -> None) patterns states
     in
     let loc = LocStart { elims; context; head=t; stack=stk; next=Continue next } in
@@ -1807,7 +1814,7 @@ and match_head : 'a. _ -> _ -> pat_state:(fconstr, stack, _, 'a) depth -> _ -> _
     | Sort s ->
       let elims, states = extract_or_kill2 (function [@ocaml.warning "-4"]
       | (PHSort ps, elims), psubst ->
-        let subst = Sorts.pattern_match ps s psubst.subst in
+        let subst = Sorts.pattern_match (quconv info) ps s psubst.subst in
         Option.map (fun subst -> elims, { psubst with subst }) subst
       | _ -> None) patterns states
       in
@@ -1823,8 +1830,8 @@ and match_head : 'a. _ -> _ -> pat_state:(fconstr, stack, _, 'a) depth -> _ -> _
     let elims, states = extract_or_kill2 (function [@ocaml.warning "-4"]
     | (PHSymbol (c, pu), elims), psubst ->
       if not @@ Constant.CanOrd.equal c c' then None else
-      let subst = UVars.Instance.pattern_match pu u psubst.subst in
-      Some (elims, { psubst with subst })
+      let subst = UVars.Instance.pattern_match (quconv info) pu u psubst.subst in
+      Option.map (fun subst -> elims, { psubst with subst }) subst
     | _ -> None) patterns states
     in
     let loc = LocStart { elims; context; head=t; stack=stk; next=Continue next } in
@@ -2109,8 +2116,10 @@ let unfold_ref_with_args infos tab fl v =
       (fun r ->
         let pu, es = r.lhs_pat in
         let subst = Partial_subst.make r.nvars in
-        let subst = UVars.Instance.pattern_match pu u subst in
-        Live { subst; rhs = r.Declarations.rhs }, Check es
+        let subst = UVars.Instance.pattern_match (quconv infos) pu u subst in
+        match subst with
+        | Some subst -> Live { subst; rhs = r.Declarations.rhs }, Check es
+        | None -> Dead, Ignore
       ) (Array.of_list r)
     in
     let head = { mark = Red; term = FFlex fl } in

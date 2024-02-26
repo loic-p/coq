@@ -195,6 +195,16 @@ module Quality = struct
   module Set = CSet.Make(Self)
   module Map = CMap.Make(Self)
 
+  type pattern =
+    | PQProp | PQSProp | PQType | PQVar of int option
+
+  let pattern_match qconv ps s qusubst =
+    match ps, s with
+    | PQProp, QConstant QProp -> Some qusubst
+    | PQSProp, QConstant QSProp -> Some qusubst
+    | PQType, QConstant QType -> Some qusubst
+    | PQVar qio, q -> Partial_subst.maybe_add_quality_or_conv qconv qio q qusubst
+    | (PQProp | PQSProp | PQType), _ -> None
 end
 
 module QConstraint = struct
@@ -493,12 +503,16 @@ let algebraic = function
   | QSort (_, u) -> u
   | Prop | SProp | Set -> Univ.Universe.type0
 
-let pattern_match ps s qusubst =
+let pattern_match (qconv, uconv) ps s qusubst =
   match ps, s with
   | PSProp, Prop -> Some qusubst
   | PSSProp, SProp -> Some qusubst
   | PSSet, Set -> Some qusubst
   | PSType uio, Set -> Some (Partial_subst.maybe_add_univ uio Univ.Universe.type0 qusubst)
   | PSType uio, Type u -> Some (Partial_subst.maybe_add_univ uio u qusubst)
-  | PSQSort (qio, uio), s -> Some (qusubst |> Partial_subst.maybe_add_quality qio (quality s) |> Partial_subst.maybe_add_univ uio (algebraic s))
+  | PSQSort (qio, uio), s ->
+      let (let*) = Option.bind in
+      let* qusubst = Partial_subst.maybe_add_quality_or_conv qconv qio (quality s) qusubst in
+      let* qusubst = Partial_subst.maybe_add_univ_or_conv uconv uio (algebraic s) qusubst in
+      Some qusubst
   | (PSProp | PSSProp | PSSet | PSType _), _ -> None

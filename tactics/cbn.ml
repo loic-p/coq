@@ -567,14 +567,22 @@ let apply_branch env sigma (ind, i) args (ci, u, pms, iv, r, lf) =
 
 exception PatternFailure
 
+let qconv _info q q' = Sorts.Quality.equal q q'
+let uconv sigma u u' = UGraph.check_eq (Evd.universes sigma) u u'
+let quconv info = (qconv info, uconv info)
+
 let match_einstance sigma pu u psubst =
-  UVars.Instance.pattern_match pu (EInstance.kind sigma u) psubst
+  match UVars.Instance.pattern_match (quconv sigma) pu (EInstance.kind sigma u) psubst with
+  | Some psubst -> psubst
+  | None -> raise PatternFailure
 
 let match_equaluniv sigma pu u psubst =
-  UVars.QualUniv.pattern_match pu (EQualUniv.kind sigma u) psubst
+  match UVars.QualUniv.pattern_match (quconv sigma) pu (EQualUniv.kind sigma u) psubst with
+  | Some psubst -> psubst
+  | None -> raise PatternFailure
 
-let match_sort ps s psubst =
-  match Sorts.pattern_match ps s psubst with
+let match_sort sigma ps s psubst =
+  match Sorts.pattern_match (quconv sigma) ps (ESorts.kind sigma s) psubst with
   | Some psubst -> psubst
   | None -> raise PatternFailure
 
@@ -608,7 +616,7 @@ and match_rigid_arg_pattern whrec env sigma ctx psubst p t =
   | PHConstr (constr, pu), Construct (constr', u) ->
     if Construct.CanOrd.equal constr constr' then match_einstance sigma pu u psubst else raise PatternFailure
   | PHRel i, Rel n when i = n -> psubst
-  | PHSort ps, Sort s -> match_sort ps (ESorts.kind sigma s) psubst
+  | PHSort ps, Sort s -> match_sort sigma ps s psubst
   | PHSymbol (c, pu), Const (c', u) ->
     if Constant.CanOrd.equal c c' then match_einstance sigma pu u psubst else raise PatternFailure
   | PHInt i, Int i' ->

@@ -91,9 +91,10 @@ module Instance : sig
     val pr : (Sorts.QVar.t -> Pp.t) -> (Level.t -> Pp.t) -> ?variance:Variance.t array -> t -> Pp.t
     val levels : t -> Quality.Set.t * Level.Set.t
 
-    type mask = (int option array * int option array) option
+    type mask = Quality.pattern array * int option array
 
-    val pattern_match : mask -> t -> ('term, Quality.t, Universe.t) Partial_subst.t -> ('term, Quality.t, Universe.t) Partial_subst.t
+    val pattern_match : (Quality.t -> Quality.t -> bool) * (Universe.t -> Universe.t -> bool) ->
+      mask -> t -> ('term, Quality.t, Universe.t) Partial_subst.t -> ('term, Quality.t, Universe.t) Partial_subst.t option
 end =
 struct
   type t = Quality.t array * Level.t array
@@ -197,15 +198,13 @@ struct
     CArray.equal Quality.equal xq yq
     && CArray.equal Level.equal xu yu
 
-  type mask = (int option array * int option array) option
+  type mask = Quality.pattern array * int option array
 
-  let pattern_match (qmask, umask) (qs, us) tqus =
-    let tqus = Array.fold_left2 (fun tqus mask q -> Partial_subst.maybe_add_quality mask q tqus) tqus qmask qs in
-    let tqus = Array.fold_left2 (fun tqus mask u -> Partial_subst.maybe_add_univ mask (Univ.Universe.make u) tqus) tqus umask us in
-    tqus
-
-  let pattern_match pu u tqus =
-    Option.fold_right (fun pu -> pattern_match pu u) pu tqus
+  let pattern_match (qconv, uconv) (qmask, umask) (qs, us) tqus =
+    let (let*) = Option.bind in
+    let* tqus = Option.Array.fold_left2 (fun tqus mask q -> Quality.pattern_match qconv mask q tqus) tqus qmask qs in
+    let* tqus = Option.Array.fold_left2 (fun tqus mask u -> Partial_subst.maybe_add_univ_or_conv uconv mask (Univ.Universe.make u) tqus) tqus umask us in
+    Some tqus
 end
 
 module AInstance : sig
@@ -367,9 +366,10 @@ module QualUniv : sig
   val levels : t -> Quality.Set.t * Level.Set.t
   val pr : (Sorts.QVar.t -> Pp.t) -> (Univ.Level.t -> Pp.t) -> t -> Pp.t
 
-  type mask = int option * int option
+  type mask = Quality.pattern * int option
 
-  val pattern_match : mask -> t -> ('term, Quality.t, Universe.t) Partial_subst.t -> ('term, Quality.t, Universe.t) Partial_subst.t
+  val pattern_match : (Quality.t -> Quality.t -> bool) * (Universe.t -> Universe.t -> bool) ->
+    mask -> t -> ('term, Quality.t, Universe.t) Partial_subst.t -> ('term, Quality.t, Universe.t) Partial_subst.t option
 end =
 struct
 type t = Quality.t * Level.t
@@ -419,12 +419,13 @@ let pr prq prl (q,u) =
   Quality.pr prq q ++ strbrk " | " ++ prl u
 
 
-type mask = int option * int option
+type mask = Quality.pattern * int option
 
-let pattern_match (qmask, umask) (q, u) tqus =
-  let tqus = Partial_subst.maybe_add_quality qmask q tqus in
-  let tqus = Partial_subst.maybe_add_univ umask (Univ.Universe.make u) tqus in
-  tqus
+let pattern_match (qconv, uconv) (qmask, umask) (q, u) tqus =
+  let (let*) = Option.bind in
+  let* tqus = Quality.pattern_match qconv qmask q tqus in
+  let* tqus = Partial_subst.maybe_add_univ_or_conv uconv umask (Univ.Universe.make u) tqus in
+  Some tqus
 
 end
 

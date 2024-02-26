@@ -80,48 +80,44 @@ let update_invtbl ~loc env evd evk (curvar, tbl) =
   | Some v -> v, (curvar, tbl)
 
 let update_invtblu1 ~loc ~(alg:bool) evd lvlold lvl (curvaru, alg_vars, tbl) =
-  succ curvaru, alg :: alg_vars, tbl |> Int.Map.update lvl @@ function
-    | None -> Some curvaru
-    | Some k as c when k = curvaru -> c
-    | Some k ->
-        CErrors.user_err ?loc
-          Pp.(str "Universe variable "
-            ++ Termops.pr_evd_level evd lvlold
-            ++ str" is bound multiple times in the pattern (holes number "
-            ++ int k ++ str" and " ++ int curvaru ++ str").")
+  match Int.Map.find_opt lvl tbl with
+  | None -> succ curvaru, alg :: alg_vars, Int.Map.add lvl curvaru tbl
+  | Some v -> curvaru, alg_vars, tbl
 
 let update_invtblq1 ~loc evd qold qvar (curvarq, tbl) =
-  succ curvarq, tbl |> Int.Map.update qvar @@ function
-    | None -> Some curvarq
-    | Some k as c when k = curvarq -> c
-    | Some k ->
-        CErrors.user_err ?loc
-          Pp.(str "Sort variable "
-            ++ Sorts.Quality.pr (Termops.pr_evd_qvar evd) qold
-            ++ str" is bound multiple times in the pattern (holes number "
-            ++ int k ++ str" and " ++ int curvarq ++ str").")
+  match Int.Map.find_opt qvar tbl with
+  | None -> succ curvarq, Int.Map.add qvar curvarq tbl
+  | Some v -> curvarq, tbl
+
+let quality_pattern_of_quality_constant =
+  let open Sorts.Quality in
+  function
+  | QProp -> PQProp
+  | QSProp -> PQSProp
+  | QType -> PQType
+
+let safe_quality_pattern_of_quality ~loc evd qsubst stateq q =
+  match Sorts.Quality.(subst (subst_fn qsubst) q) with
+  | QConstant qc -> stateq, quality_pattern_of_quality_constant qc
+  | QVar qv ->
+    let qio = Sorts.QVar.var_index qv in
+    let stateq = Option.fold_right (update_invtblq1 ~loc evd q) qio stateq in
+    stateq, PQVar qio
 
 let update_invtblu ~loc evd (qsubst, usubst) (state, stateq, stateu : state) u : state * _ =
   let (q, u) = u |> UVars.Instance.to_array in
-  let stateq, maskq = Array.fold_left_map (fun stateq qold ->
-    let qnew = Sorts.Quality.(var_index @@ subst (subst_fn qsubst) qold) in
-    Option.fold_right (update_invtblq1 ~loc evd qold) qnew stateq, qnew
-  ) stateq q
+  let stateq, maskq = Array.fold_left_map (safe_quality_pattern_of_quality ~loc evd qsubst) stateq q
   in
   let stateu, masku = Array.fold_left_map (fun stateu lvlold ->
       let lvlnew = Univ.Level.var_index @@ Univ.subst_univs_level_level usubst lvlold in
       Option.fold_right (update_invtblu1 ~loc ~alg:false evd lvlold) lvlnew stateu, lvlnew
     ) stateu u
   in
-  let mask = if Array.exists Option.has_some maskq || Array.exists Option.has_some masku then Some (maskq, masku) else None in
-  (state, stateq, stateu), mask
+  (state, stateq, stateu), (maskq, masku)
 
 let update_invtblqu ~loc evd (qsubst, usubst) (state, stateq, stateu : state) u : state * _ =
   let (q, u) = u |> UVars.QualUniv.to_quality_level in
-  let stateq, maskq =
-    let qnew = Sorts.Quality.(var_index @@ subst (subst_fn qsubst) q) in
-    Option.fold_right (update_invtblq1 ~loc evd q) qnew stateq, qnew
-  in
+  let stateq, maskq = safe_quality_pattern_of_quality ~loc evd qsubst stateq q in
   let stateu, masku =
       let lvlnew = Univ.Level.var_index @@ Univ.subst_univs_level_level usubst u in
       Option.fold_right (update_invtblu1 ~loc ~alg:false evd u) lvlnew stateu, lvlnew
@@ -150,7 +146,7 @@ let safe_sort_pattern_of_sort ~loc evd (qsubst, usubst) (st, sq, su as state) s 
   | QSort (qold, u) ->
       let sq, bq =
         match Sorts.Quality.(var_index @@ subst_fn qsubst qold) with
-        | Some q -> update_invtblq1 ~loc evd (QVar qold) q sq, Some q
+        | Some q -> update_invtblq1 ~loc evd (Sorts.Quality.QVar qold) q sq, Some q
         | None -> sq, None
       in
       let su, ba =
@@ -323,6 +319,7 @@ let test_projection_apps env evd ~loc ind args =
 let rec test_pattern_redex env evd ~loc = function
   | PHLambda _, PEApp _ :: _ -> warn_redex_in_rewrite_rules ?loc (Pp.str " beta redex")
   | PHConstr _, (PECase _ | PEProj _) :: _ -> warn_redex_in_rewrite_rules ?loc (Pp.str " iota redex")
+  | PHConstr _, PEApp _ :: (PECase _ | PEProj _) :: _ -> warn_redex_in_rewrite_rules ?loc (Pp.str " iota redex")
   | PHLambda _, _ -> warn_redex_in_rewrite_rules ?loc (Pp.str " lambda pattern")
   | PHConstr (c, _) as head, PEApp args :: elims -> test_projection_apps env evd ~loc (fst c) args; Array.iter (test_pattern_redex_aux env evd ~loc) args; test_pattern_redex env evd ~loc (head, elims)
   | head, PEApp args :: elims -> Array.iter (test_pattern_redex_aux env evd ~loc) args; test_pattern_redex env evd ~loc (head, elims)
@@ -426,13 +423,13 @@ let interp_rule (udecl, lhs, rhs: Constrexpr.universe_decl_expr option * _ * _) 
       Pp.(str "Not all sort variables appear in the pattern.")
   end;
 
-  let update_invtbl evd evk n invtbl =
+  let update_invtbl evd evk n =
     let Evd.EvarInfo evi = Evd.find evd evk in
     let vars = Evd.evar_hyps evi |> Environ.named_context_of_val |> Context.Named.instance EConstr.mkVar in
-    Evar.Map.add evk (n, vars) invtbl
+    (n, vars)
   in
 
-  let invtbl = Evar.Map.fold (update_invtbl evd) invtbl Evar.Map.empty in
+  let invtbl = Evar.Map.mapi (update_invtbl evd) invtbl in
 
   (* 3. Read right hand side *)
   (* The udecl constraints (or, if none, the lhs constraints) must imply those of the rhs *)
