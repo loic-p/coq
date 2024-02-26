@@ -192,10 +192,10 @@ module Quality = struct
   type pattern =
     | PQVar of int option | PQConstant of constant
 
-  let pattern_match ps s qusubst =
+  let pattern_match qconv ps s qusubst =
     match ps, s with
     | PQConstant qc, QConstant qc' -> if Constants.equal qc qc' then Some qusubst else None
-    | PQVar qio, q -> Some (Partial_subst.maybe_add_quality qio q qusubst)
+    | PQVar qio, q -> Partial_subst.maybe_add_quality_or_conv qconv qio q qusubst
     | PQConstant _, QVar _ -> None
 end
 
@@ -482,12 +482,16 @@ let extract_sort_level = function
   | QSort (_, u) -> extract_level u
   | Prop | SProp | Set -> Univ.Level.set
 
-let pattern_match ps s qusubst =
+let pattern_match (qconv, uconv) ps s qusubst =
   match ps, s with
   | PSProp, Prop -> Some qusubst
   | PSSProp, SProp -> Some qusubst
   | PSSet, Set -> Some qusubst
   | PSType uio, Set -> Some (Partial_subst.maybe_add_univ uio Univ.Level.set qusubst)
   | PSType uio, Type u -> Some (Partial_subst.maybe_add_univ uio (extract_level u) qusubst)
-  | PSQSort (qio, uio), s -> Some (qusubst |> Partial_subst.maybe_add_quality qio (quality s) |> Partial_subst.maybe_add_univ uio (extract_sort_level s))
+  | PSQSort (qio, uio), s ->
+      let (let*) = Option.bind in
+      let* qusubst = Partial_subst.maybe_add_quality_or_conv qconv qio (quality s) qusubst in
+      let* qusubst = Partial_subst.maybe_add_univ_or_conv uconv uio (extract_sort_level s) qusubst in
+      Some qusubst
   | (PSProp | PSSProp | PSSet | PSType _), _ -> None

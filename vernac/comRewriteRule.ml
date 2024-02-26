@@ -80,26 +80,14 @@ let update_invtbl ~loc env evd evk (curvar, tbl) =
   | Some v -> v, (curvar, tbl)
 
 let update_invtblu1 ~loc evd lvlold lvl (curvaru, tbl) =
-  succ curvaru, tbl |> Int.Map.update lvl @@ function
-    | None -> Some curvaru
-    | Some k as c when k = curvaru -> c
-    | Some k ->
-        CErrors.user_err ?loc
-          Pp.(str "Universe variable "
-            ++ Termops.pr_evd_level evd lvlold
-            ++ str" is bound multiple times in the pattern (holes number "
-            ++ int k ++ str" and " ++ int curvaru ++ str").")
+  match Int.Map.find_opt lvl tbl with
+  | None -> succ curvaru, Int.Map.add lvl curvaru tbl
+  | Some v -> curvaru, tbl
 
 let update_invtblq1 ~loc evd qold qvar (curvarq, tbl) =
-  succ curvarq, tbl |> Int.Map.update qvar @@ function
-    | None -> Some curvarq
-    | Some k as c when k = curvarq -> c
-    | Some k ->
-        CErrors.user_err ?loc
-          Pp.(str "Sort variable "
-            ++ Sorts.Quality.pr (Termops.pr_evd_qvar evd) qold
-            ++ str" is bound multiple times in the pattern (holes number "
-            ++ int k ++ str" and " ++ int curvarq ++ str").")
+  match Int.Map.find_opt qvar tbl with
+  | None -> succ curvarq, Int.Map.add qvar curvarq tbl
+  | Some v -> curvarq, tbl
 
 let safe_quality_pattern_of_quality ~loc evd qsubst stateq q =
   match Sorts.Quality.(subst (subst_fn qsubst) q) with
@@ -142,7 +130,7 @@ let safe_sort_pattern_of_sort ~loc evd (qsubst, usubst) (st, sq, su as state) s 
   | QSort (qold, u) ->
       let sq, bq =
         match Sorts.Quality.(var_index @@ subst_fn qsubst qold) with
-        | Some q -> update_invtblq1 ~loc evd (QVar qold) q sq, Some q
+        | Some q -> update_invtblq1 ~loc evd (Sorts.Quality.QVar qold) q sq, Some q
         | None -> sq, None
       in
       let su, ba =

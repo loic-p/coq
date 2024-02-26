@@ -114,7 +114,11 @@ and get_holes_profiles_elim env nargs ndecls lincheck = function
 
 and get_holes_profiles_parg env nargs ndecls lincheck = function
   | EHoleIgnored -> lincheck
-  | EHole i -> Partial_subst.add_term i nargs lincheck
+  | EHole i ->
+    begin match Partial_subst.get_term lincheck i with
+    | None -> Partial_subst.add_term i nargs lincheck
+    | Some depth' -> ignore depth'; lincheck
+    end
   | ERigid (h, el) ->
       let lincheck = get_holes_profiles_head env nargs ndecls lincheck h in
       get_holes_profiles env nargs ndecls lincheck el
