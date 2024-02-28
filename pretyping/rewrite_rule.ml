@@ -222,7 +222,7 @@ and safe_head_pattern_of_constr ~loc env evd usubst depth state t = Constr.kind 
     let state, pbod = safe_arg_pattern_of_constr ~loc env evd usubst (depth + Array.length tys) state b in
     state, PHProd (ptys, pbod)
   | _ ->
-    CErrors.user_err ?loc Pp.(str "Subterm not recognised as pattern: " ++ Printer.safe_pr_lconstr_env env evd t)
+    CErrors.user_err ?loc Pp.(str "Subterm not recognised as pattern: " ++ Termops.Internal.print_constr_env env evd (EConstr.of_constr t))
 
 and safe_arg_pattern_of_constr ~loc env evd usubst depth (st, stateq, stateu as state) t = Constr.kind t |> function
   | Evar (evk, inst) ->
