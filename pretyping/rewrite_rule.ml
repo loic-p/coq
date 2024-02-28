@@ -25,48 +25,44 @@ let update_invtbl ~loc env evd evk (curvar, tbl) =
   | Some v -> v, (curvar, tbl)
 
 let update_invtblu1 ~loc ~(alg:bool) evd lvlold lvl (curvaru, alg_vars, tbl) =
-  succ curvaru, alg :: alg_vars, tbl |> Int.Map.update lvl @@ function
-    | None -> Some curvaru
-    | Some k as c when k = curvaru -> c
-    | Some k ->
-        CErrors.user_err ?loc
-          Pp.(str "Universe variable "
-            ++ Termops.pr_evd_level evd lvlold
-            ++ str" is bound multiple times in the pattern (holes number "
-            ++ int k ++ str" and " ++ int curvaru ++ str").")
+  match Int.Map.find_opt lvl tbl with
+  | None -> succ curvaru, alg :: alg_vars, Int.Map.add lvl curvaru tbl
+  | Some v -> curvaru, alg_vars, tbl
 
 let update_invtblq1 ~loc evd qold qvar (curvarq, tbl) =
-  succ curvarq, tbl |> Int.Map.update qvar @@ function
-    | None -> Some curvarq
-    | Some k as c when k = curvarq -> c
-    | Some k ->
-        CErrors.user_err ?loc
-          Pp.(str "Sort variable "
-            ++ Sorts.Quality.pr (Termops.pr_evd_qvar evd) qold
-            ++ str" is bound multiple times in the pattern (holes number "
-            ++ int k ++ str" and " ++ int curvarq ++ str").")
+  match Int.Map.find_opt qvar tbl with
+  | None -> succ curvarq, Int.Map.add qvar curvarq tbl
+  | Some v -> curvarq, tbl
+
+let quality_pattern_of_quality_constant =
+  let open Sorts.Quality in
+  function
+  | QProp -> PQProp
+  | QSProp -> PQSProp
+  | QType -> PQType
+
+let safe_quality_pattern_of_quality ~loc evd qsubst stateq q =
+  match Sorts.Quality.(subst (subst_fn qsubst) q) with
+  | QConstant qc -> stateq, quality_pattern_of_quality_constant qc
+  | QVar qv ->
+    let qio = Sorts.QVar.var_index qv in
+    let stateq = Option.fold_right (update_invtblq1 ~loc evd q) qio stateq in
+    stateq, PQVar qio
 
 let update_invtblu ~loc evd (qsubst, usubst) (state, stateq, stateu : state) u : state * _ =
   let (q, u) = u |> UVars.Instance.to_array in
-  let stateq, maskq = Array.fold_left_map (fun stateq qold ->
-    let qnew = Sorts.Quality.(var_index @@ subst (subst_fn qsubst) qold) in
-    Option.fold_right (update_invtblq1 ~loc evd qold) qnew stateq, qnew
-  ) stateq q
+  let stateq, maskq = Array.fold_left_map (safe_quality_pattern_of_quality ~loc evd qsubst) stateq q
   in
   let stateu, masku = Array.fold_left_map (fun stateu lvlold ->
       let lvlnew = Univ.Level.var_index @@ Univ.subst_univs_level_level usubst lvlold in
       Option.fold_right (update_invtblu1 ~loc ~alg:false evd lvlold) lvlnew stateu, lvlnew
     ) stateu u
   in
-  let mask = if Array.exists Option.has_some maskq || Array.exists Option.has_some masku then Some (maskq, masku) else None in
-  (state, stateq, stateu), mask
+  (state, stateq, stateu), (maskq, masku)
 
 let update_invtblqu ~loc evd (qsubst, usubst) (state, stateq, stateu : state) u : state * _ =
   let (q, u) = u |> UVars.QualUniv.to_quality_level in
-  let stateq, maskq =
-    let qnew = Sorts.Quality.(var_index @@ subst (subst_fn qsubst) q) in
-    Option.fold_right (update_invtblq1 ~loc evd q) qnew stateq, qnew
-  in
+  let stateq, maskq = safe_quality_pattern_of_quality ~loc evd qsubst stateq q in
   let stateu, masku =
       let lvlnew = Univ.Level.var_index @@ Univ.subst_univs_level_level usubst u in
       Option.fold_right (update_invtblu1 ~loc ~alg:false evd u) lvlnew stateu, lvlnew
@@ -95,7 +91,7 @@ let safe_sort_pattern_of_sort ~loc evd (qsubst, usubst) (st, sq, su as state) s 
   | QSort (qold, u) ->
       let sq, bq =
         match Sorts.Quality.(var_index @@ subst_fn qsubst qold) with
-        | Some q -> update_invtblq1 ~loc evd (QVar qold) q sq, Some q
+        | Some q -> update_invtblq1 ~loc evd (Sorts.Quality.QVar qold) q sq, Some q
         | None -> sq, None
       in
       let su, ba =
@@ -203,8 +199,7 @@ and safe_head_pattern_of_constr ~loc env evd usubst depth state t = Constr.kind 
     let state, pbod = safe_arg_pattern_of_constr ~loc env evd usubst (depth + Array.length tys) state b in
     state, PHProd (ptys, pbod)
   | _ ->
-     CErrors.user_err ?loc Pp.(str "Subterm not recognised as pattern: "
-                               ++ Termops.Internal.print_constr_env env evd (EConstr.of_constr t))
+    CErrors.user_err ?loc Pp.(str "Subterm not recognised as pattern: " ++ Termops.Internal.print_constr_env env evd (EConstr.of_constr t))
 
 and safe_arg_pattern_of_constr ~loc env evd usubst depth (st, stateq, stateu as state) t = Constr.kind t |> function
   | Evar (evk, inst) ->
