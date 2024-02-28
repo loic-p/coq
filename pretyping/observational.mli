@@ -16,13 +16,7 @@ open Constr
 
 val duplicate_context : (constr, constr) Context.Rel.pt -> Esubst.lift * (constr, constr) Context.Rel.pt
 
-val declare_inductive_obs_eqs : Names.MutInd.t -> unit
-
-val declare_inductive_casts : Names.MutInd.t -> unit
-
-val declare_inductive_rewrite_rules : Names.MutInd.t -> unit
-
-val declare_inductive_observational_data : Names.MutInd.t -> unit
+val declare_inductive_observational_data : ?loc:Loc.t -> (Names.MutInd.t * int) -> unit
 
 val declare_observational_equality :
   (univs:UState.named_universes_entry
