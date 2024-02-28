@@ -67,13 +67,6 @@ open Util
 open Constr
 open Declarations
 
-let warn_irrelevant_pattern =
-  CWarnings.create ~name:"irrelevant-pattern"
-    (fun () -> Pp.(str "This subpattern is irrelevant and can never be matched against."))
-
-let warn_eta_in_pattern =
-  CWarnings.create ~name:"eta-in-pattern" Fun.id
-
 let warn_redex_in_rewrite_rules =
   CWarnings.create ~name:"redex-in-rewrite-rules"
   (fun redex -> Pp.(str "This pattern contains a" ++ redex ++ str " which may prevent this rule from being triggered."))
