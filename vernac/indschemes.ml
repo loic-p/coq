@@ -545,4 +545,4 @@ let declare_default_schemes ?locmap kn =
   if !rewriting_flag then map_inductive_block ?locmap declare_congr_scheme kn n;
   if !rewriting_flag then map_inductive_block ?locmap declare_sym_scheme kn n;
   if !rewriting_flag then map_inductive_block ?locmap declare_rewriting_schemes kn n;
-  if !observational_flag then declare_inductive_observational_data kn
+  if !observational_flag then map_inductive_block ?locmap declare_inductive_observational_data kn n

@@ -81,6 +81,49 @@ let duplicate_context ctx =
   Context.Rel.fold_outside aux ctx
     ~init:(Esubst.el_id, Context.Rel.empty)
 
+let clo =
+  let acc = ref "" in
+  (fun () ->
+    acc := !acc ^ "X" ;
+    !acc)
+
+(* instanciates a context with evars *)
+let evar_ctxt env sigma ctx =
+  let rec reln sigma subst = function
+    | Context.Rel.Declaration.LocalAssum (annot, ty) :: hyps ->
+       let sigma, subst = reln sigma subst hyps in
+
+       let ty = Vars.substl subst ty in
+       let relevance = Some (annot.binder_relevance) in
+       let src = Some (None , Evar_kinds.MatchingVar (Evar_kinds.FirstOrderPatVar (Names.Id.of_string (clo ())))) in
+       let sigma, ev = Evarutil.new_evar ?src ?relevance env sigma (EConstr.of_constr ty) in
+       let ev = EConstr.Unsafe.to_constr ev in
+       sigma, (ev :: subst)
+    | Context.Rel.Declaration.LocalDef (annot, tm, ty) :: hyps ->
+       let sigma, subst = reln sigma subst hyps in
+       let tm = Vars.substl subst tm in
+       sigma, (tm :: subst)
+    | [] -> sigma, subst
+  in
+  reln sigma [] ctx
+
+(* relocation of evars into de Bruijn indices
+   TODO: this is copy-pasted from vernac/comRewriteRule.ml
+   maybe avoid code duplication by relocating it to pretyping/rewrite_rule.ml *)
+let rec evar_subst evmap evd k t =
+  match EConstr.kind evd t with
+  | Evar (evk, inst) -> begin
+    match Evar.Map.find_opt evk evmap with
+    | None -> t
+    | Some (n, vars) ->
+        let head = EConstr.mkRel (n + k) in
+        let Evd.EvarInfo evi = Evd.find evd evk in
+        let body = EConstr.mkApp (head, vars) in
+        let inst = inst |> SList.Smart.map (evar_subst evmap evd k) in
+        Evd.instantiate_evar_array evd evi body inst
+    end
+  | _ -> EConstr.map_with_binders evd succ (evar_subst evmap evd) k t
+
 (* Adding a universe level to an evar map that is greater than the sort s *)
 
 let univ_level_sup env sigma s =
@@ -125,7 +168,6 @@ let fetch_observational_data () =
                                    Did you forget to open the observational library?")
 
 (* Building an observational equality term *)
-
 let make_obseq ?(is_sprop = false) sigma u ty tm1 tm2 =
   match !obseq_constant with
   | None -> user_err Pp.(str "The observational equality does not exist.")
@@ -136,7 +178,6 @@ let make_obseq ?(is_sprop = false) sigma u ty tm1 tm2 =
      EConstr.to_constr sigma obseq_tm
 
 (* Building a cast term *)
-
 let make_cast ?(is_sprop = false) u1 u2 ty1 ty2 eq tm =
   if is_sprop then
     match !prop_cast_constant with
@@ -152,22 +193,47 @@ let make_cast ?(is_sprop = false) u1 u2 ty1 ty2 eq tm =
        Constr.mkApp (cast, [| ty1 ; ty2 ; eq ; tm |])
 
 (* Building a rewrite rule *)
+let make_rewrite_rule ?loc env sigma uinst u1 u2 ty lhs rhs =
+  (* at this point there are two kinds of universes:
+     - the ones that come from the instance of the inductive (if polymorphic), call them v1 v2...
+     - the ones that we added, u1 and u2
+     In all cases, rewrite rules for constructors will be of the form
 
-(* let make_rewrite_rule env sigma u1 u2 ty tm1 tm2 = *)
-(*   match !rewrite_rule_inductive with *)
-(*   | None -> user_err Pp.(str "The rewrite rule inductive does not exist.") *)
-(*   | Some ind -> *)
-(*      let pind = (ind, UVars.Instance.of_array ([| |], [| u1 ; u2 |])) in *)
-(*      let params = [ty ; tm1 ; tm2] in *)
-(*      let ind_fam = Inductiveops.make_ind_family (pind, params) in *)
-(*      let ctors = Inductiveops.get_constructors env ind_fam in *)
-(*      let inst_ctor = Inductiveops.build_dependent_constructor ctors.(0) in *)
-(*      let ind_ty = Inductiveops.mkAppliedInd (Inductiveops.make_ind_type (ind_fam, [])) in *)
-(*      let ind_ty = EConstr.to_constr sigma ind_ty in *)
-(*      (inst_ctor, ind_ty) *)
+       cast@{u1 u2} (Ind@{v1 v2...} ?A) (Ind@{v1 v2...} ?A0) ?e (ctor@{v1 v2...} ?A ?t)
+         ==> ctor@{v1 v2...} ?A0 (cast@{u1 u2} B@{A := ?A} B@{A := ?A0} (ax ?e) ?t)
+
+     Note that some levels appear several times, which should imply level equations--otherwise,
+     universe polymorphic inductives will break SR
+  *)
+  let cast_uinst = UVars.Instance.of_array ([| |], [| u1 ; u2 |]) in
+  let uinst = UVars.Instance.append uinst cast_uinst in
+  let usubst = UVars.make_instance_subst uinst in
+  let ((nvars', invtbl), (nvarqs', invtblq), (nvarus', alg_vars, invtblu)), (head_pat, elims) =
+    Rewrite_rule.safe_pattern_of_constr ~loc:loc env sigma usubst 0
+      ((1, Evar.Map.empty), (0, Int.Map.empty), (0, [], Int.Map.empty)) lhs
+  in
+  let update_invtbl evd evk n invtbl =
+    let Evd.EvarInfo evi = Evd.find evd evk in
+    let vars = Evd.evar_hyps evi |> Environ.named_context_of_val |> Context.Named.instance EConstr.mkVar in
+    Evar.Map.add evk (n, vars) invtbl
+  in
+  let invtbl = Evar.Map.fold (update_invtbl sigma) invtbl Evar.Map.empty in
+  let rhs =
+    let rhs' = evar_subst invtbl sigma 0 rhs in
+    match EConstr.to_constr_opt sigma rhs' with
+    | Some rhs -> rhs
+    | None ->
+       CErrors.user_err ?loc Pp.(str "The right side of the rewrite rule contains unresolved evars: "
+                                 ++ Constr.debug_print (EConstr.Unsafe.to_constr rhs))
+  in
+  let rhs = Vars.subst_univs_level_constr usubst rhs in
+  let head_symbol, head_umask = match head_pat with PHSymbol (symb, mask) -> symb, mask | _ ->
+    CErrors.user_err ?loc
+    Pp.(str "Cast is not recognised as a head-pattern.")
+  in
+  head_symbol, { nvars = (nvars' - 1, nvarqs', nvarus'); lhs_pat = head_umask, elims; rhs }
 
 (* Building and declaring the observational equalities *)
-
 let declare_observational_equality = ref (fun ~univs ~name c ->
     CErrors.anomaly (Pp.str "observational axioms declarator not registered"))
 
@@ -189,7 +255,7 @@ let wk1_context ctxt =
                   ~init:(wkn 1 (Esubst.el_id), Context.Rel.empty) in
   ctxt
 
-let declare_one_ctor_arg_obs_eq env uinfo name decl (sigma, ctxt, ren1, ren2, cnt) =
+let declare_one_ctor_arg_obs_eq ~poly env uinfo name decl (sigma, ctxt, ren1, ren2, cnt) =
   match decl with
   | Context.Rel.Declaration.LocalAssum (na, ty) ->
      let (param_ctxt, arg_ctxt, arg0_ctxt) = ctxt in
@@ -202,39 +268,38 @@ let declare_one_ctor_arg_obs_eq env uinfo name decl (sigma, ctxt, ren1, ren2, cn
      let sort = get_sort_of_in_context env sigma full_ctxt (EConstr.of_constr ty1) in
      let is_sprop = EConstr.ESorts.is_sprop sigma sort in
      (* we declare new universe levels u1 and u2 to instanciate the polymorphic obseq constant *)
-     (* TODO: I changed it to re-use the levels from the inductive. Make sure that it's safe!! *)
      (* let sigma, newsort, u1 = univ_level_sup env sigma sort in *)
      (* let sigma, u2 = univ_level_next sigma u1 in *)
      (* let s = EConstr.mkSort newsort in *)
      (* let s = EConstr.to_constr sigma s in *)
+
+     (* TODO: Instead of using the universe level of the constructor argument type, I lazily reuse
+        the levels from the inductive type family. I think that cumulativity guarantees it's okay *)
      let u1, u2, s = uinfo in
      let eq_ty = make_obseq ~is_sprop sigma u2 s ty1 ty2 in
-     (* generalizing it over the context to output a closed axiom *)
      let axiom = it_mkProd_or_LetIn_name env eq_ty full_ctxt in
-
-     (* generating a name for the axiom *)
      let name = Names.Id.of_string (name ^ string_of_int cnt) in
-     (* Feedback.msg_debug (str "We are trying to declare " *)
+
+     (* optional debug *)
+     (* Feedback.msg_debug (str "Observational inductives: Declaring parameter " *)
      (*                     ++ str (Names.Id.to_string name) *)
      (*                     ++ str " whose type is " *)
-     (*                     ++ Constr.debug_print axiom) ; (\* optional debug *\) *)
+     (*                     ++ Termops.Internal.print_constr_env env sigma (EConstr.of_constr axiom)) ; *)
+
      (* normalizing the universes in the evar map and in the body of the axiom *)
      let uctx = Evd.evar_universe_context sigma in
      let uctx = UState.minimize uctx in
      let axiom = UState.nf_universes uctx axiom in
      (* declaring the axiom with its local universe context *)
-     let univs = UState.univ_entry ~poly:true uctx in
+     let univs = UState.univ_entry ~poly uctx in
      let eq_name = !declare_observational_equality ~univs ~name axiom in
-     (* Feedback.msg_debug (str "Declaration was successful.") ; *)
 
      (* generating the instance of the equality axiom that we will use in make_cast *)
-     (* first, we recover the universe instance that the definition was abstracted on *)
-     let eq_univ_instance = (match fst univs with
-       | UState.Polymorphic_entry pe -> pe
-       | _ -> user_err (Pp.str "Polymorphic declaration error.")) |> UVars.UContext.instance
+     (* TODO: should I really be manipulating universes like that without an abstract interface? *)
+     let eq_tm = match fst univs with
+       | UState.Polymorphic_entry uc -> Constr.mkConstU (eq_name, UVars.UContext.instance uc)
+       | UState.Monomorphic_entry pe -> Constr.mkConstU (eq_name, UVars.Instance.empty)
      in
-     let eq_tm = Constr.mkConstU (eq_name, eq_univ_instance) in
-     (* then we apply it to the whole context that we generalized on *)
      let eq_args = Context.Rel.instance mkRel 0 full_ctxt in
      let eq_hyp = Constr.mkApp (eq_tm, eq_args) in
 
@@ -263,7 +328,7 @@ let declare_one_ctor_arg_obs_eq env uinfo name decl (sigma, ctxt, ren1, ren2, cn
      let arg0_ctxt = decl2::arg0_ctxt in
      (sigma, (param_ctxt, arg_ctxt, arg0_ctxt), ren1, ren2, cnt)
 
-let declare_one_constructor_obs_eqs env sigma ctxt ind ctor ctor_name =
+let declare_one_constructor_obs_eqs ?loc ~poly env sigma ctxt ind ctor ctor_name =
   (* preparing the context of hypotheses for the axioms *)
   let (ren, dup_ctxt) = duplicate_context ctxt in
   (* extending it with the equality between two instances of the inductive *)
@@ -281,12 +346,12 @@ let declare_one_constructor_obs_eqs env sigma ctxt ind ctor ctor_name =
 
   let uinfo = (u1, u2, s) in
 
-  let new_ctxt = Context.Rel.fold_outside (declare_one_ctor_arg_obs_eq env uinfo eq_name) args
+  let new_ctxt = Context.Rel.fold_outside (declare_one_ctor_arg_obs_eq ~poly env uinfo eq_name) args
     ~init:(sigma, (hyp_ctxt, Context.Rel.empty, Context.Rel.empty), ren1, ren2, 0) in
   new_ctxt
 
-let declare_one_constructor_rew_rules env ctxt_info ind ctor ctor_name =
-  let sigma, (param_ctxt, arg_ctxt, arg0_ctxt), ren1, ren2, _ = ctxt_info in
+let declare_one_constructor_rew_rules ?loc ~poly env uinst state ind ctor ctor_name =
+  let sigma, (param_ctxt, arg_ctxt, arg0_ctxt), ren1, ren2, _ = state in
   let n_args = List.length arg_ctxt in
 
   let (indty, s, u1, u2) = ind in
@@ -300,28 +365,32 @@ let declare_one_constructor_rew_rules env ctxt_info ind ctor ctor_name =
   let inst_ctor_2 = Vars.exliftn (Esubst.el_liftn n_args (wkn n_args ren2)) inst_ctor in
   let rew_right = it_mkLambda_or_LetIn_name env inst_ctor_2 arg0_ctxt in
 
-  let name = Names.Id.of_string ("rewrite_" ^ Names.Id.to_string ctor_name) in
-  (* let (rew_tm, rew_ty) = make_rewrite_rule env sigma u1 u2 indty2 rew_left rew_right in *)
-  let rule_left = it_mkLambda_or_LetIn_name env rew_left (arg_ctxt @ param_ctxt) in
-  let rule_right = it_mkProd_or_LetIn_name env rew_right (arg_ctxt @ param_ctxt) in
+  let sigma, esubst = evar_ctxt env sigma (arg_ctxt @ param_ctxt) in
+  let rew_left = Vars.substl esubst rew_left in
+  let rew_right = Vars.substl esubst rew_right in
+  let id = Names.Id.of_string ("rewrite_" ^ Names.Id.to_string ctor_name) in
 
-  Feedback.msg_debug (str "We are trying to declare the rewrite rule "
-                      ++ Constr.debug_print rule_left
-                      ++ str " rewrites to "
-                      ++ Constr.debug_print rule_right) ;
+  let rew_left = EConstr.of_constr rew_left in
+  let rew_right = EConstr.of_constr rew_right in
 
-  (** TODO : Replace variables with evars, and add rewrite rule from lhs to rhs *)
+  (* optional debug *)
+  (* Flags.if_verbose Feedback.msg_debug (strbrk "We are trying to declare the rewrite rule " *)
+  (*                     ++ Termops.Internal.print_constr_env env sigma rew_left *)
+  (*                     ++ fnl () *)
+  (*                     ++ str " ==> " *)
+  (*                     ++ Termops.Internal.print_constr_env env sigma rew_right) ; *)
 
-  (* let uctx = Evd.evar_universe_context sigma in *)
-  (* let uctx = UState.minimize uctx in *)
-  (* let rule_tm = UState.nf_universes uctx rule_tm in *)
-  (* let rule_ty = UState.nf_universes uctx rule_ty in *)
-  (* declaring the axiom with its local universe context *)
-  (* let univs = UState.univ_entry ~poly:true uctx in *)
-  (* let kn = !declare_observational_rewrite ~univs ~name rule_tm rule_ty in *)
-  () (* Global.add_rewrite_rule kn *)
+  (* let ty_left = Retyping.get_type_of env sigma rew_left in *)
+  (* Feedback.msg_debug (str "The left side has type " *)
+  (*                     ++ Termops.Internal.print_constr_env env sigma ty_left) ; *)
+  (* let ty_right = Retyping.get_type_of env sigma rew_right in *)
+  (* Feedback.msg_debug (str "The right side has type " *)
+  (*                     ++ Termops.Internal.print_constr_env env sigma ty_right) ; *)
 
-let declare_one_inductive_obs_eqs ind =
+  let rew = make_rewrite_rule ?loc env sigma uinst u1 u2 indty2 (EConstr.Unsafe.to_constr rew_left) rew_right in
+  Global.add_rewrite_rules id { rewrules_rules = [rew] }
+
+let declare_one_inductive_obs_eqs ?loc ind =
   let env = Global.env () in
   let sigma = Evd.from_env env in
   (* sigma contains the graph of global universes as well as an empty local universe context *)
@@ -330,6 +399,7 @@ let declare_one_inductive_obs_eqs ind =
      which maps universe variables in the inductive to universes in sigma *)
   let sigma, pind = Evd.fresh_inductive_instance ~rigid:UState.univ_rigid env sigma ind in
   let (mib,mip) = Global.lookup_inductive (fst pind) in
+  let poly = Declareops.inductive_is_polymorphic mib in
   match mip.mind_relevance with
   | Sorts.Relevant ->
      (* u is the univ instance for the inductive *)
@@ -352,8 +422,9 @@ let declare_one_inductive_obs_eqs ind =
      (* instanciating the inductive type in the full context *)
      let indx_instance = Context.Rel.instance_list EConstr.mkRel 0 indx_ctxt in
      let ind_ty = Inductiveops.mkAppliedInd (Inductiveops.make_ind_type (full_ind_fam, indx_instance)) in
-     (* declaring a universe level for the inductive type, and a level for its sort *)
-     (** TODO: what if monomorphic? *)
+     (* we use retyping to find the sort of the inductive type in its context of parameters
+        The sort might be algebraic, so we add two new levels to the evar_map:
+        one for the inductive type (>= its sort), and one strictly above *)
      let sort = get_sort_of_in_context env sigma full_ctxt ind_ty in
      let sigma, newsort, u1 = univ_level_sup env sigma sort in
      let sigma, u2 = univ_level_next sigma u1 in
@@ -365,41 +436,24 @@ let declare_one_inductive_obs_eqs ind =
      let ctors = Inductiveops.get_constructors env full_ind_fam in
      let ctors_names = mip.mind_consnames in
      for i = 0 to (Array.length ctors) - 1 do
-       let ctxt_info = declare_one_constructor_obs_eqs env sigma full_ctxt instanciated_ind ctors.(i) ctors_names.(i) in
-       declare_one_constructor_rew_rules env ctxt_info instanciated_ind ctors.(i) ctors_names.(i)
+       let state = declare_one_constructor_obs_eqs ?loc ~poly env sigma full_ctxt instanciated_ind ctors.(i) ctors_names.(i) in
+       declare_one_constructor_rew_rules ?loc ~poly env u state instanciated_ind ctors.(i) ctors_names.(i)
      done
   | _ -> ()
 
-let declare_inductive_obs_eqs kn =
-  let mib = Global.lookup_mind kn in
-  for i = 0 to Array.length mib.mind_packets - 1 do
-    declare_one_inductive_obs_eqs (kn,i);
-  done
-
-let declare_inductive_casts kn =
-  ()
-
-let declare_inductive_rewrite_rules kn =
-  ()
 
 let warn_about_sections () =
   CWarnings.create ~name:"observational-in-section"
     (fun msg -> hov 0 msg) (hov 0 (str "Observational inductives do not properly support the sections mechanism yet. \
                                         You might get rules that are weaker than you expect outside of the section."))
 
-let declare_inductive_observational_data kn =
+let declare_inductive_observational_data ?loc (kn,i) =
   let mib = Global.lookup_mind kn in
   (* check that all options are set correctly *)
-  if not (Declareops.inductive_is_polymorphic mib) then
-    (** TODO: handle monomorphic universes *)
-    user_err Pp.(str "Observational inductives require universe polymorphism. \
-                      (Set Universe Polymorphism)");
   if mib.mind_finite = Declarations.CoFinite then
     user_err Pp.(str "Observational coinductive types are not supported yet.");
   if Context.Named.length mib.mind_hyps > 0 then
     warn_about_sections ();
   (* generate stuff *)
   fetch_observational_data ();
-  declare_inductive_obs_eqs kn;
-  declare_inductive_casts kn;
-  declare_inductive_rewrite_rules kn
+  declare_one_inductive_obs_eqs ?loc (kn,i);
