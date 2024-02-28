@@ -92,32 +92,13 @@ Section Basic_Test.
 End Basic_Test.
 
 (** Inductive types *)
-
-Set Observational Inductives.
-
-Arguments cast A B {e} t.
-
 Unset Universe Polymorphism.
-
-Rewrite Rule rew_nil :=
-| (@cast (list ?A) (list ?B) ?e (@nil _)) ==> (@nil ?B).
+Set Observational Inductives.
 
 (* Declaring an inductive automaticall adds equalities and rewrite rules for cast *)
 Inductive list (A : Type) : Type :=
 | nil : list A
 | cons : forall (a : A) (l : list A), list A.
-
-
-
-Arguments nil {A}.
-Arguments cons {A} a l.
-
-(* The following equality has been defined *)
-Print obseq_cons_1.
-
-(* The following rewrite rules have been defined *)
-(* Print rewrite_nil. *)
-(* Print rewrite_cons. *)
 
 (* Casting a singleton list *)
 Section List_Test.
@@ -126,8 +107,8 @@ Section List_Test.
   Variable obseq_list : list A ~ list B.
   Variable a : A.
 
-  Eval lazy in obseq_list # cons a nil.
-  Eval lazy in obseq_refl # cons a nil.
+  Eval lazy in obseq_list # cons A a (nil A).
+  Eval lazy in obseq_refl # cons A a (nil A).
 
 End List_Test.
 
@@ -148,21 +129,12 @@ About obseq_vcons_2.
 Notation vnil' := (vnil (e:= obseq_refl)).
 Notation vcons' a n v := (vcons a n v (e := obseq_refl)).
 
-Inductive stress_test (A : Type) (n : nat) (m := n+n) (v : vect A m) : Type :=
-| stress_cons : (forall (B : Type) (k := 0), stress_test B 0 vnil') -> stress_test A n v.
-
-Print obseq_stress_cons_0.
-
 (* equalities for vectors *)
 Check (obseq_vnil_0:forall (A B : Type) (n m : nat), vect A n ~ vect B m -> (n ~ 0) ~ (m ~ 0)).
 Print obseq_vcons_0.
 Print obseq_vcons_1.
 Print obseq_vcons_2.
 Print obseq_vcons_3.
-
-(* rewrite rules for vectors *)
-Print rewrite_vnil.
-Print rewrite_vcons.
 
 Section Vector_Test.
 
@@ -178,7 +150,7 @@ End Vector_Test.
 
 
 (* forded Martin-Löf identity type *)
-Inductive Id (A : Type) (a : A) (b : A) : Type :=
+Inductive Id (A : Type) (a : A) (b : A) : Set :=
 | idrefl : forall (e : a ~ b), Id A a b.
 
 Arguments idrefl {A a b}.
@@ -186,7 +158,6 @@ Arguments idrefl {A a b}.
 Notation idrefl' := (idrefl obseq_refl).
 
 Print obseq_idrefl_0.
-Print rewrite_idrefl.
 
 Lemma functional_extensionality A B (f g : A -> B) :
   (forall x y, Id A x y -> Id B (f x) (g y)) -> Id _ f g.
