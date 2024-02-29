@@ -81,21 +81,20 @@ let duplicate_context ctx =
   Context.Rel.fold_outside aux ctx
     ~init:(Esubst.el_id, Context.Rel.empty)
 
-let clo =
-  let acc = ref "" in
-  (fun () ->
-    acc := !acc ^ "X" ;
-    !acc)
-
 (* instanciates a context with evars *)
-let evar_ctxt env sigma ctx =
+let evar_ctxt ignored env sigma ctx =
   let rec reln sigma subst = function
     | Context.Rel.Declaration.LocalAssum (annot, ty) :: hyps ->
        let sigma, subst = reln sigma subst hyps in
 
        let ty = Vars.substl subst ty in
        let relevance = Some (annot.binder_relevance) in
-       let src = Some (None , Evar_kinds.MatchingVar (Evar_kinds.FirstOrderPatVar (Names.Id.of_string (clo ())))) in
+       let src =
+         if ignored then
+           Some (None , Evar_kinds.InternalHole)
+         else
+           Some (None , Evar_kinds.MatchingVar (Evar_kinds.FirstOrderPatVar (Names.Id.of_string "_")))
+       in
        let sigma, ev = Evarutil.new_evar ?src ?relevance env sigma (EConstr.of_constr ty) in
        let ev = EConstr.Unsafe.to_constr ev in
        sigma, (ev :: subst)
@@ -281,10 +280,10 @@ let declare_one_ctor_arg_obs_eq ~poly env uinfo name decl (sigma, ctxt, ren1, re
      let name = Names.Id.of_string (name ^ string_of_int cnt) in
 
      (* optional debug *)
-     (* Feedback.msg_debug (str "Observational inductives: Declaring parameter " *)
-     (*                     ++ str (Names.Id.to_string name) *)
-     (*                     ++ str " whose type is " *)
-     (*                     ++ Termops.Internal.print_constr_env env sigma (EConstr.of_constr axiom)) ; *)
+     Feedback.msg_debug (str "Observational inductives: Declaring parameter "
+                         ++ str (Names.Id.to_string name)
+                         ++ str " whose type is "
+                         ++ Termops.Internal.print_constr_env env sigma (EConstr.of_constr axiom)) ;
 
      (* normalizing the universes in the evar map and in the body of the axiom *)
      let uctx = Evd.evar_universe_context sigma in
@@ -361,31 +360,39 @@ let declare_one_constructor_rew_rules ?loc ~poly env uinst state ind ctor ctor_n
 
   let inst_ctor = Inductiveops.build_dependent_constructor ctor in
   let inst_ctor_1 = Vars.exliftn (Esubst.el_liftn n_args ren1) inst_ctor in
-  let rew_left = make_cast u1 u2 indty1 indty2 eq_hyp inst_ctor_1 in
   let inst_ctor_2 = Vars.exliftn (Esubst.el_liftn n_args (wkn n_args ren2)) inst_ctor in
-  let rew_right = it_mkLambda_or_LetIn_name env inst_ctor_2 arg0_ctxt in
 
-  let sigma, esubst = evar_ctxt env sigma (arg_ctxt @ param_ctxt) in
+  (* We build evar instances of the context. esubst is made of MatchingVar's for normal holes,
+     esubst_ignored is made of InternalHole's for ignored holes. *)
+  let sigma, esubst = evar_ctxt false env sigma (arg_ctxt @ param_ctxt) in
+  let sigma, esubst_ignored = evar_ctxt true env sigma (arg_ctxt @ param_ctxt) in
+
+  (* the parameters in indty1 are subsumed by the parameters in inst_ctor_1, so we make them
+     InternalHole's to avoid unnecessary equations. TODO: is it fine for indices? *)
+  let indty1 = Vars.substl esubst_ignored indty1 in
+  let rew_left = make_cast u1 u2 indty1 indty2 eq_hyp inst_ctor_1 in
   let rew_left = Vars.substl esubst rew_left in
-  let rew_right = Vars.substl esubst rew_right in
-  let id = Names.Id.of_string ("rewrite_" ^ Names.Id.to_string ctor_name) in
-
   let rew_left = EConstr.of_constr rew_left in
+
+  let rew_right = it_mkLambda_or_LetIn_name env inst_ctor_2 arg0_ctxt in
+  let rew_right = Vars.substl esubst rew_right in
   let rew_right = EConstr.of_constr rew_right in
 
-  (* optional debug *)
-  (* Flags.if_verbose Feedback.msg_debug (strbrk "We are trying to declare the rewrite rule " *)
-  (*                     ++ Termops.Internal.print_constr_env env sigma rew_left *)
-  (*                     ++ fnl () *)
-  (*                     ++ str " ==> " *)
-  (*                     ++ Termops.Internal.print_constr_env env sigma rew_right) ; *)
+  let id = Names.Id.of_string ("rewrite_" ^ Names.Id.to_string ctor_name) in
 
-  (* let ty_left = Retyping.get_type_of env sigma rew_left in *)
-  (* Feedback.msg_debug (str "The left side has type " *)
-  (*                     ++ Termops.Internal.print_constr_env env sigma ty_left) ; *)
-  (* let ty_right = Retyping.get_type_of env sigma rew_right in *)
-  (* Feedback.msg_debug (str "The right side has type " *)
-  (*                     ++ Termops.Internal.print_constr_env env sigma ty_right) ; *)
+  (* optional debug *)
+  Feedback.msg_debug (strbrk "We are trying to declare the rewrite rule "
+                      ++ Termops.Internal.print_constr_env env sigma rew_left
+                      ++ fnl ()
+                      ++ str " ==> "
+                      ++ Termops.Internal.print_constr_env env sigma rew_right) ;
+
+  let ty_left = Retyping.get_type_of env sigma rew_left in
+  Feedback.msg_debug (str "The left side has type "
+                      ++ Termops.Internal.print_constr_env env sigma ty_left) ;
+  let ty_right = Retyping.get_type_of env sigma rew_right in
+  Feedback.msg_debug (str "The right side has type "
+                      ++ Termops.Internal.print_constr_env env sigma ty_right) ;
 
   let rew = make_rewrite_rule ?loc env sigma uinst u1 u2 indty2 (EConstr.Unsafe.to_constr rew_left) rew_right in
   Global.add_rewrite_rules id { rewrules_rules = [rew] }
