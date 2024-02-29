@@ -457,6 +457,8 @@ let warn_about_sections () =
 let declare_inductive_observational_data ?loc (kn,i) =
   let mib = Global.lookup_mind kn in
   (* check that all options are set correctly *)
+  if not (Environ.rewrite_rules_allowed (Global.env ())) then
+    raise Environ.(RewriteRulesNotAllowed ObsInd);
   if mib.mind_finite = Declarations.CoFinite then
     user_err Pp.(str "Observational coinductive types are not supported yet.");
   if Context.Named.length mib.mind_hyps > 0 then
