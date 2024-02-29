@@ -1559,7 +1559,7 @@ let explain_prim_token_notation_error kind env sigma = function
 (* Rewrite rules errors *)
 
 let error_not_allowed_rewrite_rules symb_or_rule =
-  str (match symb_or_rule with Rule -> "Rewrite rule" | Symb -> "Symbol") ++ spc () ++
+  str (match symb_or_rule with Rule -> "Rewrite rule" | Symb -> "Symbol" | ObsInd -> "Observational inductive types") ++ spc () ++
   strbrk "declaration requires passing the flag " ++
   strbrk "\"-allow-rewrite-rules\"."
 

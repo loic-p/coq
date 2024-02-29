@@ -89,7 +89,7 @@ type env = {
   retroknowledge : Retroknowledge.retroknowledge;
   rewrite_rules_allowed: bool;
 }
-type rewrule_not_allowed = Symb | Rule
+type rewrule_not_allowed = Symb | Rule | ObsInd
 exception RewriteRulesNotAllowed of rewrule_not_allowed
 
 let empty_named_context_val = {

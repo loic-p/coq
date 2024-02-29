@@ -86,7 +86,7 @@ type env = private {
   (** Allow rewrite rules (breaks e.g. SR) *)
 }
 
-type rewrule_not_allowed = Symb | Rule
+type rewrule_not_allowed = Symb | Rule | ObsInd
 exception RewriteRulesNotAllowed of rewrule_not_allowed
 
 val oracle : env -> Conv_oracle.oracle
