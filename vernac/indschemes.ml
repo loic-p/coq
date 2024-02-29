@@ -101,7 +101,8 @@ let () =
       optdepr  = None;
       optkey   = ["Observational";"Inductives"];
       optread  = (fun () -> !observational_flag);
-      optwrite = (fun b -> observational_flag := b) }
+      optwrite = (fun b -> if b && not (Environ.rewrite_rules_allowed (Global.env ())) then raise Environ.(RewriteRulesNotAllowed ObsInd);
+                           observational_flag := b) }
 
 (* Util *)
 let define ~poly name sigma c types =
