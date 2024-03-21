@@ -1424,6 +1424,7 @@ struct
 
 type 'constr partial_subst = {
   subst: ('constr, Sorts.Quality.t, Univ.Level.t) Partial_subst.t;
+  equalities: (constr * constr) list;
   rhs: constr;
 }
 
@@ -1510,17 +1511,24 @@ let rec match_main : type a. (a, a patstate) reduction -> _ -> _ -> pat_state:(f
   if Array.for_all (function Dead -> true | Live _ -> false) states then match_kill red info tab ~pat_state loc else
   match [@ocaml.warning "-4"] loc with
   | LocStart { elims; context; head; stack; next = Return _ as next } ->
-    begin match Array.find2_map (fun state elim -> match state, elim with Live s, Check [] -> Some s | _ -> None) states elims with
-    | Some { subst; rhs } ->
-        let subst, qsubst, usubst = Partial_subst.to_arrays subst in
-        let subst = Array.fold_right subs_cons subst (subs_id 0) in
-        let usubst = UVars.Instance.of_array (qsubst, usubst) in
-        let m' = mk_clos (subst, usubst) rhs in
+    let exception Result of fconstr in
+    let (let*) a f = match a with Inl a -> f a | Inr b -> b in
+    begin match Array.split @@ Array.map2 (fun state elim ->
+      let* { subst; equalities; rhs } = match state, elim with Live s, Check [] -> Inl s | _ -> Inr (state, elim) in
+      let subst, qsubst, usubst = Partial_subst.to_arrays subst in
+      let subst = Array.fold_right subs_cons subst (subs_id 0) in
+      let usubst = UVars.Instance.of_array (qsubst, usubst) in
+      let fequalities = List.map (map_pair (fun t -> mk_clos (subst, usubst) t)) equalities in
+      let* () = if List.for_all (fun (a, b) -> !conv info tab a b) fequalities then Inl () else Inr (Dead, Ignore) in
+      let m' = mk_clos (subst, usubst) rhs in
+      raise (Result m')) states elims
+    with
+    | states, elims -> match_elim red info tab ~pat_state next context states elims head stack
+    | exception Result m' ->
         begin match pat_state with
         | Nil Yes -> Some (m', stack)
         | _ -> red.red_kni info tab ~pat_state m' stack
         end
-    | None -> match_elim red info tab ~pat_state next context states elims head stack
     end
   | LocArg { patterns; context; arg; next } ->
       match_arg red info tab ~pat_state next context states patterns arg
@@ -1784,7 +1792,7 @@ let match_symbol red info tab ~pat_state fl (u, b, r) stk =
       let subst = Partial_subst.make r.nvars in
       let subst = UVars.Instance.pattern_match (quconv info) pu u subst in
       match subst with
-      | Some subst -> Live { subst; rhs = r.Declarations.rhs }, Check es
+      | Some subst -> Live { subst; equalities = r.Declarations.equalities; rhs = r.Declarations.rhs }, Check es
       | None -> Dead, Ignore
     ) (Array.of_list r)
   in

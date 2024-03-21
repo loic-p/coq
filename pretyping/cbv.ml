@@ -889,7 +889,7 @@ and cbv_apply_rule info env ctx psubst es stk =
 and cbv_apply_rules info env u r stk =
   match r with
   | [] -> raise PatternFailure
-  | { lhs_pat = (pu, elims); nvars; rhs } :: rs ->
+  | { lhs_pat = (pu, elims); nvars; equalities; rhs } :: rs ->
     try
       let psubst = Partial_subst.make nvars in
       let psubst = match_instance info pu u psubst in
@@ -897,6 +897,14 @@ and cbv_apply_rules info env u r stk =
       let subst, qsubst, usubst = Partial_subst.to_arrays psubst in
       let subst = Array.fold_right subs_cons subst env in
       let usubst = UVars.Instance.of_array (qsubst, usubst) in
+      let () =
+        let fequalities = List.map (map_pair (fun t -> EConstr.of_constr @@ apply_env subst @@ Vars.subst_instance_constr usubst t)) equalities in
+        let eq_istrue = List.for_all (fun (a, b) -> Reductionops.is_conv info.env info.sigma a b) fequalities in
+        if eq_istrue then
+          ()
+        else
+          raise PatternFailure
+      in
       let rhsu = Vars.subst_instance_constr usubst rhs in
       let rhs' = cbv_stack_term info TOP subst rhsu in
       rhs', stk

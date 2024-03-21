@@ -352,7 +352,7 @@ let warn_rewrite_rules_break_SR ~loc reason =
 let () = CWarnings.register_printer rewrite_rules_break_SR_msg
   (fun reason -> Pp.(str "This rewrite rule breaks subject reduction (" ++ reason ++ str ")."))
 
-let interp_rule (udecl, lhs, rhs: Constrexpr.universe_decl_expr option * _ * _) =
+let interp_rule (udecl, eqs, lhs, rhs: Constrexpr.universe_decl_expr option * _ * _ * _) =
   let env = Global.env () in
   let evd = Evd.from_env env in
 
@@ -451,6 +451,21 @@ let interp_rule (udecl, lhs, rhs: Constrexpr.universe_decl_expr option * _ * _) 
       Pretyping.understand_tcc ~flags env evd rhs
   in
 
+  let evd', eqs = List.fold_left_map (fun evd (a, b) ->
+    let a_loc = a.CAst.loc in
+    let b_loc = b.CAst.loc in
+    let a = Constrintern.(intern_gen WithoutTypeConstraint env evd a) in
+    let evd, a, ty = Pretyping.understand_tcc_ty ~flags env evd a in
+    let b = Constrintern.(intern_gen WithoutTypeConstraint env evd b) in
+    let evd, b =
+      try Pretyping.understand_tcc ~flags env evd ~expected_type:(OfType typ) b
+      with Type_errors.TypeError _ | Pretype_errors.PretypeError _ ->
+        warn_rewrite_rules_break_SR ~loc:b_loc (Pp.str "the equation rhs term doesn't have the type of its lhs");
+        Pretyping.understand_tcc ~flags env evd b
+    in
+    evd, (a, a_loc, b, b_loc)) evd' eqs
+  in
+
   let evd' = Evd.minimize_universes evd' in
   let _qvars', uvars' = EConstr.universes_of_constr evd' rhs in
   let evd' = Evd.restrict_universe_context evd' (Univ.Level.Set.union uvars uvars') in
@@ -458,59 +473,65 @@ let interp_rule (udecl, lhs, rhs: Constrexpr.universe_decl_expr option * _ * _) 
   let () = UState.check_uctx_impl ~fail (Evd.evar_universe_context evd) (Evd.evar_universe_context evd') in
   let evd = evd' in
 
-  let rhs =
-    let rhs' = evar_subst invtbl evd 0 rhs in
-    match EConstr.to_constr_opt evd rhs' with
-    | Some rhs -> rhs
-    | None ->
-      let pr_unresolved_evar e =
-        Pp.(hov 2 (str"- " ++ Printer.pr_existential_key env evd e ++  str ": " ++
-          Himsg.explain_pretype_error env evd (Pretype_errors.UnsolvableImplicit (e,None))))
-      in
-      CErrors.user_err ?loc:rhs_loc Pp.(hov 0 begin
-        str "The replacement term contains unresolved implicit arguments:"++ fnl () ++
-        str "  " ++ Printer.pr_econstr_env env evd rhs ++ fnl () ++
-        str "More precisely: " ++ fnl () ++
-        v 0 (prlist_with_sep cut pr_unresolved_evar (Evar.Set.elements (Evarutil.undefined_evars_of_term evd rhs')))
-      end)
-  in
+  let final_checks rhs_loc rhs =
+    let rhs =
+      let rhs' = evar_subst invtbl evd 0 rhs in
+      match EConstr.to_constr_opt evd rhs' with
+      | Some rhs -> rhs
+      | None ->
+        let pr_unresolved_evar e =
+          Pp.(hov 2 (str"- " ++ Printer.pr_existential_key env evd e ++  str ": " ++
+            Himsg.explain_pretype_error env evd (Pretype_errors.UnsolvableImplicit (e,None))))
+        in
+        CErrors.user_err ?loc:rhs_loc Pp.(hov 0 begin
+          str "The replacement term contains unresolved implicit arguments:"++ fnl () ++
+          str "  " ++ Printer.pr_econstr_env env evd rhs ++ fnl () ++
+          str "More precisely: " ++ fnl () ++
+          v 0 (prlist_with_sep cut pr_unresolved_evar (Evar.Set.elements (Evarutil.undefined_evars_of_term evd rhs')))
+        end)
+    in
 
-  let rhs = Vars.subst_univs_level_constr usubst rhs in
+    let rhs = Vars.subst_univs_level_constr usubst rhs in
 
-  let test_qvar q =
-    match Sorts.QVar.var_index q with
-    | Some -1 ->
-        CErrors.user_err ?loc:rhs_loc
-          Pp.(str "Sort variable " ++ Termops.pr_evd_qvar evd q ++ str " appears in the replacement but does not appear in the pattern.")
-    | Some n when n < 0 || n > nvarqs' -> CErrors.anomaly Pp.(str "Unknown sort variable in rewrite rule.")
-    | Some _ -> ()
-    | None ->
-        if not @@ Sorts.QVar.Set.mem q (evd |> Evd.sort_context_set |> fst |> fst) then
+    let test_qvar q =
+      match Sorts.QVar.var_index q with
+      | Some -1 ->
           CErrors.user_err ?loc:rhs_loc
             Pp.(str "Sort variable " ++ Termops.pr_evd_qvar evd q ++ str " appears in the replacement but does not appear in the pattern.")
-  in
+      | Some n when n < 0 || n > nvarqs' -> CErrors.anomaly Pp.(str "Unknown sort variable in rewrite rule.")
+      | Some _ -> ()
+      | None ->
+          if not @@ Sorts.QVar.Set.mem q (evd |> Evd.sort_context_set |> fst |> fst) then
+            CErrors.user_err ?loc:rhs_loc
+              Pp.(str "Sort variable " ++ Termops.pr_evd_qvar evd q ++ str " appears in the replacement but does not appear in the pattern.")
+    in
 
-  let test_level ?(alg_ok=false) lvl =
-    match Univ.Level.var_index lvl with
-    | Some -1 ->
-        CErrors.user_err ?loc:rhs_loc
-          Pp.(str "Universe level variable " ++ Termops.pr_evd_level evd lvl ++ str " appears in the replacement but does not appear in the pattern.")
-    | Some n when n < 0 || n > nvarus' -> CErrors.anomaly Pp.(str "Unknown universe level variable in rewrite rule")
-    | Some _ -> ()
-    | None ->
-        try UGraph.check_declared_universes (Environ.universes env) (Univ.Level.Set.singleton lvl)
-        with UGraph.UndeclaredLevel lvl ->
+    let test_level ?(alg_ok=false) lvl =
+      match Univ.Level.var_index lvl with
+      | Some -1 ->
           CErrors.user_err ?loc:rhs_loc
-            Pp.(str "Universe level " ++ Termops.pr_evd_level evd lvl ++ str " appears in the replacement but does not appear in the pattern.")
-  in
+            Pp.(str "Universe level variable " ++ Termops.pr_evd_level evd lvl ++ str " appears in the replacement but does not appear in the pattern.")
+      | Some n when n < 0 || n > nvarus' -> CErrors.anomaly Pp.(str "Unknown universe level variable in rewrite rule")
+      | Some _ -> ()
+      | None ->
+          try UGraph.check_declared_universes (Environ.universes env) (Univ.Level.Set.singleton lvl)
+          with UGraph.UndeclaredLevel lvl ->
+            CErrors.user_err ?loc:rhs_loc
+              Pp.(str "Universe level " ++ Termops.pr_evd_level evd lvl ++ str " appears in the replacement but does not appear in the pattern.")
+    in
 
-  let () =
-    let qs, us = Vars.sort_and_universes_of_constr rhs in
-    Sorts.QVar.Set.iter test_qvar qs;
-    Univ.Level.Set.iter test_level us
+    let () =
+      let qs, us = Vars.sort_and_universes_of_constr rhs in
+      Sorts.QVar.Set.iter test_qvar qs;
+      Univ.Level.Set.iter test_level us
+    in
+    rhs
   in
+  let rhs = final_checks rhs_loc rhs in
 
-  head_symbol, { nvars = (nvars' - 1, nvarqs', nvarus'); lhs_pat = head_umask, elims; rhs }
+  let equalities = List.map (fun (a, a_loc, b, b_loc) -> final_checks a_loc a, final_checks b_loc b) eqs in
+
+  head_symbol, { nvars = (nvars' - 1, nvarqs', nvarus'); lhs_pat = head_umask, elims; equalities; rhs }
 
 let do_rules id rules =
   let env = Global.env () in

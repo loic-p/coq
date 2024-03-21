@@ -430,7 +430,7 @@ and v_patarg = Sum ("pattern_argument", 1,
   |])
 
 let v_rewrule = v_tuple "rewrite_rule"
-  [| v_tuple "nvars" [| Int; Int; Int |]; v_pair v_instance_mask (List v_elimination); v_constr |]
+  [| v_tuple "nvars" [| Int; Int; Int |]; v_pair v_instance_mask (List v_elimination); v_constr; List (v_pair v_constr v_constr) |]
 let v_rrb = v_tuple "rewrite_rules_body"
   [| List (v_pair v_cst v_rewrule) |]
 

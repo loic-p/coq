@@ -526,13 +526,18 @@ let pr_statement head (idpl,(bl,c)) =
      (match bl with [] -> mt() | _ -> pr_binders bl ++ spc()) ++
      str":" ++ pr_spc_lconstr c)
 
-let pr_rew_rule (ubinders, lhs, rhs) =
+let pr_rew_rule (ubinders, e, lhs, rhs) =
   let binders = match ubinders with None -> mt()
   | _ ->
-    pr_universe_decl ubinders ++ spc() ++ str"|-"
+    pr_universe_decl ubinders ++ spc() ++ str"|- "
+  in
+  let pr_pure_constr c = Flags.without_option Flags.beautify pr_constr c in
+  let eqs = match e with [] -> mt()
+    | _ -> prlist_with_sep (fun () -> str";" ++ spc ())
+      (fun (a, b) -> pr_pure_constr a ++ spc() ++ str"=" ++ spc() ++ pr_pure_constr b) e
   in
   let pr_pure_lconstr c = Flags.without_option Flags.beautify pr_lconstr c in
-  binders ++ pr_pure_lconstr lhs ++ str"==>" ++ pr_pure_lconstr rhs
+  binders ++ eqs ++ pr_pure_lconstr lhs ++ str"==>" ++ pr_pure_lconstr rhs
 
 (**************************************)
 (* Pretty printer for vernac commands *)

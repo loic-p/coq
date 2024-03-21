@@ -677,15 +677,24 @@ let rec apply_rules whrec env sigma u r stk =
   let open Declarations in
   match r with
   | [] -> raise PatternFailure
-  | { lhs_pat = (pu, elims); nvars; rhs } :: rs ->
+  | { lhs_pat = (pu, elims); nvars; equalities; rhs } :: rs ->
     try
       let psubst = Partial_subst.make nvars in
       let psubst = match_einstance sigma pu u psubst in
       let psubst, stk = apply_rule whrec env sigma [] psubst elims stk in
       let subst, qsubst, usubst = Partial_subst.to_arrays psubst in
-      let usubst = UVars.Instance.of_array (qsubst, usubst) in
-      let rhsu = subst_instance_constr (EConstr.EInstance.make usubst) (EConstr.of_constr rhs) in
-      let rhs' = substl (Array.to_list subst) rhsu in
+      let subst = Array.to_list subst in
+      let usubst = EConstr.EInstance.make @@ UVars.Instance.of_array (qsubst, usubst) in
+      let () =
+        let fequalities = List.map (map_pair (fun t -> substl subst @@ subst_instance_constr usubst @@ EConstr.of_constr @@ t)) equalities in
+        let eq_istrue = List.for_all (fun (a, b) -> Reductionops.is_conv env sigma a b) fequalities in
+        if eq_istrue then
+          ()
+        else
+          raise PatternFailure
+      in
+      let rhsu = subst_instance_constr usubst (EConstr.of_constr rhs) in
+      let rhs' = substl subst rhsu in
       (rhs', stk)
     with PatternFailure -> apply_rules whrec env sigma u rs stk
 
