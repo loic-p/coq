@@ -224,10 +224,10 @@ let boot_module_setup ~cctx coq_module =
   let ext = Coq_module.Rule_type.vo_ext cctx.Context.rule in
   let prelude_path = prelude_path ~ext in
   match cctx.Context.boot with
-  | Boot_type.NoInit -> [Arg.A "-noinit"], []
+  | Boot_type.NoInit -> [Arg.A "-noinit -allow-rewrite-rules"], []
   | Stdlib ->
     (match Coq_module.prefix coq_module with
-     | ["Init"] -> [ Arg.A "-noinit" ], []
+     | ["Init"] -> [ Arg.A "-noinit -allow-rewrite-rules" ], []
      | _ -> [ ], [ Path.relative (Path.make "theories") prelude_path ]
     )
   | Regular stdlib -> [], [ Path.relative stdlib.directory prelude_path ]

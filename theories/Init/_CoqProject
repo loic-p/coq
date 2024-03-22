@@ -1,2 +1,2 @@
--R .. Coq
--arg -noinit
+-R /Users/nicolastabareau/Software/coq-obs/_build/default/theories/Init Coq.Init -I /Users/nicolastabareau/Software/coq-obs/_build/default/plugins/ltac/ Coq
+-arg -noinit -allow-rewrite-rules
