@@ -281,13 +281,12 @@ Qed.
     is provided too.
 *)
 
-Polymorphic Inductive sig@{s s' s''|u v| } (A:Type@{s|u}) (P:A -> Type@{s'|v}) :
+Polymorphic Inductive sigP@{s s' s''|u v| } (A:Type@{s|u}) (P:A -> Type@{s'|v}) :
   Type@{s''|max(u,v)} :=
-    exist : forall x:A, P x -> sig P.
+    existP : forall x:A, P x -> sigP P.
 
-Definition ex@{s|u| } (A:Type@{s|u}) (P:A -> SProp) := sig@{s _ SProp|u Set} P.
-
-Notation ex_intro := exist.
+Definition ex@{s|u| } := sigP@{s SProp SProp|u Set}.
+Notation ex_intro := existP.
 
 Register ex as core.ex.type.
 Register ex_intro as core.ex.intro.
@@ -307,13 +306,12 @@ Section Projections.
 
 End Projections.
 
-Polymorphic Inductive sig2@{s s' s''|u v v'| } (A:Type@{s|u})
+Polymorphic Inductive sig2P@{s s' s''|u v v'| } (A:Type@{s|u})
 (P :A -> Type@{s'|v}) (Q :A -> Type@{s'|v'}) : Type@{s''|max(u,v,v')} :=
-  exist2 : forall x:A, P x -> Q x -> sig2 P Q.
+  exist2P : forall x:A, P x -> Q x -> sig2P P Q.
 
-Definition ex2@{s|u| } (A:Type@{s|u}) (P Q:A -> SProp) := sig2@{s _ SProp|u Set Set} P Q.
-
-Notation ex_intro2 := exist2.
+Definition ex2@{s|u| } := sig2P@{s SProp SProp|u Set Set}.
+Notation ex_intro2 := exist2P.
 
 (** [ex2] of a predicate can be projected to an [ex].
 
@@ -395,9 +393,10 @@ Notation "a ~ b" := (obseq _ a b) (at level 50).
 
 Arguments obseq {A} a _.
 Arguments obseq_refl {A a} , [A] a.
+Arguments obseq_sind {A} a P f b o.
 
 Definition obseq_trans {A : Type} {a b c : A} (e : a ~ b) (e' : b ~ c) : a ~ c :=
-  obseq_sind _ b (fun X _ => a ~ X) e c e'.
+  obseq_sind b (fun X _ => a ~ X) e c e'.
 Notation "e @@@ f" := (obseq_trans e f) (at level 40, left associativity, only parsing).
 
 (* The equality on the universe is annoying, because it needs a superfluous universe level.
@@ -415,7 +414,7 @@ Notation "e # a" := (cast _ _ e a) (at level 55, only parsing).
 (* We do not want to use sort polymorphism for cast, to avoid useless (and potentially looping)
    computations in SSProp *)
 
-Definition cast_prop (A B : SProp) (e : A ~ B) (a : A) := obseq_sind SProp A (fun X _ => X) a B e.
+Definition cast_prop (A B : SProp) (e : A ~ B) (a : A) := obseq_sind A (fun X _ => X) a B e.
 Notation "e #% a" := (cast_prop _ _ e a) (at level 40, only parsing).
 
 Rewrite Rule cast_refl :=
@@ -424,10 +423,10 @@ Rewrite Rule cast_refl :=
 (* We can use cast to derive large elimination principles for obseq *)
 
 Definition ap {A B} (f : A -> B) {x y} (e : x ~ y) : f x ~ f y :=
-  obseq_sind _ x (fun y _ => f x ~ f y) obseq_refl _ e.
+  obseq_sind x (fun y _ => f x ~ f y) obseq_refl _ e.
 
 Definition apd {A} {a} (P : forall b : A, a ~ b -> Type) (b : A) (e : a ~ b) : P a obseq_refl ~ P b e :=
-  obseq_sind _ a (fun b e => P a obseq_refl ~ P b e) obseq_refl b e.
+  obseq_sind a (fun b e => P a obseq_refl ~ P b e) obseq_refl b e.
 
 Definition obseq_rect@{u v v'} : forall (A : Type@{u}) (a : A) (P : forall b : A, obseq@{u} a b -> Type@{v}),
     P a obseq_refl@{u} -> forall (b : A) (e : obseq@{u} a b), P b e :=
@@ -597,6 +596,24 @@ Module EqNotations.
   Notation "'rew' -> [ P ] H 'in' H'" := (eq_rect _ P H' _ H)
     (at level 10, H' at level 10, only parsing).
 
+  Notation "'srew' H 'in' H'" := (eq_sind _ H' H)
+    (at level 10, H' at level 10,
+     format "'[' 'srew'  H  in  '/' H' ']'").
+  Notation "'srew' [ P ] H 'in' H'" := (eq_sind P H' H)
+    (at level 10, H' at level 10,
+     format "'[' 'srew'  [ P ]  '/    ' H  in  '/' H' ']'").
+  Notation "'srew' <- H 'in' H'" := (eq_sind_r _ H' H)
+    (at level 10, H' at level 10,
+     format "'[' 'srew'  <-  H  in  '/' H' ']'").
+  Notation "'srew' <- [ P ] H 'in' H'" := (eq_sind_r P H' H)
+    (at level 10, H' at level 10,
+     format "'[' 'srew'  <-  [ P ]  '/    ' H  in  '/' H' ']'").
+  Notation "'srew' -> H 'in' H'" := (eq_sind _ H' H)
+    (at level 10, H' at level 10, only parsing).
+  Notation "'srew' -> [ P ] H 'in' H'" := (eq_sind P H' H)
+    (at level 10, H' at level 10, only parsing).
+
+
   Notation "'rew' 'dependent' H 'in' H'"
     := (obseq_rect _ _ H' _ H)
          (at level 10, H' at level 10,
@@ -631,6 +648,42 @@ Module EqNotations.
     := (obseq_rect _ P H' _ (eq_sym H))
          (at level 10, H' at level 10,
           format "'[' 'rew'  'dependent'  <-  [ P ]  '/    ' H  in  '/' H' ']'").
+
+  Notation "'srew' 'dependent' H 'in' H'"
+    := (obseq_sind _ _ H' _ H)
+         (at level 10, H' at level 10,
+          format "'[' 'srew'  'dependent'  '/    ' H  in  '/' H' ']'").
+  Notation "'srew' 'dependent' -> H 'in' H'"
+    := (obseq_sind _ _ H' _ H)
+         (at level 10, H' at level 10, only parsing).
+  Notation "'srew' 'dependent' <- H 'in' H'"
+    := (obseq_sind _ _ H' _ (eq_sym H))
+         (at level 10, H' at level 10,
+          format "'[' 'srew'  'dependent'  <-  '/    ' H  in  '/' H' ']'").
+  Notation "'srew' 'dependent' [ 'fun' y p => P ] H 'in' H'"
+    := (obseq_sind _ (fun y p => P) H' _ H)
+         (at level 10, H' at level 10, y name, p name,
+          format "'[' 'srew'  'dependent'  [ 'fun'  y  p  =>  P ]  '/    ' H  in  '/' H' ']'").
+  Notation "'srew' 'dependent' -> [ 'fun' y p => P ] H 'in' H'"
+    := (obseq_sind _ (fun y p => P) H' _ H)
+         (at level 10, H' at level 10, y name, p name, only parsing).
+  Notation "'srew' 'dependent' <- [ 'fun' y p => P ] H 'in' H'"
+    := (obseq_sind _ (fun y p => P) H' _ (eq_sym H))
+         (at level 10, H' at level 10, y name, p name,
+          format "'[' 'srew'  'dependent'  <-  [ 'fun'  y  p  =>  P ]  '/    ' H  in  '/' H' ']'").
+  Notation "'srew' 'dependent' [ P ] H 'in' H'"
+    := (obseq_sind _ P H' _ H)
+         (at level 10, H' at level 10,
+          format "'[' 'srew'  'dependent'  [ P ]  '/    ' H  in  '/' H' ']'").
+  Notation "'srew' 'dependent' -> [ P ] H 'in' H'"
+    := (obseq_sind _ P H' _ H)
+         (at level 10, H' at level 10,
+          only parsing).
+  Notation "'srew' 'dependent' <- [ P ] H 'in' H'"
+    := (obseq_sind _ P H' _ (eq_sym H))
+         (at level 10, H' at level 10,
+          format "'[' 'srew'  'dependent'  <-  [ P ]  '/    ' H  in  '/' H' ']'").
+
 
  End EqNotations.
 
