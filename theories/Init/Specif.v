@@ -13,6 +13,9 @@
 Set Implicit Arguments.
 Set Reversible Pattern Implicit.
 
+Set Observational Inductives.
+Set Universe Polymorphism.
+
 Require Import Notations.
 Require Import Ltac.
 Require Import Datatypes.
@@ -25,67 +28,49 @@ Require Import Logic.
     Similarly [(sig2 A P Q)], or [{x:A | P x & Q x}], denotes the subset
     of elements of the type [A] which satisfy both [P] and [Q]. *)
 
-#[universes(template)]
-Inductive sig (A:Type) (P:A -> Prop) : Type :=
-    exist : forall x:A, P x -> sig P.
+Definition sig_rect@{s s' s''| u u' u''|} :
+  forall [A : Type@{s|u}] [P : A -> Type@{s'|u'}]
+    (P0 : sig P -> Type@{s''|u''}),
+    (forall (x : A) (p : P x), P0 (exist P x p)) -> forall s : sig P, P0 s :=
+  fun A P P0 f s =>
+    match s as s0 return (P0 s0) with
+          | exist _ x p => f x p
+    end.
 
 Register sig as core.sig.type.
 Register exist as core.sig.intro.
 Register sig_rect as core.sig.rect.
 
-#[universes(template)]
-Inductive sig2 (A:Type) (P Q:A -> Prop) : Type :=
-    exist2 : forall x:A, P x -> Q x -> sig2 P Q.
-
-(** [(sigT A P)], or more suggestively [{x:A & (P x)}] is a Sigma-type.
-    Similarly for [(sigT2 A P Q)], also written [{x:A & (P x) & (Q x)}]. *)
-
-#[universes(template)]
-Inductive sigT (A:Type) (P:A -> Type) : Type :=
-    existT : forall x:A, P x -> sigT P.
-
-Register sigT as core.sigT.type.
-Register existT as core.sigT.intro.
-Register sigT_rect as core.sigT.rect.
-
-#[universes(template)]
-Inductive sigT2 (A:Type) (P Q:A -> Type) : Type :=
-    existT2 : forall x:A, P x -> Q x -> sigT2 P Q.
+Definition sig2_rect@{s s' s''| u u' v' u''|} :
+  forall [A : Type@{s|u}] [P : A -> Type@{s'|u'}]
+    [Q : A -> Type@{s'|v'}]
+    (P0 : sig2 P Q -> Type@{s''|u''}),
+    (forall (x : A) (p : P x) (q : Q x), P0 (exist2 P Q x p q)) ->
+    forall s : sig2 P Q, P0 s :=
+  fun A P Q P0 f s =>
+    match s as s0 return (P0 s0) with
+          | exist2 _ _ x y p => f x y p
+    end.
 
 (* Notations *)
 
 Arguments sig (A P)%_type.
 Arguments sig2 (A P Q)%_type.
-Arguments sigT (A P)%_type.
-Arguments sigT2 (A P Q)%_type.
 
-Notation "{ x | P }" := (sig (fun x => P)) : type_scope.
-Notation "{ x | P & Q }" := (sig2 (fun x => P) (fun x => Q)) : type_scope.
-Notation "{ x : A | P }" := (sig (A:=A) (fun x => P)) : type_scope.
-Notation "{ x : A | P & Q }" := (sig2 (A:=A) (fun x => P) (fun x => Q)) :
-  type_scope.
-Notation "{ x & P }" := (sigT (fun x => P)) : type_scope.
-Notation "{ x & P & Q }" := (sigT2 (fun x => P) (fun x => Q)) : type_scope.
-Notation "{ x : A & P }" := (sigT (A:=A) (fun x => P)) : type_scope.
-Notation "{ x : A & P & Q }" := (sigT2 (A:=A) (fun x => P) (fun x => Q)) :
+Notation "{ x & P }" := (sig (fun x => P)) : type_scope.
+Notation "{ x & P & Q }" := (sig2 (fun x => P) (fun x => Q)) : type_scope.
+Notation "{ x : A & P }" := (sig (A:=A) (fun x => P)) : type_scope.
+Notation "{ x : A & P & Q }" := (sig2 (A:=A) (fun x => P) (fun x => Q)) :
   type_scope.
 
-Notation "{ ' pat | P }" := (sig (fun pat => P)) : type_scope.
-Notation "{ ' pat | P & Q }" := (sig2 (fun pat => P) (fun pat => Q)) : type_scope.
-Notation "{ ' pat : A | P }" := (sig (A:=A) (fun pat => P)) : type_scope.
-Notation "{ ' pat : A | P & Q }" := (sig2 (A:=A) (fun pat => P) (fun pat => Q)) :
-  type_scope.
-Notation "{ ' pat & P }" := (sigT (fun pat => P)) : type_scope.
-Notation "{ ' pat & P & Q }" := (sigT2 (fun pat => P) (fun pat => Q)) : type_scope.
-Notation "{ ' pat : A & P }" := (sigT (A:=A) (fun pat => P)) : type_scope.
-Notation "{ ' pat : A & P & Q }" := (sigT2 (A:=A) (fun pat => P) (fun pat => Q)) :
+Notation "{ ' pat & P }" := (sig (fun pat => P)) : type_scope.
+Notation "{ ' pat & P & Q }" := (sig2 (fun pat => P) (fun pat => Q)) : type_scope.
+Notation "{ ' pat : A & P }" := (sig (A:=A) (fun pat => P)) : type_scope.
+Notation "{ ' pat : A & P & Q }" := (sig2 (A:=A) (fun pat => P) (fun pat => Q)) :
   type_scope.
 
 Add Printing Let sig.
 Add Printing Let sig2.
-Add Printing Let sigT.
-Add Printing Let sigT2.
-
 
 (** Projections of [sig]
 
@@ -94,23 +79,28 @@ Add Printing Let sigT2.
     [(proj1_sig y)] is the witness [a] and [(proj2_sig y)] is the
     proof of [(P a)] *)
 
-(* Set Universe Polymorphism. *)
-Section Subset_projections.
-
-  Variable A : Type.
-  Variable P : A -> Prop.
-
-  Definition proj1_sig (e:sig P) := match e with
+Definition proj1_sig@{s s'|u v| } (A:Type@{s|u}) (P:A -> Type@{s'|v})
+     (e:sig@{_ _ s|_ _} P) := match e with
                                     | exist _ a b => a
                                     end.
 
-  Definition proj2_sig (e:sig P) :=
+Definition proj2_sig@{s|u v| } (A:Type@{s|u}) (P:A -> Type@{s|v})
+    (e:sig P) :=
+    match e return P (proj1_sig e) with
+    | exist _ a b => b
+    end.
+
+Section Subset_projections.
+
+  Definition proj2_SProp_sig (A:Type) (P:A -> SProp)
+    (e:sig P) :=
     match e return P (proj1_sig e) with
     | exist _ a b => b
     end.
 
   Register proj1_sig as core.sig.proj1.
   Register proj2_sig as core.sig.proj2.
+  Register proj2_SProp_sig as core.sig.proj2S.
 
 End Subset_projections.
 
@@ -123,10 +113,15 @@ End Subset_projections.
     [proj1_sig] of a coerced [X : sig2 P Q] will unify with [let (a,
     _, _) := X in a] *)
 
-Definition sig_of_sig2 (A : Type) (P Q : A -> Prop) (X : sig2 P Q) : sig P
-  := exist P
-           (let (a, _, _) := X in a)
-           (let (x, p, _) as s return (P (let (a, _, _) := s in a)) := X in p).
+Definition sig_of_sig2@{s s' s''| u v v' v''|u <= v'', v <= v''}
+  (A : Type@{s|u}) (P :A -> Type@{s'|v}) (Q :A -> Type@{s'|v'})
+  (X : sig2@{s s' s''|u v v'} P Q) : sig@{s s' s''|u v} P :=
+  match X with exist2 _ _ a p q => exist P a p end.
+
+Definition proj3_sig@{s|u v v' v''|u <= v'', v <= v''} (A:Type@{s|u})
+    (P:A -> Type@{s|v}) (Q:A -> Type@{s|v'})
+    (e:sig2 P Q) :=
+    let (a, b, c) return Q (proj1_sig (sig_of_sig2 e)) := e in c.
 
 (** Projections of [sig2]
 
@@ -140,109 +135,27 @@ Definition sig_of_sig2 (A : Type) (P Q : A -> Prop) (X : sig2 P Q) : sig P
 Section Subset_projections2.
 
   Variable A : Type.
-  Variables P Q : A -> Prop.
+  Variables P Q : A -> SProp.
 
-  Definition proj3_sig (e : sig2 P Q) :=
+  Definition proj3_SProp_sig (e : sig2@{Type SProp Type |_ _ _} P Q) :=
     let (a, b, c) return Q (proj1_sig (sig_of_sig2 e)) := e in c.
 
 End Subset_projections2.
 
+Module SigNotations.
+  Notation "( x ; y )" := (exist _ x y) (at level 0, format "( x ;  '/  ' y )").
+  Notation "x .1" := (proj1_sig x) (at level 1, left associativity, format "x .1").
+  Notation "x .2" := (proj2_sig x) (at level 1, left associativity, format "x .2").
+End SigNotations.
 
-(** Projections of [sigT]
+Import SigNotations.
 
-    An element [x] of a sigma-type [{y:A & P y}] is a dependent pair
-    made of an [a] of type [A] and an [h] of type [P a].  Then,
-    [(projT1 x)] is the first projection and [(projT2 x)] is the
-    second projection, the type of which depends on the [projT1]. *)
+Local Notation "x .3" := (proj3_sig x) (at level 1, left associativity, format "x .3").
 
+(* sanity check *)
+Definition ex_of_sig (A : Type) (P : A -> SProp) (X : sig P) : ex P
+  := ex_intro P (proj1_sig X) (proj2_SProp_sig X).
 
-
-Section Projections.
-
-  Variable A : Type.
-  Variable P : A -> Type.
-
-  Definition projT1 (x:sigT P) : A := match x with
-                                      | existT _ a _ => a
-                                      end.
-
-  Definition projT2 (x:sigT P) : P (projT1 x) :=
-    match x return P (projT1 x) with
-    | existT _ _ h => h
-    end.
-
-  Register projT1 as core.sigT.proj1.
-  Register projT2 as core.sigT.proj2.
-
-End Projections.
-
-Module SigTNotations.
-  Notation "( x ; y )" := (existT _ x y) (at level 0, format "( x ;  '/  ' y )").
-  Notation "x .1" := (projT1 x) (at level 1, left associativity, format "x .1").
-  Notation "x .2" := (projT2 x) (at level 1, left associativity, format "x .2").
-End SigTNotations.
-
-Import SigTNotations.
-
-(** [sigT2] of a predicate can be projected to a [sigT].
-
-    This allows [projT1] and [projT2] to be usable with [sigT2].
-
-    The [let] statements occur in the body of the [existT] so that
-    [projT1] of a coerced [X : sigT2 P Q] will unify with [let (a,
-    _, _) := X in a] *)
-
-Definition sigT_of_sigT2 (A : Type) (P Q : A -> Type) (X : sigT2 P Q) : sigT P
-  := existT P
-            (let (a, _, _) := X in a)
-            (let (x, p, _) as s return (P (let (a, _, _) := s in a)) := X in p).
-
-(** Projections of [sigT2]
-
-    An element [x] of a sigma-type [{y:A & P y & Q y}] is a dependent
-    pair made of an [a] of type [A], an [h] of type [P a], and an [h']
-    of type [Q a].  Then, [(projT1 (sigT_of_sigT2 x))] is the first
-    projection, [(projT2 (sigT_of_sigT2 x))] is the second projection,
-    and [(projT3 x)] is the third projection, the types of which
-    depends on the [projT1]. *)
-
-Section Projections2.
-
-  Variable A : Type.
-  Variables P Q : A -> Type.
-
-  Definition projT3 (e : sigT2 P Q) :=
-    let (a, b, c) return Q (projT1 (sigT_of_sigT2 e)) := e in c.
-
-End Projections2.
-
-Local Notation "x .3" := (projT3 x) (at level 1, left associativity, format "x .3").
-
-(** [sigT] of a predicate is equivalent to [sig] *)
-
-Definition sig_of_sigT (A : Type) (P : A -> Prop) (X : sigT P) : sig P
-  := exist P (projT1 X) (projT2 X).
-
-Definition sigT_of_sig (A : Type) (P : A -> Prop) (X : sig P) : sigT P
-  := existT P (proj1_sig X) (proj2_sig X).
-
-(** [sigT2] of a predicate is equivalent to [sig2] *)
-
-Definition sig2_of_sigT2 (A : Type) (P Q : A -> Prop) (X : sigT2 P Q) : sig2 P Q
-  := exist2 P Q (projT1 (sigT_of_sigT2 X)) (projT2 (sigT_of_sigT2 X)) (projT3 X).
-
-Definition sigT2_of_sig2 (A : Type) (P Q : A -> Prop) (X : sig2 P Q) : sigT2 P Q
-  := existT2 P Q (proj1_sig (sig_of_sig2 X)) (proj2_sig (sig_of_sig2 X)) (proj3_sig X).
-
-(** [sig] of a predicate on [Prop]s can be turned into [ex] *)
-
-Definition ex_of_sig (A : Type) (P : A -> Prop) (X : sig P) : ex P
-  := ex_intro P (proj1_sig X) (proj2_sig X).
-
-(** [sigT] of a predicate on [Prop]s can be turned into [ex] *)
-
-Definition ex_of_sigT (A : Type) (P : A -> Prop) (X : sigT P) : ex P
-  := ex_of_sig (sig_of_sigT X).
 
 (** [sig2] of a predicate on [Prop]s can be turned into [ex2] *)
 

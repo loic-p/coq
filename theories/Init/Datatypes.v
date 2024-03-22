@@ -36,6 +36,9 @@ Register tt as core.unit.tt.
 
 (** [bool] is the datatype of the boolean values [true] and [false] *)
 
+Set Observational Inductives.
+Set Universe Polymorphism.
+
 Inductive bool : Set :=
   | true : bool
   | false : bool.
@@ -97,7 +100,7 @@ Register andb_true_intro as core.bool.andb_true_intro.
 
 (** Interpretation of booleans as propositions *)
 
-Inductive eq_true : bool -> Prop := is_eq_true : eq_true true.
+Inductive eq_true : bool -> Set := is_eq_true : eq_true true.
 
 #[global]
 Hint Constructors eq_true : eq_true.
@@ -115,7 +118,7 @@ Definition is_true b := b = true.
 (** Additional rewriting lemmas about [eq_true] *)
 
 Lemma eq_true_ind_r :
-  forall (P : bool -> Prop) (b : bool), P b -> eq_true b -> P true.
+  forall (P : bool -> SProp) (b : bool), P b -> eq_true b -> P true.
 Proof.
   intros P b H H0; destruct H0 in H; assumption.
 Defined.
@@ -139,7 +142,7 @@ Defined.
     See also [Bool.reflect] when [Q = ~P].
 *)
 
-Inductive BoolSpec (P Q : Prop) : bool -> Prop :=
+Inductive BoolSpec (P Q : SProp) : bool -> SProp :=
   | BoolSpecT : P -> BoolSpec P Q true
   | BoolSpecF : Q -> BoolSpec P Q false.
 #[global]
@@ -180,10 +183,11 @@ Register S as num.nat.S.
 
 (** [option A] is the extension of [A] with an extra element [None] *)
 
-#[universes(template)]
 Inductive option (A:Type) : Type :=
   | Some : A -> option A
   | None : option A.
+
+Print obseq_Some_0.
 
 Arguments Some {A} a.
 Arguments None {A}.
@@ -200,7 +204,6 @@ Definition option_map (A B:Type) (f:A->B) (o : option A) : option B :=
 
 (** [sum A B], written [A + B], is the disjoint sum of [A] and [B] *)
 
-#[universes(template)]
 Inductive sum (A B:Type) : Type :=
   | inl : A -> sum A B
   | inr : B -> sum A B.
@@ -217,7 +220,6 @@ Register inr as core.sum.inr.
 (** [prod A B], written [A * B], is the product of [A] and [B];
     the pair [pair A B a b] of [a] and [b] is abbreviated [(a,b)] *)
 
-#[universes(template)]
 Inductive prod (A B:Type) : Type :=
   pair : A -> B -> A * B
 
@@ -287,7 +289,6 @@ Defined.
 
 (** Polymorphic lists and some operations *)
 
-#[universes(template)]
 Inductive list (A : Type) : Type :=
  | nil : list A
  | cons : A -> list A -> list A.
@@ -359,7 +360,7 @@ Qed.
 
 Lemma CompOpp_inj c c' : CompOpp c = CompOpp c' -> c = c'.
 Proof.
-  destruct c; destruct c'; auto; discriminate.
+  destruct c; destruct c'; auto ; discriminate.
 Qed.
 
 Lemma CompOpp_iff : forall c c', CompOpp c = c' <-> c = CompOpp c'.
@@ -372,7 +373,7 @@ Qed.
    specify a comparison function via some equality and order predicates.
    Interest: [CompareSpec] behave nicely with [case] and [destruct]. *)
 
-Inductive CompareSpec (Peq Plt Pgt : Prop) : comparison -> Prop :=
+Inductive CompareSpec (Peq Plt Pgt : SProp) : comparison -> SProp :=
  | CompEq : Peq -> CompareSpec Peq Plt Pgt Eq
  | CompLt : Plt -> CompareSpec Peq Plt Pgt Lt
  | CompGt : Pgt -> CompareSpec Peq Plt Pgt Gt.
@@ -388,12 +389,16 @@ Register CompGt as core.CompareSpec.CompGt.
     in Prop. For some situations, it is nonetheless useful to have a
     version in Type. Interestingly, these two versions are equivalent. *)
 
-Inductive CompareSpecT (Peq Plt Pgt : Prop) : comparison -> Type :=
+Unset Observational Inductives.
+
+Inductive CompareSpecT (Peq Plt Pgt : SProp) : comparison -> Type :=
  | CompEqT : Peq -> CompareSpecT Peq Plt Pgt Eq
  | CompLtT : Plt -> CompareSpecT Peq Plt Pgt Lt
  | CompGtT : Pgt -> CompareSpecT Peq Plt Pgt Gt.
 #[global]
 Hint Constructors CompareSpecT : core.
+
+Set Observational Inductives.
 
 Register CompareSpecT as core.CompareSpecT.type.
 Register CompEqT as core.CompareSpecT.CompEqT.
@@ -403,22 +408,25 @@ Register CompGtT as core.CompareSpecT.CompGtT.
 Lemma CompareSpec2Type Peq Plt Pgt c :
  CompareSpec Peq Plt Pgt c -> CompareSpecT Peq Plt Pgt c.
 Proof.
- destruct c; intros H; constructor; inversion_clear H; auto.
+  (* bug *)
+(* destruct c; intros H; constructor; inversion_clear H; auto.
 Defined.
+ *)
+Admitted.
 
 (** As an alternate formulation, one may also directly refer to predicates
  [eq] and [lt] for specifying a comparison, rather that fully-applied
  propositions. This [CompSpec] is now a particular case of [CompareSpec]. *)
 
-Definition CompSpec {A} (eq lt : A->A->Prop)(x y:A) : comparison -> Prop :=
+Definition CompSpec {A} (eq lt : A->A->SProp)(x y:A) : comparison -> SProp :=
  CompareSpec (eq x y) (lt x y) (lt y x).
 
-Definition CompSpecT {A} (eq lt : A->A->Prop)(x y:A) : comparison -> Type :=
+Definition CompSpecT {A} (eq lt : A->A->SProp)(x y:A) : comparison -> Type :=
  CompareSpecT (eq x y) (lt x y) (lt y x).
 #[global]
 Hint Unfold CompSpec CompSpecT : core.
 
-Lemma CompSpec2Type : forall A (eq lt:A->A->Prop) x y c,
+Lemma CompSpec2Type : forall A (eq lt:A->A->SProp) x y c,
  CompSpec eq lt x y c -> CompSpecT eq lt x y c.
 Proof. intros. apply CompareSpec2Type; assumption. Defined.
 
@@ -430,13 +438,13 @@ Proof. intros. apply CompareSpec2Type; assumption. Defined.
     sole inhabitant is denoted [identity_refl A a] *)
 
 #[deprecated(since="8.16",note="Use eq instead")]
-Notation identity := eq (only parsing).
+Notation identity := obseq (only parsing).
 #[deprecated(since="8.16",note="Use eq_refl instead")]
-Notation identity_refl := eq_refl (only parsing).
+Notation identity_refl := obseq_refl (only parsing).
 #[deprecated(since="8.16",note="Use eq_ind instead")]
-Notation identity_ind := eq_ind (only parsing).
+Notation identity_ind := obseq_ind (only parsing).
 #[deprecated(since="8.16",note="Use eq_rec instead")]
-Notation identity_rec := eq_rec (only parsing).
+Notation identity_rec := obseq_rec (only parsing).
 #[deprecated(since="8.16",note="Use eq_rect instead")]
 Notation identity_rect := eq_rect (only parsing).
 #[deprecated(since="8.16",note="Use eq_sym instead")]
@@ -454,15 +462,15 @@ Notation identity_rec_r := eq_rec_r (only parsing).
 #[deprecated(since="8.16",note="Use eq_rect_r instead")]
 Notation identity_rect_r := eq_rect_r (only parsing).
 
-Register eq as core.identity.type.
-Register eq_refl as core.identity.refl.
-Register eq_ind as core.identity.ind.
+Register obseq as core.identity.type.
+Register obseq_refl as core.identity.refl.
+Register obseq_ind as core.identity.ind.
 Register eq_sym as core.identity.sym.
 Register eq_trans as core.identity.trans.
 Register f_equal as core.identity.congr.
 
 #[deprecated(since="8.16",note="Use eq_refl instead")]
-Notation refl_id := eq_refl (only parsing).
+Notation refl_id := obseq_refl (only parsing).
 #[deprecated(since="8.16",note="Use eq_sym instead")]
 Notation sym_id := eq_sym (only parsing).
 #[deprecated(since="8.16",note="Use eq_trans instead")]
