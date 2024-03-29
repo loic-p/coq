@@ -406,8 +406,6 @@ Proof.
   intros x y Hxeqy x0 y0 Hx0eqy0. apply CRealLt_morph; assumption.
 Qed.
 
-Set Debug "loop-checking-fix-check".
-
 #[global]
 Instance CReal_appart_morph
   : CMorphisms.Proper@{Set+1 Set}
