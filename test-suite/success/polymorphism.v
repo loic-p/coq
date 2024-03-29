@@ -186,7 +186,7 @@ Module binders.
     exact Type@{i}.
   Qed.
 
-  Lemma barext@{i j|+} : Type@{j}.
+  Lemma barext@{i j|?} : Type@{j}.
   Proof.
     exact Type@{i}.
   Qed.
