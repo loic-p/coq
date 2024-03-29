@@ -254,7 +254,11 @@ let decompose_constraints cstrs =
 
 let normalize_context_set ~lbound g ctx (us:UnivFlex.t) ?binders {weak_constraints=weak;above_prop} =
   let prl = UnivNames.pr_with_global_universes ?binders in
-  debug Pp.(fun () -> str "Minimizing context: " ++ pr_universe_context_set prl ctx);
+  debug Pp.(fun () -> str "Minimizing context: " ++ pr_universe_context_set prl ctx ++ spc () ++
+    UnivFlex.pr Level.raw_pr us ++
+    str"Weak constraints " ++
+    prlist_with_sep spc (fun (u,v) -> Level.raw_pr u ++ str" ~ " ++ Level.raw_pr v)
+     (UPairSet.elements weak));
   let (ctx, csts) = ContextSet.levels ctx, ContextSet.constraints ctx in
   (* Keep the Prop/Set <= i constraints separate for minimization *)
   let csts = decompose_constraints csts in
@@ -319,7 +323,14 @@ let normalize_context_set ~lbound g ctx (us:UnivFlex.t) ?binders {weak_constrain
         csts g
     in
     debug Pp.(fun () -> str "Merging constraints: " ++ pr_universe_context_set prl (ctx, csts));
-    let g = UGraph.merge_constraints csts g in
+    let atomic, nonatomic =
+     Constraints.partition (fun (_l, d, r) -> not (d == Le && not (Univ.Universe.is_level r))) csts in
+    let g = UGraph.merge_constraints atomic g in
+    let g =
+      Constraints.fold (fun cstr g ->
+        if UGraph.check_constraint g cstr then g
+        else UGraph.enforce_constraint cstr g)
+      nonatomic g in
     let cstrs = UGraph.constraints_of_universes g in
     debug Pp.(fun () -> str "New universe context: " ++ pr_universe_context_set prl (ctx, fst cstrs));
     debug Pp.(fun () -> str "Partition: " ++ pr_partition prl (snd cstrs));
