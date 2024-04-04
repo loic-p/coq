@@ -397,7 +397,6 @@ let universe_subgraph ?loc kept univ =
     UGraph.add_universe u ~lbound:UGraph.Bound.Set ~strict newgraph
   in
   let univ = Level.Set.fold add kept UGraph.initial_universes in
-  let univ = Level.Set.fold add extras univ in
   UGraph.merge_constraints csts univ
 
 let sort_universes g =
