@@ -203,9 +203,10 @@ let pr_arc prl = let open Pp in
       let l = List.sort (fun (i, _) (i', _) -> Int.compare i i') l in
       let l = CList.factorize_left Int.equal l in
       let pr_cstrs (i, l) =
-      prl u ++ str " " ++ (if i = 0 then mt() else str "+ " ++ (int i)) ++
+        let l = List.sort Universe.compare l in
+        LevelExpr.pr prl (u, if i = 1 then 0 else i) ++ spc () ++
         v 0
-        (prlist_with_sep spc (fun v -> str "<= " ++ Universe.pr prl v) l)
+        (prlist_with_sep spc (fun v -> str (if i = 1 then "< " else "<= ") ++ Universe.pr prl v) l)
       in
       prlist_with_sep spc pr_cstrs l ++ fnl ()
   | u, G.Alias v ->

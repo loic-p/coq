@@ -327,17 +327,23 @@ let print_registered_schemes () =
   in
   hov 0 (prlist_with_sep fnl pr_schemes_of_ind (Indmap.bindings schemes))
 
+type kind = Lt | Le | Eq
+
 let dump_universes output g =
   let open Univ in
   let dump_arc u = function
     | UGraph.Node ltle ->
       List.iter (fun (k, v) ->
-        output Le (Universe.of_expr (u, k)) v) ltle;
+        if k = 1 then
+          output Lt (Universe.of_expr (u, 0)) v
+        else
+          output Le (Universe.of_expr (u, k)) v)
+        ltle;
     | UGraph.Alias (v, k) ->
-      (* fixme MS *)
       output Eq (Universe.make u) (Universe.of_expr (v, k))
   in
   Univ.Level.Map.iter dump_arc g
+
 
 let dump_universes_gen prl g s =
   let fulls = System.get_output_path s in
@@ -350,11 +356,11 @@ let dump_universes_gen prl g s =
       begin fun kind left right ->
         let () = Lazy.force init in
         match kind with
-          (* | Univ.Lt ->
-            Printf.fprintf output "  \"%s\" -> \"%s\" [style=bold];\n" right left *)
-          | Univ.Le ->
+          | Lt ->
+            Printf.fprintf output "  \"%s\" -> \"%s\" [style=bold];\n" right left
+          | Le ->
             Printf.fprintf output "  \"%s\" -> \"%s\" [style=solid];\n" right left
-          | Univ.Eq ->
+          | Eq ->
             Printf.fprintf output "  \"%s\" -> \"%s\" [style=dashed];\n" left right
       end, begin fun () ->
         if Lazy.is_val init then Printf.fprintf output "}\n";
@@ -363,9 +369,9 @@ let dump_universes_gen prl g s =
     end else begin
       begin fun kind left right ->
         let kind = match kind with
-          (* | Univ.Lt -> "<" *)
-          | Univ.Le -> "<="
-          | Univ.Eq -> "="
+          | Lt -> "<"
+          | Le -> "<="
+          | Eq -> "="
         in
         Printf.fprintf output "%s %s %s ;\n" left kind right
       end, (fun () -> close_out output)
