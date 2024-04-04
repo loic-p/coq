@@ -179,7 +179,9 @@ Notation IsHProp := (IsTrunc -1).
 Monomorphic Axiom dummy_funext_type : Type0.
 Monomorphic Class Funext := { dummy_funext_value : dummy_funext_type }.
 
-Inductive Unit@{i} : Type1@{i} :=
+Unset Universe Minimization ToSet.
+
+Inductive Unit : Type1 :=
     tt : Unit.
 
 Class IsPointed (A : Type) := point : A.
