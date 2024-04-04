@@ -31,20 +31,20 @@ Definition arrow (A B : Type) := A -> B.
 
 Definition flip {A B C : Type} (f : A -> B -> C) := fun x y => f y x.
 
-Module Import TypeOperators.
+Module Import TypeProduct.
 
 Cumulative Record prodT A B :=
  { fst : A; snd : B }.
 Arguments fst {A B}.
 Arguments snd {A B}.
 
+End TypeProduct.
+
 Definition iffT (A B : Type) := (prodT (A -> B) (B -> A))%type.
 
 Cumulative Inductive sumT A B :=
-| Inl : A -> sumT A B
-| Inr : B -> sumT A B.
-
-End TypeOperators.
+| inlt : A -> sumT A B
+| inrt : B -> sumT A B.
 
 (** We allow to unfold the [crelation] definition while doing morphism search. *)
 

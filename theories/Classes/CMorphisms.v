@@ -260,6 +260,8 @@ Proof. firstorder. Qed.
 
 (** Essential subrelation instances for [iffT] and [arrow]. *)
 
+Import TypeProduct.
+
 #[global]
 Instance iffT_arrow_subrelation : subrelation iffT arrow | 2.
 Proof. firstorder. Qed.
