@@ -429,7 +429,7 @@ let sort_universes g =
       let next = get_next u in
       let fold (k, u) todo =
         let u = Universe.repr u in
-        let v = List.map (fun (v, kv) -> (normalize (v, kv + k))) u in
+        let v = List.map (fun (v, kv) -> normalize (v, k + n - kv)) u in
         v @ todo
       in
       let todo = List.fold_right fold next todo in
