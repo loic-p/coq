@@ -1894,7 +1894,22 @@ let constraints_for ~(kept:Level.Set.t) model (fold : 'a constraint_fold) (accu 
   let add_cst u knd v (cst : 'a) : 'a =
     fold (interp_univ model u, knd, interp_univ model v) cst
   in
+  debug_global Pp.(fun () -> str"constraints_for kept: " ++ Level.Set.pr Level.raw_pr kept);
   let keptp = Level.Set.fold (fun u accu -> PSet.add (Index.find u model.table) accu) kept PSet.empty in
+  (* rmap: partial map from canonical points to kept points *)
+  let rmap, csts = PSet.fold (fun u (rmap,csts) ->
+    let arcu, ku = repr model u in
+    if PSet.mem arcu.canon keptp then
+      let csts = if Index.equal u arcu.canon then csts
+        else add_cst (NeList.tip (u, 0)) Eq (NeList.tip (arcu.canon, ku)) csts
+      in
+      PMap.add arcu.canon arcu.canon rmap, csts
+    else
+      match PMap.find arcu.canon rmap with
+      | v -> rmap, add_cst (NeList.tip (u, 0)) Eq (NeList.tip (v, 0)) csts
+      | exception Not_found -> PMap.add arcu.canon u rmap, csts)
+    keptp (PMap.empty, accu)
+  in
   let removed =
     PMap.fold
       (fun idx entry removed ->
@@ -1904,8 +1919,12 @@ let constraints_for ~(kept:Level.Set.t) model (fold : 'a constraint_fold) (accu 
           removed
         | Canonical can ->
             if PSet.mem idx keptp then removed
-            else (* Removal of a canonical node, we need to modify the clauses *)
-              PSet.add can.canon removed)
+            else
+              if PMap.mem can.canon rmap then
+                (* This canonical node is represented by a kept universe, don't remove *)
+                removed
+              else (* Removal of a canonical node, we need to modify the clauses *)
+                PSet.add can.canon removed)
     model.entries PSet.empty
   in
   let remove_can idx model =
@@ -1932,20 +1951,7 @@ let constraints_for ~(kept:Level.Set.t) model (fold : 'a constraint_fold) (accu 
   (* At this point the clauses that don't mention removed universes are enough to
      derive any clause between kept universes *)
   let model = PSet.fold remove_can removed model in
-  (* rmap: partial map from canonical points to kept points *)
-  let rmap, csts = PSet.fold (fun u (rmap,csts) ->
-      let arcu, ku = repr model u in
-      if PSet.mem arcu.canon keptp then
-        let csts = if Index.equal u arcu.canon then csts
-          else add_cst (NeList.tip (u, 0)) Eq (NeList.tip (arcu.canon, ku)) csts
-        in
-        PMap.add arcu.canon arcu.canon rmap, csts
-      else
-        match PMap.find arcu.canon rmap with
-        | v -> rmap, add_cst (NeList.tip (u, 0)) Eq (NeList.tip (v, 0)) csts
-        | exception Not_found -> PMap.add arcu.canon u rmap, csts)
-      keptp (PMap.empty, accu)
-  in
+
   let canon_repr can =
     match PMap.find can.canon rmap with
     | v -> v
