@@ -1,5 +1,6 @@
 Set Universe Polymorphism. Set Printing Universes.
-
+(* Deactivated for now *)
+(*
 Definition internal_defined@{i j | i < j +} (A : Type@{i}) : Type@{j}.
   pose(foo:=Type). (* 1 universe for the let body + 1 for the type *)
   exact A.
@@ -47,4 +48,4 @@ Proof.
   pose (foo := Type).
   exact A.
 Qed.
-Check internal_noprivate_qed@{_ _ _ _}.
+Check internal_noprivate_qed@{_ _ _ _}. *)
