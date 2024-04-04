@@ -572,8 +572,6 @@ let repr_clauses_of m ((k, prems as x) : ClausesOf.ClauseInfo.t) : ClausesOf.Cla
 let repr_clauses_of m x =
   ClausesOf.map (repr_clauses_of m) x
 
-let can_prem_to_prem l = NeList.map (fun (x, k) -> (x.canon, k)) l
-
 module ClausesOfRepr =
 struct
   open ClausesOf
@@ -1897,19 +1895,18 @@ let constraints_for ~(kept:Level.Set.t) model (fold : 'a constraint_fold) (accu 
     fold (interp_univ model u, knd, interp_univ model v) cst
   in
   let keptp = Level.Set.fold (fun u accu -> PSet.add (Index.find u model.table) accu) kept PSet.empty in
-  let removed, kept =
+  let removed =
     PMap.fold
-      (fun idx entry (removed, keptp) ->
+      (fun idx entry removed ->
         match entry with
-        | Equiv (idx', _k) ->
-          if not (PSet.mem idx keptp) then (removed, keptp) (* We don't need to care about removed non-canonical universes *)
-          else (* idx is kept, its canonical representative should be as well *)
-            (removed, PSet.add (fst (repr model idx')).canon keptp)
+        | Equiv (_, _k) ->
+          (* We don't need to care about removed non-canonical universes *)
+          removed
         | Canonical can ->
-            if PSet.mem idx keptp then (removed, keptp)
+            if PSet.mem idx keptp then removed
             else (* Removal of a canonical node, we need to modify the clauses *)
-              (PSet.add can.canon removed, keptp))
-    model.entries (PSet.empty, keptp)
+              PSet.add can.canon removed)
+    model.entries PSet.empty
   in
   let remove_can idx model =
     let can, k = repr model idx in
@@ -1936,9 +1933,9 @@ let constraints_for ~(kept:Level.Set.t) model (fold : 'a constraint_fold) (accu 
      derive any clause between kept universes *)
   let model = PSet.fold remove_can removed model in
   (* rmap: partial map from canonical points to kept points *)
-  let _rmap, csts = PSet.fold (fun u (rmap,csts) ->
+  let rmap, csts = PSet.fold (fun u (rmap,csts) ->
       let arcu, ku = repr model u in
-      if PSet.mem arcu.canon kept then
+      if PSet.mem arcu.canon keptp then
         let csts = if Index.equal u arcu.canon then csts
           else add_cst (NeList.tip (u, 0)) Eq (NeList.tip (arcu.canon, ku)) csts
         in
@@ -1947,14 +1944,20 @@ let constraints_for ~(kept:Level.Set.t) model (fold : 'a constraint_fold) (accu 
         match PMap.find arcu.canon rmap with
         | v -> rmap, add_cst (NeList.tip (u, 0)) Eq (NeList.tip (v, 0)) csts
         | exception Not_found -> PMap.add arcu.canon u rmap, csts)
-      kept (PMap.empty, accu)
+      keptp (PMap.empty, accu)
   in
+  let canon_repr can =
+    match PMap.find can.canon rmap with
+    | v -> v
+    | exception Not_found -> assert false
+  in
+  let can_prem_to_prem l = NeList.map (fun (x, k) -> (canon_repr x, k)) l in
   let rec add_from u csts todo = match todo with
     | [] -> csts
     | (prems,k)::todo ->
       let cprems = canonical_premises model prems in
       if not (NeList.exists (fun (v, _) -> PSet.mem v.canon removed) cprems) then
-        let csts = add_cst (NeList.tip (u.canon, k)) Le (can_prem_to_prem cprems) csts in
+        let csts = add_cst (NeList.tip (canon_repr u, k)) Le (can_prem_to_prem cprems) csts in
         add_from u csts todo
       else add_from u csts todo
   in

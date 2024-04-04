@@ -141,6 +141,12 @@ let enforce_uppers upper lbound cstrs =
         Constraints.add (Universe.addn lbound k, Le, Universe.make r) cstrs)
     cstrs upper
 
+let is_set_increment u =
+  match Universe.repr u with
+  | [] -> false
+  | [(l, k)] -> Level.is_set l
+  | _ -> false
+
 let minimize_univ_variables ctx us left right cstrs =
   let left, lbounds =
     Level.Map.fold (fun r lower (left, lbounds as acc)  ->
@@ -174,7 +180,7 @@ let minimize_univ_variables ctx us left right cstrs =
         (acc, left, Level.Map.lunion newlow lower)
     in
     let instantiate_lbound lbound =
-      if Universe.is_type0 lbound && not (get_set_minimization()) then
+      if is_set_increment lbound && not (get_set_minimization()) then
         (* Minim to Set disabled, do not instantiate with Set *)
         instantiate_with_lbound u lbound lower ~enforce:true acc
       else (* u is algebraic: we instantiate it with its lower bound, if any,
