@@ -196,21 +196,25 @@ let pr_pmap sep pr map =
 
 let pr_arc prl = let open Pp in
   function
-  | u, G.Node ltle ->
-    if Level.Map.is_empty ltle then mt ()
+  | u, G.Node l ->
+    if CList.is_empty l then mt ()
     else
-      prl u ++ str " " ++
-      v 0
-        (pr_pmap spc (fun (v, strict) ->
-              (if strict then str "< " else str "<= ") ++ prl v)
-            ltle) ++
-      fnl ()
+      (* In increasing order *)
+      let l = List.sort (fun (i, _) (i', _) -> Int.compare i i') l in
+      let l = CList.factorize_left Int.equal l in
+      let pr_cstrs (i, l) =
+      prl u ++ str " " ++ (if i = 0 then mt() else str "+ " ++ (int i)) ++
+        v 0
+        (prlist_with_sep spc (fun v -> str "<= " ++ Universe.pr prl v) l)
+      in
+      prlist_with_sep spc pr_cstrs l ++ fnl ()
   | u, G.Alias v ->
     prl u  ++ str " = " ++ LevelExpr.pr prl v ++ fnl  ()
 
+
 type node = G.node =
 | Alias of LevelExpr.t
-| Node of bool Level.Map.t
+| Node of (int * Universe.t) list (** Nodes [(k_i, u_i); ...] s.t. u + k_i <= u_i *)
 
 let repr g = G.repr g.graph
 

@@ -2001,13 +2001,22 @@ let choose p model p' =
         | Canonical _ -> acc)
       model.entries None
 
+
 type node =
-  | Alias of LevelExpr.t
-  | Node of bool Level.Map.t (** Nodes v s.t. u < v (true) or u <= v (false) *)
+| Alias of LevelExpr.t
+| Node of (int * Universe.t) list (** Nodes [(k_i, u_i); ...] s.t. u + k_i <= u_i *)
 
 type repr = node Level.Map.t
 
-(* Todo fixme increments *)
+let univ_of_expr model (l, k) =
+  Universe.of_expr (Index.repr l model.table, k)
+
+let universe_of_premise model prem =
+  match prem with
+  | NeList.Tip (l, k) -> univ_of_expr model (l, k)
+  | NeList.Cons (e, xs) ->
+    NeList.fold (fun (l, k) acc -> Universe.sup (univ_of_expr model (l, k)) acc) xs (univ_of_expr model e)
+
 let repr model =
   PMap.fold (fun idx e acc ->
     let conclp = Index.repr idx model.table in
@@ -2015,19 +2024,12 @@ let repr model =
     | Equiv (idx, k) -> Alias (Index.repr idx model.table, k)
     | Canonical can ->
       let prems = can.clauses_bwd in
-      let map =
-        ClausesOf.fold (fun cli map ->
+      let cls =
+        ClausesOf.fold (fun cli l ->
           let (k, prem) = cli in
-          match prem with
-          | NeList.Tip (v, 0) ->
-            let canv, kv = repr model v in
-            let vp = Index.repr canv.canon model.table in
-            if k + kv = 0 then Level.Map.add vp false map
-            else if k + kv = 1 then Level.Map.add vp true map
-            else assert false
-          | _ -> assert false) prems Level.Map.empty
-      in
-      Node map
+          let u = universe_of_premise model prem in
+          (k, u) :: l) prems []
+      in Node cls
     in
     Level.Map.add conclp node acc)
   model.entries Level.Map.empty

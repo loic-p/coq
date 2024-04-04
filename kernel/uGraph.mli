@@ -112,7 +112,7 @@ val check_subtype : AbstractContext.t check_function
 
 type node =
 | Alias of LevelExpr.t
-| Node of bool Level.Map.t (** Nodes v s.t. u < v (true) or u <= v (false) *)
+| Node of (int * Universe.t) list (** Nodes [(k_i, u_i); ...] s.t. u + k_i <= u_i *)
 
 val repr : t -> node Level.Map.t
 

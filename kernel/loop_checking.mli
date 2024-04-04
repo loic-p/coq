@@ -58,8 +58,10 @@ val choose : (Level.t -> bool) -> t -> Level.t -> Level.t option
 
 type node =
 | Alias of LevelExpr.t
-| Node of bool Level.Map.t (** Nodes v s.t. u < v (true) or u <= v (false) *)
+| Node of (int * Universe.t) list (** Nodes [(k_i, u_i); ...] s.t. u + k_i <= u_i *)
+
 type repr = node Level.Map.t
+
 val repr : t -> repr
 
 (* New functions *)

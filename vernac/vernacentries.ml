@@ -331,13 +331,11 @@ let dump_universes output g =
   let open Univ in
   let dump_arc u = function
     | UGraph.Node ltle ->
-      Univ.Level.Map.iter (fun v strict ->
-          (* todo fixme MS *)
-          (* let typ = if strict then Lt else Le in *)
-          output Le u v) ltle;
-    | UGraph.Alias (v, _k) ->
+      List.iter (fun (k, v) ->
+        output Le (Universe.of_expr (u, k)) v) ltle;
+    | UGraph.Alias (v, k) ->
       (* fixme MS *)
-      output Eq u v
+      output Eq (Universe.make u) (Universe.of_expr (v, k))
   in
   Univ.Level.Map.iter dump_arc g
 
@@ -401,10 +399,9 @@ let universe_subgraph ?loc kept univ =
 
 let sort_universes g =
   let open Univ in
-  let rec normalize u = match Level.Map.find u g with
-  (* TODO FIX MS *)
-  | UGraph.Alias (u, k) -> normalize u
-  | UGraph.Node _ -> u
+  let rec normalize (u, ku as l) = match Level.Map.find u g with
+  | UGraph.Alias (u, k) -> normalize (u, ku + k)
+  | UGraph.Node _ -> l
   in
   let get_next u = match Level.Map.find u g with
   | UGraph.Alias u -> assert false (* nodes are normalized *)
@@ -414,7 +411,7 @@ let sort_universes g =
   let rec traverse accu todo = match todo with
   | [] -> accu
   | (u, n) :: todo ->
-    let () = assert (Level.equal (normalize u) u) in
+    let () = assert (LevelExpr.equal (normalize (u, n)) (u, n)) in
     let n = match Level.Map.find u accu with
     | m -> if m < n then Some n else None
     | exception Not_found -> Some n
@@ -424,21 +421,22 @@ let sort_universes g =
     | Some n ->
       let accu = Level.Map.add u n accu in
       let next = get_next u in
-      let fold v lt todo =
-        let v = normalize v in
-        if lt then (v, n + 1) :: todo else (v, n) :: todo
+      let fold (k, u) todo =
+        let u = Universe.repr u in
+        let v = List.map (fun (v, kv) -> (normalize (v, kv + k))) u in
+        v @ todo
       in
-      let todo = Level.Map.fold fold next todo in
+      let todo = List.fold_right fold next todo in
       traverse accu todo
   in
   (* Only contains normalized nodes *)
-  let levels = traverse Level.Map.empty [normalize Level.set, 0] in
+  let levels = traverse Level.Map.empty [normalize (Level.set, 0)] in
   let max_level = Level.Map.fold (fun _ n accu -> max n accu) levels 0 in
   let dummy_mp = Names.DirPath.make [Names.Id.of_string "Type"] in
   let ulevels = Array.init max_level (fun i -> Level.(make (UGlobal.make dummy_mp "" i))) in
   (* Add the normal universes *)
   let fold (cur, ans) u =
-    let ans = Level.Map.add cur (UGraph.Node (Level.Map.singleton u true)) ans in
+    let ans = Level.Map.add cur (UGraph.Node [1, Universe.make u]) ans in
     (u, ans)
   in
   let _, ans = Array.fold_left fold (Level.set, Level.Map.empty) ulevels in
@@ -447,9 +445,9 @@ let sort_universes g =
   let fold u _ ans =
     if Level.is_set u then ans
     else
-      let n = Level.Map.find (normalize u) levels in
-      (* TODO FIXME*)
-      Level.Map.add u (UGraph.Alias (ulevels.(n), 0)) ans
+      let v, k = normalize (u, 0) in
+      let n = Level.Map.find v levels in
+      Level.Map.add u (UGraph.Alias (ulevels.(n), k)) ans
   in
   Level.Map.fold fold g ans
 
@@ -468,7 +466,7 @@ let print_universes ?loc ~sort ~subgraph dst =
   let prl = UnivNames.pr_level_with_global_universes in
   begin match dst with
     | None -> UGraph.pr_universes prl univ ++ pr_remaining
-    | Some s -> dump_universes_gen (fun u -> Pp.string_of_ppcmds (prl u)) univ s
+    | Some s -> dump_universes_gen (fun u -> Pp.string_of_ppcmds (Univ.Universe.pr prl u)) univ s
   end
 
 (*********************)
