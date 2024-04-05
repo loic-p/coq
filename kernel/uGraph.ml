@@ -130,7 +130,7 @@ let check_subtype univs ctxT ctx =
   (* NB: size check is the only constraint on qualities *)
   if eq_sizes (AbstractContext.size ctxT) (AbstractContext.size ctx) then
     let uctx = AbstractContext.repr ctx in
-    let inst = UContext.level_instance uctx in
+    let inst = UContext.instance uctx in
     let cst = UContext.constraints uctx in
     let cstT = UContext.constraints (AbstractContext.repr ctxT) in
     let push accu v = add_universe v ~lbound:Bound.Set ~strict:false accu in

@@ -110,7 +110,7 @@ let v_cstrs =
 let v_variance = v_enum "variance" 3
 
 let v_level_instance = Annot ("level_instance", v_pair (Array v_quality) (Array v_level))
-let v_instance = Annot ("instance", v_pair (Array v_quality) (Array v_univ))
+let v_univ_instance = Annot ("instance", v_pair (Array v_quality) (Array v_univ))
 let v_abs_context = v_tuple "abstract_universe_context" [|v_pair (Array v_name) (Array v_name); v_cstrs|]
 let v_context_set = v_tuple "universe_context_set" [|v_hset v_level;v_cstrs|]
 
@@ -266,7 +266,7 @@ let v_vm_structured_constant = v_sum "vm_structured_constant" 0 [|
     [|Int|];
     [|v_quality|];
     [|v_level|];
-    [|v_instance|];
+    [|v_univ_instance|];
     [|Any|]; (* contains a Vmvalues.value *)
     [|v_uint63|];
     [|Float64|];

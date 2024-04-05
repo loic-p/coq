@@ -470,7 +470,7 @@ let add_qualities qs known =
     qs
 
 let push_context ?(strict=false) ctx env =
-  let qs, _us = UVars.Instance.to_array (UVars.UContext.instance ctx) in
+  let qs, _us = UVars.LevelInstance.to_array (UVars.UContext.instance ctx) in
   let env = { env with env_qualities = add_qualities qs env.env_qualities } in
   map_universes (add_universes ~lbound:(universes_lbound env) ~strict ctx) env
 

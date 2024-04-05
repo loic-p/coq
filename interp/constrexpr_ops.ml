@@ -41,11 +41,12 @@ let relevance_expr_eq a b = match a, b with
 
 let relevance_info_expr_eq = Option.equal relevance_expr_eq
 
-let univ_level_expr_eq u1 u2 =
+(* let univ_level_expr_eq u1 u2 =
   let eq l1 l2 =
     List.equal (fun (x,m) (y,n) -> sort_name_expr_eq x y && Int.equal m n) l1 l2
   in
-  Glob_ops.glob_sort_gen_eq eq u1 u2
+  Glob_ops.glob_sort_gen_eq eq u1 u2 *)
+
 let universe_expr_eq u1 u2 =
   List.equal (fun (x,m) (y,n) -> sort_name_expr_eq x y && Int.equal m n) u1 u2
 

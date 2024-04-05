@@ -197,8 +197,8 @@ val subst_univs_level_context : sort_level_subst -> Constr.rel_context -> Constr
 val subst_instance_constr : Instance.t -> constr -> constr
 val subst_instance_context : Instance.t -> Constr.rel_context -> Constr.rel_context
 
-(** AInstance substitution for rewrite rules *)
-val subst_instance_constr : AInstance.t -> constr -> constr
+(** LevelInstance substitution *)
+val subst_level_instance_constr : LevelInstance.t -> constr -> constr
 val iter_on_instance : (Instance.t -> unit) -> (Univ.Universe.t -> unit) -> constr -> unit
 
 val univ_instantiate_constr : Instance.t -> constr univ_abstracted -> constr

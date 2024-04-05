@@ -297,7 +297,7 @@ let sort_context_set uctx =
 let constraints uctx = snd uctx.local
 
 let compute_instance_binders (qrev,urev) inst =
-  let qinst, uinst = Instance.to_array inst in
+  let qinst, uinst = LevelInstance.to_array inst in
   let qmap = function
     | QVar q ->
       begin try Name (Option.get (QVar.Map.find q qrev).uname)
@@ -337,8 +337,6 @@ let subst uctx = uctx.univ_variables
 let ugraph uctx = uctx.universes
 
 let initial_graph uctx = uctx.initial_universes
-
-let is_algebraic l uctx = UnivFlex.is_algebraic l uctx.univ_variables
 
 let of_names (ubind,(revqbind,revubind)) =
   let revqbind = QVar.Map.map (fun id -> { uname = Some id; uloc = None }) revqbind in
@@ -391,7 +389,7 @@ let nf_instance uctx u = Instance.subst_fn (nf_qvar uctx, nf_level uctx) u
 let nf_quality uctx q = Quality.subst (nf_qvar uctx) q
 
 let nf_sort uctx s =
-  let normalize u = nf_universe uctx u in
+  let normalize u = nf_level uctx u in
   let qnormalize q = QState.repr q uctx.sort_variables in
   Sorts.subst_fn (qnormalize, normalize) s
 
@@ -433,10 +431,9 @@ let classify s = match s with
 | SProp -> USmall USProp
 | Set -> USmall USet
 | Type u | QSort (_, u) ->
-  if Universe.is_levels u then match Universe.level u with
-  | None -> UMax (u, Universe.levels u)
-  | Some u -> ULevel u
-  else UAlgebraic u
+  match Universe.level u with
+  | None -> UAlgebraic u
+  | Some l -> ULevel (l, u)
 
 type local = {
   local_cst : Constraints.t;
@@ -473,16 +470,17 @@ let process_universe_constraints uctx cstrs =
   let univs = uctx.universes in
   let _variables = Univ.ContextSet.levels uctx.local in
   let vars = ref uctx.univ_variables in
-  let normalize u = UnivFlex.normalize_universe !vars u in
+  let normalize u = UnivFlex.normalize_univ_variable !vars u in
   let qnormalize sorts q = QState.repr q sorts in
+  let normalize_univ u = UnivFlex.normalize_universe !vars u in
   let normalize_sort sorts s =
-    Sorts.subst_fn ((qnormalize sorts), subst_univs_universe normalize) s
+    Sorts.subst_fn ((qnormalize sorts), UnivSubst.subst_univs_level normalize) s
   in
   let nf_constraint sorts = function
     | QLeq (a, b) -> QLeq (Quality.subst (qnormalize sorts) a, Quality.subst (qnormalize sorts) b)
     | QEq (a, b) -> QEq (Quality.subst (qnormalize sorts) a, Quality.subst (qnormalize sorts) b)
-    | ULub (u, v) -> ULub (normalize u, normalize v)
-    | UWeak (u, v) -> UWeak (normalize u, normalize v)
+    | ULub (u, v) -> ULub (normalize_univ u, normalize_univ v)
+    | UWeak (u, v) -> UWeak (normalize_univ u, normalize_univ v)
     | UEq (u, v) -> UEq (normalize_sort sorts u, normalize_sort sorts v)
     | ULe (u, v) -> ULe (normalize_sort sorts u, normalize_sort sorts v)
   in
@@ -496,8 +494,8 @@ let process_universe_constraints uctx cstrs =
     if UGraph.check_eq_sort univs ls s then local
     else if is_uset l then match classify s with
     | USmall _ -> sort_inconsistency Eq set s
-    | ULevel r ->
-      if is_local r then
+    | ULevel (r, _) ->
+      if is_flexible r then
         let () = instantiate_variable r Universe.type0 vars in
         add_local (Level.set, Eq, r) local
       else
@@ -608,22 +606,11 @@ let process_universe_constraints uctx cstrs =
         | USmall l' ->
           if UGraph.check_leq_sort univs l r then local
           else sort_inconsistency Le l r
-        | ULevel (l', ul') ->
+        | ULevel (l', _) ->
           if is_uset r' && is_flexible l' then
             (* Unbounded universe constrained from above, we equalize it *)
             let () = instantiate_variable l' Universe.type0 vars in
             add_local (l', Eq, Level.set) local
-          else
-            sort_inconsistency Le l r
-        | UMax (_, levels) ->
-          if is_uset r' then
-            let fold l' local =
-              let l = sort_of_univ @@ Universe.make l' in
-              if Level.is_set l' || is_local l' then
-                equalize_variables false l' Level.set local
-              else sort_inconsistency Le l r
-            in
-            Level.Set.fold fold levels local
           else
             sort_inconsistency Le l r
         end
@@ -688,26 +675,6 @@ let process_universe_constraints uctx cstrs =
   with Stack_overflow ->
     CErrors.anomaly (Pp.str "process_universe_constraint raised a stack overflow")
 
-
-let add_constraints uctx cstrs =
-  let univs, old_cstrs = uctx.local in
-  let cstrs' = Constraints.fold (fun (l,d,r) acc ->
-    let r = Sorts.sort_of_univ @@ r in
-    let cstr' = let open UnivProblem in
-      match d with
-      | Le -> ULe (Sorts.sort_of_univ l, r)
-      | Eq -> UEq (Sorts.sort_of_univ l, r)
-    in UnivProblem.Set.add cstr' acc)
-    cstrs UnivProblem.Set.empty
-  in
-  let vars, extra, cstrs', sorts = process_universe_constraints uctx cstrs' in
-  { uctx with
-    local = (univs, Constraints.union old_cstrs cstrs');
-    univ_variables = vars;
-    universes = UGraph.merge_constraints cstrs' uctx.universes;
-    sort_variables = sorts;
-    minim_extra = extra; }
-
 let add_universe_constraints uctx cstrs =
   let univs, local = uctx.local in
   let vars, extra, local', sorts = process_universe_constraints uctx cstrs in
@@ -720,13 +687,11 @@ let add_universe_constraints uctx cstrs =
 
 let problem_of_constraints cstrs =
   Constraints.fold (fun (l,d,r) acc ->
-      let l = Universe.make l and r = sort_of_univ @@ Universe.make r in
+      let l = sort_of_univ l and r = sort_of_univ r in
       let cstr' = let open UnivProblem in
         match d with
-        | Lt ->
-          ULe (sort_of_univ @@ Universe.super l, r)
-        | Le -> ULe (sort_of_univ l, r)
-        | Eq -> UEq (sort_of_univ l, r)
+        | Le -> ULe (l, r)
+        | Eq -> UEq (l, r)
       in UnivProblem.Set.add cstr' acc)
     cstrs UnivProblem.Set.empty
 
@@ -773,7 +738,7 @@ let check_universe_constraint uctx (c:UnivProblem.t) =
     end
   | ULe (u,v) -> UGraph.check_leq_sort uctx.universes u v
   | UEq (u,v) -> UGraph.check_eq_sort uctx.universes u v
-  | ULub (u,v) -> UGraph.check_eq_level uctx.universes u v
+  | ULub (u,v) -> UGraph.check_eq uctx.universes u v
   | UWeak _ -> true
 
 let check_universe_constraints uctx csts =
@@ -1079,14 +1044,16 @@ let demote_seff_univs univs uctx =
 
 let demote_global_univs env uctx =
   let env_ugraph = Environ.universes env in
-  let mem_univ u ugraph = match UGraph.check_declared_universes ugraph (Level.Set.singleton u) with
+  let mem_levels l ugraph = match UGraph.check_declared_universes ugraph l with
   | () -> true
   | exception (UGraph.UndeclaredLevel _) -> false
   in
+  let mem_univ u ugraph = mem_levels (Universe.levels u) ugraph in
+  let mem_level l ugraph = mem_levels (Univ.Level.Set.singleton l) ugraph in
   let mem_constraints (u, _, v as cst) ugraph =
     mem_univ u ugraph && mem_univ v ugraph && UGraph.check_constraint ugraph cst
   in
-  let filter_univs u = not (mem_univ u env_ugraph) in
+  let filter_univs u = not (mem_level u env_ugraph) in
   let filter_constraints cst = not (mem_constraints cst env_ugraph) in
   let (local_univs, local_constraints) = uctx.local in
   (* local_univs minus univs(env_ugraph) *)
@@ -1243,7 +1210,7 @@ let universe_context_inst_decl decl qvars levels names =
   in
   let instq = Array.map_of_list (fun q -> Quality.QVar q) decl.univdecl_qualities in
   let instu = Array.of_list decl.univdecl_instance in
-  let inst = Instance.of_array (instq,instu) in
+  let inst = LevelInstance.of_array (instq,instu) in
   inst
 
 let check_univ_decl_rev uctx decl =

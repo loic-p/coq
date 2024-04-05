@@ -288,7 +288,7 @@ let pr_universe_instance_constraints evd inst csts =
            (fun (u,d,v) -> hov 0 (Universe.pr prlev u ++ pr_constraint_type d ++ Universe.pr prlev v))
            (Constraints.elements csts)
   in
-  str"@{" ++ UVars.Instance.pr prqvar prlev inst ++ pcsts ++ str"}"
+  str"@{" ++ UVars.Instance.pr prqvar (Universe.pr prlev) inst ++ pcsts ++ str"}"
 
 let pr_universe_instance evd inst =
   pr_universe_instance_constraints evd inst Univ.Constraints.empty

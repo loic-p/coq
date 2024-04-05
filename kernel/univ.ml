@@ -474,6 +474,29 @@ struct
   let unrepr l =
     assert (not (List.is_empty l));
     sort l
+
+  let make_subst_fn (m : t Level.Map.t) =
+    fun l ->
+      match Level.Map.find_opt l m with
+      | None -> make l
+      | Some u -> u
+
+  let subst_fn fn u =
+    let modified = ref false in
+    let rec aux u' = function
+      | [] -> u'
+      | (l, k as x) :: u ->
+        let univ = fn l in
+        if Option.equal Level.equal (level univ) (Some l) then aux (x :: u') u
+        else begin
+          modified := true;
+          aux (List.append (addn univ k) u') u
+        end
+    in
+    let u' = aux [] u in
+    if not !modified then u
+    else unrepr u'
+
 end
 
 type constraint_type = Le | Eq
@@ -645,14 +668,12 @@ type 'a in_universe_context_set = 'a * universe_context_set
 
 (** A universe level to universe substitution *)
 
-type universe_level_subst = Universe.t Level.Map.t
-
 let empty_level_subst = Level.Map.empty
 let is_empty_level_subst = Level.Map.is_empty
 
 (** Substitution functions *)
 
-(** With level to level substitutions. *)
+(** With level to universe substitutions. *)
 let subst_univs_level_level subst l =
   try Level.Map.find l subst
   with Not_found -> Universe.make l

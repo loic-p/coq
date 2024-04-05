@@ -355,7 +355,7 @@ GRAMMAR EXTEND Gram
            univdecl_extensible_instance = ext;
            univdecl_constraints = fst cs;
            univdecl_extensible_constraints = snd cs } }
-    | "@{" ; l = LIST0 identref; ext = [ "+" -> { true } | -> { false } ];
+    | "@{" ; l = LIST0 identref; ext = [ "?" -> { true } | -> { false } ];
          cs = univ_decl_constraints
          ->
          { let open UState in

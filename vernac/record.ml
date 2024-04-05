@@ -485,7 +485,7 @@ let declare_projections indsp univs ?(kind=Decls.StructureComponent) inhabitant_
   let (mib,mip) = Global.lookup_inductive indsp in
   let poly = Declareops.inductive_is_polymorphic mib in
   let uinstance = match fst univs with
-    | Polymorphic_entry uctx -> UVars.UContext.instance uctx
+    | Polymorphic_entry uctx -> UVars.Instance.of_level_instance @@ UVars.UContext.instance uctx
     | Monomorphic_entry -> UVars.Instance.empty
   in
   let paramdecls = Inductive.inductive_paramdecls (mib, uinstance) in
@@ -877,7 +877,7 @@ let declare_class_constant ~univs paramimpls params data =
     | UState.Monomorphic_entry _, ubinders ->
       UVars.Instance.empty, (UState.Monomorphic_entry Univ.ContextSet.empty, ubinders)
     | UState.Polymorphic_entry uctx, _ ->
-      UVars.UContext.instance uctx, univs
+      UVars.Instance.of_level_instance (UVars.UContext.instance uctx), univs
   in
   let cstu = (cst, inst) in
   let inst_type = appvectc (mkConstU cstu) (Context.Rel.instance mkRel 0 params) in

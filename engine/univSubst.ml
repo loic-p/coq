@@ -28,6 +28,11 @@ let level_subst_of f =
   | None  -> Universe.make l
   | Some u -> u
 
+let subst_univs_level fn l =
+  match fn l with
+  | None -> Universe.make l
+  | Some u -> u
+
 let subst_univs_universe fn ul =
   let addn n u = iterate Universe.super n u in
   let subst, nosubst =
@@ -44,9 +49,6 @@ let subst_univs_universe fn ul =
   | u :: ul ->
     let substs = List.fold_left Universe.sup u subst in
     List.fold_left (fun acc (u, n) -> Universe.sup acc (addn n (Universe.make u))) substs nosubst
-
-let subst_instance fn i =
-  Instance.of_array (Array.Smart.map (subst_univs_universe (fun x -> Some (fn x))) (Instance.to_array i))
 
 let enforce_eq u v c = Univ.enforce_eq u v c
 
@@ -145,7 +147,7 @@ let map_universes_opt_subst_with_binders next aux fqual funiv k c =
     let pu' = subst_univs_fn_puniverses flevel pu in
     if pu' == pu then c else mkConstructU pu'
   | Sort s ->
-    let s' = Sorts.subst_fn (fqual, subst_univs_universe funiv) s in
+    let s' = Sorts.subst_fn (fqual, subst_univs_level funiv) s in
     if s' == s then c else mkSort s'
   | Case (ci,u,pms,(p,rel),iv,t,br) ->
     let u' = Instance.subst_fn flevel u in

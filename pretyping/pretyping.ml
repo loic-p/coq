@@ -157,9 +157,9 @@ let level_name sigma = function
     let sigma, u = universe_level_name sigma l in
     Some (sigma, u)
 
-let glob_level ?loc evd : glob_level -> _ = function
+(* let glob_level ?loc evd : glob_level -> _ = function
   | UAnonymous {rigid} ->
-    assert (rigid <> UnivFlexible true);
+    assert (rigid <> UnivFlexible);
     new_univ_level_variable ?loc rigid evd
   | UNamed s ->
     match level_name evd s with
@@ -167,7 +167,7 @@ let glob_level ?loc evd : glob_level -> _ = function
       user_err ?loc
         (str "Universe instances cannot contain non-Set small levels," ++ spc() ++
          str "polymorphic universe instances must be greater or equal to Set.");
-    | Some r -> r
+    | Some r -> r *)
 
 let glob_qvar ?loc evd : glob_qvar -> _ = function
   | GQVar q -> evd, q
@@ -1458,7 +1458,7 @@ let pretype_type self c ?loc ~flags valcon (env : GlobEnv.t) sigma = match DAst.
         (* we retype because it may be an evar which has been defined, resulting in a lower sort
            cf #18480 *)
         (Retyping.get_sort_of !!env sigma jty.utj_val)
-        (ESorts.make (Sorts.sort_of_univ (Univ.Universe.make u)))
+        (ESorts.make (Sorts.sort_of_univ u))
     in
     let u = UVars.Instance.of_array ([||],[| u |]) in
     let ta = EConstr.of_constr @@ Typeops.type_of_array !!env u in

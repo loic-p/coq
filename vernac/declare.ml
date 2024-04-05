@@ -542,7 +542,7 @@ let declare_variable ~name ~kind ~typing_flags d =
         | UState.Polymorphic_entry uctx ->
           Global.push_section_context uctx;
           let mk_anon_names u =
-            let qs, us = UVars.Instance.to_array u in
+            let qs, us = UVars.LevelInstance.to_array u in
             Array.make (Array.length qs) Anonymous, Array.make (Array.length us) Anonymous
           in
           Global.push_section_context
@@ -1042,7 +1042,7 @@ let declare_obligation prg obl ~uctx ~types ~body =
     let body =
       match fst univs with
       | UState.Polymorphic_entry uctx ->
-        Some (DefinedObl (constant, UVars.UContext.instance uctx))
+        Some (DefinedObl (constant, UVars.Instance.of_level_instance (UVars.UContext.instance uctx)))
       | UState.Monomorphic_entry _ ->
         Some
           (TermObl
@@ -1465,7 +1465,7 @@ let obligation_admitted_terminator ~pm {name; num; auto; check_final} uctx' dref
     else
       (* We get the right order somehow, but surely it could be enforced in a clearer way. *)
       let uctx = UState.context uctx' in
-      (UVars.UContext.instance uctx, uctx')
+      (UVars.Instance.of_level_instance (UVars.UContext.instance uctx), uctx')
   in
   let obl = {obl with obl_body = Some (DefinedObl (cst, inst))} in
   let pm = update_program_decl_on_defined ~pm prg obls num obl ~uctx:uctx' rem ~auto in
@@ -1993,7 +1993,7 @@ let declare_abstract ~name ~poly ~kind ~sign ~secsign ~opaque ~solve_tac sigma c
        should be enforced statically. *)
     let (_, body_uctx), _ = const.proof_entry_body in
     let () = assert (Univ.ContextSet.is_empty body_uctx) in
-    EConstr.EInstance.make (UVars.UContext.instance ctx)
+    EConstr.EInstance.make (UVars.Instance.of_level_instance (UVars.UContext.instance ctx))
   in
   let args = List.map EConstr.of_constr args in
   let lem = EConstr.mkConstU (cst, inst) in

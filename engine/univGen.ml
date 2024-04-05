@@ -74,7 +74,7 @@ let new_sort_global () =
 let fresh_instance auctx : _ in_sort_context_set =
   let qlen, ulen = AbstractContext.size auctx in
   let qinst = Array.init qlen (fun _ -> Sorts.Quality.QVar (new_sort_global())) in
-  let uinst = Array.init ulen (fun _ -> Universe.make (fresh_level())) in
+  let uinst = Array.init ulen (fun _ -> fresh_level()) in
   let qctx = Array.fold_left (fun qctx q -> match q with
       | Sorts.Quality.QVar q -> Sorts.QVar.Set.add q qctx
       | _ -> assert false)
@@ -82,7 +82,8 @@ let fresh_instance auctx : _ in_sort_context_set =
       qinst
   in
   let uctx = Array.fold_right Level.Set.add uinst Level.Set.empty in
-  let inst = Instance.of_array (qinst,uinst) in
+  let inst = LevelInstance.of_array (qinst,uinst) in
+  let inst = Instance.of_level_instance inst in
   inst, ((qctx,uctx), AbstractContext.instantiate inst auctx)
 
 let existing_instance ?loc auctx inst =

@@ -40,9 +40,13 @@ val nf_evars_and_universes_opt_subst
   -> constr -> constr
   [@@ocaml.deprecated "Use [UnivSubst.map_universes_opt_subst_with_binders]"]
 
+val subst_univs_level : universe_subst_fn -> Level.t -> Universe.t
 val subst_univs_universe : universe_subst_fn -> Universe.t -> Universe.t
 
 val pr_universe_subst : (Level.t -> Pp.t) -> universe_subst -> Pp.t
+
+val enforce_eq : Universe.t constraint_function
+val enforce_leq : Universe.t constraint_function
 
 val enforce_eq_sort : Sorts.t constraint_function
 val enforce_leq_sort : Sorts.t constraint_function

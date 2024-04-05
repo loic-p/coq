@@ -78,10 +78,6 @@ sig
     : (QVar.t -> Quality.t) * (Level.t -> Level.t)
     -> t -> t
 
-  type mask = Quality.pattern array * int option array
-
-  val pattern_match : mask -> t -> ('term, Quality.t, Level.t) Partial_subst.t -> ('term, Quality.t, Level.t) Partial_subst.t option
-  (** Pattern matching, as used by the rewrite rules mechanism *)
 end
 
 module Instance :
@@ -127,9 +123,14 @@ sig
   (** The set of levels in the instance *)
 
   val subst_fn
-    : (QVar.t -> Quality.t) * (Universe.t -> Universe.t)
+    : (QVar.t -> Quality.t) * (Level.t -> Universe.t)
     -> t -> t
 
+  type mask = Quality.pattern array * int option array
+
+  val pattern_match : mask -> t -> ('term, Quality.t, Universe.t) Partial_subst.t -> ('term, Quality.t, Universe.t) Partial_subst.t option
+  (** Pattern matching, as used by the rewrite rules mechanism *)
+  
 end
 
 val eq_sizes : int * int -> int * int -> bool
@@ -278,14 +279,14 @@ val subst_level_instance_universe : LevelInstance.t -> Universe.t -> Universe.t
 val subst_level_instance_sort : LevelInstance.t -> Sorts.t -> Sorts.t
 val subst_level_instance_relevance : LevelInstance.t -> Sorts.relevance -> Sorts.relevance
 
-val make_instance_subst : Instance.t -> sort_level_subst
+val make_instance_subst : LevelInstance.t -> sort_level_subst
 (** Creates [u(0) ↦ 0; ...; u(n-1) ↦ n - 1] out of [u(0); ...; u(n - 1)] *)
 
-val abstract_universes : UContext.t -> Instance.t * AbstractContext.t
+val abstract_universes : UContext.t -> LevelInstance.t * AbstractContext.t
 (** TODO: move universe abstraction out of the kernel *)
 
 val make_abstract_level_instance : AbstractContext.t -> LevelInstance.t
-val make_abstract_instance : AbstractContext.t -> LevelInstance.t
+val make_abstract_instance : AbstractContext.t -> Instance.t
 
 (** {6 Pretty-printing of universes. } *)
 

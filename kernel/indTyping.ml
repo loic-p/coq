@@ -418,7 +418,7 @@ let typecheck_inductive env ~sec_univs (mie:mutual_inductive_entry) =
           | None -> univs
           | Some sec_univs ->
             (* no variance for qualities *)
-            let _, sec_univs = UVars.Instance.to_array sec_univs in
+            let _, sec_univs = UVars.LevelInstance.to_array sec_univs in
             let sec_univs = Array.map (fun u -> u, None) sec_univs in
             Array.append sec_univs univs
         in

@@ -354,7 +354,7 @@ let discharge_abstract_universe_context abstr auctx =
     abstr, n, AbstractContext.union abstr.abstr_auctx auctx
   else
     let subst = abstr.abstr_ausubst in
-    let suff = UVars.make_abstract_instance auctx in
+    let suff = UVars.make_abstract_level_instance auctx in
     let ainst = LevelInstance.append subst suff in
     let substf = make_instance_subst ainst in
     let auctx = UVars.subst_univs_level_abstract_universe_context (snd substf) auctx in

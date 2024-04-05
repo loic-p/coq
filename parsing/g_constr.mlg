@@ -87,23 +87,26 @@ let test_sort_qvar =
   end
 
 type univ_or_quality =
-  | SProp | Prop | Set | Type | Anon of Loc.t | Global of Libnames.qualid
+  | SProp | Prop | Set | Type | Anon of Loc.t | Global of universe_expr
 
 let force_univ_level ?loc = function
-  | SProp -> UNamed CSProp
-  | Prop -> UNamed CProp
-  | Set -> UNamed CSet
+  | SProp -> UNamed [CSProp,0]
+  | Prop -> UNamed [CProp,0]
+  | Set -> UNamed [CSet,0]
   | Type -> UAnonymous {rigid=UnivRigid}
-  | Anon _ -> UAnonymous {rigid=UnivFlexible false}
-  | Global qid -> UNamed (CType qid)
+  | Anon _ -> UAnonymous {rigid=UnivFlexible}
+  | Global u -> UNamed u
 
 let force_quality ?loc = function
   | SProp -> CQConstant QSProp
   | Prop -> CQConstant QProp
-  | Set -> CErrors.user_err ?loc Pp.(str "Universe levels cannot be Set.")
+  | Set -> CErrors.user_err ?loc Pp.(str "Universe quality cannot be Set.")
   | Type -> CQConstant QType
   | Anon loc -> CQualVar (CQAnon (Some loc))
-  | Global qid -> CQualVar (CQVar qid)
+  | Global u ->
+    (match u with
+    | [(CType qid, 0)] -> CQualVar (CQVar qid)
+    | _ -> CErrors.user_err ?loc Pp.(str "Universe quality cannot be an arbitrary expression"))
 
 }
 
@@ -134,7 +137,7 @@ GRAMMAR EXTEND Gram
       | "Prop" -> { UNamed (None, [CProp, 0]) }
       | "SProp" -> { UNamed (None, [CSProp, 0]) }
       | "Type" -> { UAnonymous {rigid=UnivRigid} }
-      | "Type"; "@{"; "_"; "}" -> { UAnonymous {rigid=UnivFlexible false} }
+      | "Type"; "@{"; "_"; "}" -> { UAnonymous {rigid=UnivFlexible} }
       | "Type"; "@{"; test_sort_qvar; q = reference; "|"; u = universe; "}" -> { UNamed (Some (CQVar q), u) }
       | "Type"; "@{"; u = universe; "}" -> { UNamed (None, u) } ] ]
   ;

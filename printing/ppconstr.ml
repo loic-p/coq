@@ -227,10 +227,12 @@ let tag_var = tag Tag.variable
       pr_univ_annot (fun _ -> str "_") ()
     | UNamed u -> hov 0 (tag_type (str "Type") ++ pr_univ_annot pr_quality_univ u)
 
-  let pr_universe_expr = function
+  let pr_universe_expr u = tag_type (pr_univ u)
+
+  let pr_opt_universe_expr = function
     | UAnonymous {rigid=UnivRigid} -> tag_type (str "Type")
     | UAnonymous {rigid=UnivFlexible} -> tag_type (str "_")
-    | UNamed u -> tag_type (pr_univ u)
+    | UNamed u -> pr_universe_expr u
 
   let pr_qualid sp =
     let (sl, id) = repr_qualid sp in
@@ -250,7 +252,7 @@ let tag_var = tag Tag.variable
   let pr_inside_universe_instance (ql,ul) =
     (if List.is_empty ql then mt()
      else prlist_with_sep spc pr_quality_expr ql ++ strbrk " | ")
-    ++ prlist_with_sep spc (prlist_with_sep spc pr_universe_expr) ul
+    ++ prlist_with_sep spc pr_opt_universe_expr ul
 
   let pr_universe_instance l =
     pr_opt_no_spc (pr_univ_annot pr_inside_universe_instance) l

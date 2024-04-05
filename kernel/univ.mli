@@ -186,6 +186,10 @@ sig
   val repr : t -> LevelExpr.t list
   val unrepr : LevelExpr.t list -> t
 
+  val make_subst_fn : t Level.Map.t -> (Level.t -> t)
+
+  val subst_fn : (Level.t -> t) -> t -> t
+
   module Set : CSet.S with type elt  = t
   module Map : CMap.ExtS with type key = t and module Set := Set
 

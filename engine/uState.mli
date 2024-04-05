@@ -99,8 +99,7 @@ val nf_quality : t -> Quality.t -> Quality.t
 
 val nf_instance : t -> UVars.Instance.t -> UVars.Instance.t
 
-val nf_level : t -> Level.t -> Level.t
-(** Must not be allowed to be algebraic *)
+val nf_level : t -> Level.t -> Universe.t
 
 val nf_universe : t -> Universe.t -> Universe.t
 

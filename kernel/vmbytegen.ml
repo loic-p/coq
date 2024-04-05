@@ -323,12 +323,12 @@ let is_toplevel_inst env u =
   UVars.eq_sizes env.uinst_len (UVars.Instance.length u)
   && let qs, us = UVars.Instance.to_array u in
   Array.for_all_i (fun i q -> Sorts.Quality.equal q (Sorts.Quality.var i)) 0 qs
-  && Array.for_all_i (fun i l -> Univ.Level.equal l (Univ.Level.var i)) 0 us
+  && Array.for_all_i (fun i l -> Univ.Universe.equal l (Univ.Universe.var i)) 0 us
 
 let is_closed_inst u =
   let qs, us = UVars.Instance.to_array u in
   Array.for_all (fun q -> Option.is_empty (Sorts.Quality.var_index q)) qs
-  && Array.for_all (fun l -> Option.is_empty (Univ.Level.var_index l)) us
+  && Array.for_all (fun l -> Univ.Universe.for_all (fun (l, _) -> Option.is_empty @@ Univ.Level.var_index l) l) us
 
 (*i  Examination of the continuation *)
 
@@ -836,7 +836,7 @@ and compile_instance env cenv u sz cont =
       match Univ.Universe.level u with
       | Some l ->
         (match Univ.Level.var_index l with
-        | None -> compile_structured_constant cenv (Const_univ l) sz cont
+        | None -> compile_structured_constant cenv (Const_univ u) sz cont
         | Some idx -> pos_instance cenv sz :: Kfield 1 :: Kfield idx :: cont)
       | None ->
         compile_structured_constant cenv (Const_univ u) sz cont
@@ -874,14 +874,16 @@ and compile_constant env cenv kn u args sz cont =
 let is_univ_copy (maxq,maxu) u =
   let qs,us = UVars.Instance.to_array u in
   let check_array max var_index a =
-    Array.length a = max
-    && Array.for_all_i (fun i x ->
-      match Univ.Universe.level x with
-      | Some l -> Option.equal Int.equal (var_index l) (Some i)
-      | None -> false) 0 a
+    Array.length a = max &&
+    Array.for_all_i (fun i x -> Option.equal Int.equal (var_index x) (Some i)) 0 a
+  in
+  let univ_var_index x =
+    match Univ.Universe.level x with
+    | Some l -> Univ.Level.var_index l
+    | None -> None
   in
   check_array maxq Sorts.Quality.var_index qs
-  && check_array maxu Univ.Level.var_index us
+  && check_array maxu univ_var_index us
 
 let dump_bytecode = ref false
 

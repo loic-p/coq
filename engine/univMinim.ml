@@ -259,7 +259,7 @@ let decompose_constraints cstrs =
   in Constraints.fold fold cstrs Constraints.empty
 
 let normalize_context_set ~lbound g ctx (us:UnivFlex.t) ?binders {weak_constraints=weak;above_prop} =
-  let prl = UnivNames.pr_with_global_universes ?binders in
+  let prl = UnivNames.pr_level_with_global_universes ?binders in
   debug Pp.(fun () -> str "Minimizing context: " ++ pr_universe_context_set prl ctx ++ spc () ++
     UnivFlex.pr Level.raw_pr us ++
     str"Weak constraints " ++
@@ -284,8 +284,8 @@ let normalize_context_set ~lbound g ctx (us:UnivFlex.t) ?binders {weak_constrain
       end else
         let set_to a b =
           (smallles,
-           Constraints.add (a,Eq,b) csts,
-           UGraph.enforce_constraint (a,Eq,b) g)
+           Constraints.add (Universe.make a,Eq,b) csts,
+           UGraph.enforce_constraint (Universe.make a,Eq,b) g)
         in
         let check_le a b = UGraph.check_constraint g (a,Le,b) in
         if check_le u v || check_le v u

@@ -32,7 +32,7 @@ type 'a t = {
   (** Global universes introduced in the section *)
   poly_universes : UContext.t;
   (** Universes local to the section *)
-  all_poly_univs : Instance.t;
+  all_poly_univs : LevelInstance.t;
   (** All polymorphic universes, including from previous sections. *)
   has_poly_univs : bool;
   (** Are there polymorphic universes or constraints, including in previous sections. *)
@@ -86,7 +86,7 @@ let open_section ~custom prev =
     context = [];
     mono_universes = ContextSet.empty;
     poly_universes = UContext.empty;
-    all_poly_univs = Option.cata (fun sec -> sec.all_poly_univs) Instance.empty prev;
+    all_poly_univs = Option.cata (fun sec -> sec.all_poly_univs) LevelInstance.empty prev;
     has_poly_univs = Option.cata has_poly_univs false prev;
     entries = [];
     expand_info_map = (Cmap.empty, Mindmap.empty);

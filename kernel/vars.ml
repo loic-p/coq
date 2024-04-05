@@ -487,13 +487,13 @@ let subst_instance_context s ctx =
         RelDecl.map_constr (subst_instance_constr s) d)
       ctx
 
-let subst_instance_constr subst c =
-  if UVars.AInstance.is_empty subst then c
+let subst_level_instance_constr subst c =
+  if UVars.LevelInstance.is_empty subst then c
   else
-    let f u = UVars.subst_instance_instance subst u in
+    let f u = UVars.subst_level_instance_instance subst u in
     let rec aux t =
-      let t = if CArray.is_empty (fst (UVars.AInstance.to_array subst)) then t
-        else map_constr_relevance (UVars.subst_instance_relevance subst) t
+      let t = if CArray.is_empty (fst (UVars.LevelInstance.to_array subst)) then t
+        else map_constr_relevance (UVars.subst_level_instance_relevance subst) t
       in
       match kind t with
       | Const (c, u) ->
@@ -515,7 +515,7 @@ let subst_instance_constr subst c =
            if u' == u then t
            else (mkConstructU (c, u'))
       | Sort s ->
-        let s' = UVars.subst_instance_sort subst s in
+        let s' = UVars.subst_level_instance_sort subst s in
         if s' == s then t else mkSort s'
 
       | Case (ci, u, pms, p, iv, c, br) ->
@@ -558,7 +558,7 @@ let add_qvars_and_univs_of_instance (qs,us) u =
       | QConstant _ -> qs)
       qs qs'
   in
-  let us = Array.fold_left (fun acc x -> Univ.Level.Set.add x acc) us us' in
+  let us = Array.fold_left (fun acc x -> Univ.Level.Set.union (Univ.Universe.levels x) acc) us us' in
   qs, us
 
 let add_relevance (qs,us as v) = let open Sorts in function

@@ -108,19 +108,18 @@ open Inf
 
 let infer_generic_instance_eq variances u =
   Array.fold_left (fun variances u ->
-    match Universe.level u with
-    | Some l -> infer_level_eq l variances
-    | None -> variances)
-    variances (Instance.to_array u)
+    Level.Set.fold infer_level_eq (Universe.levels u) variances)
+    variances u
 
 (* no variance for qualities *)
+let level_instance_univs u = snd (Instance.to_array (Instance.of_level_instance u))
 let instance_univs u = snd (Instance.to_array u)
 
 let extend_con_instance cb u =
-  (Array.append (instance_univs cb.const_univ_hyps) (instance_univs u))
+  (Array.append (level_instance_univs cb.const_univ_hyps) (instance_univs u))
 
 let extend_ind_instance mib u =
-  (Array.append (instance_univs mib.mind_univ_hyps) (instance_univs u))
+  (Array.append (level_instance_univs mib.mind_univ_hyps) (instance_univs u))
 
 let extended_mind_variance mind =
   match mind.mind_variance, mind.mind_sec_variance with

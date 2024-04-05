@@ -543,12 +543,12 @@ let build_inductive env ~sec_univs names prv univs template variance
       | None -> Some variance, None
       | Some sec_univs ->
         (* no variance for qualities *)
-        let _nsecq, nsecu = UVars.Instance.length sec_univs in
+        let _nsecq, nsecu = UVars.LevelInstance.length sec_univs in
         Some (Array.sub variance nsecu (Array.length variance - nsecu)),
         Some (Array.sub variance 0 nsecu)
   in
   let univ_hyps = match sec_univs with
-    | None -> UVars.Instance.empty
+    | None -> UVars.LevelInstance.empty
     | Some univs -> univs
   in
   let mib =
@@ -600,7 +600,6 @@ let check_inductive env ~sec_univs kn mie =
       env_ar_par paramsctxt mie.mind_entry_finite
       (Array.map (fun ((_,lc),(indices,_),_) -> Context.Rel.nhyps indices,lc) inds)
   in
-  let sec_univs = Option.map (fun x -> Univ.Instance.to_array @@ Univ.Instance.of_level_instance @@ Univ.LevelInstance.of_array x) sec_univs in
   (* Build the inductive packets *)
     build_inductive env ~sec_univs names mie.mind_entry_private univs template variance
       paramsctxt kn record mie.mind_entry_finite

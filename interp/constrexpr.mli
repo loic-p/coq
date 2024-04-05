@@ -21,7 +21,7 @@ type sort_name_expr =
 
 type universe_expr = (sort_name_expr * int) list
 
-type univ_level_expr = (sort_name_expr * int) list Glob_term.glob_sort_gen
+type opt_universe_expr = (sort_name_expr * int) list Glob_term.glob_sort_gen
 
 type qvar_expr =
   | CQVar of qualid
@@ -38,9 +38,9 @@ type relevance_expr =
 
 type relevance_info_expr = relevance_expr option
 
-type sort_expr = (qvar_expr option * (sort_name_expr * int) list) Glob_term.glob_sort_gen
+type sort_expr = (qvar_expr option * universe_expr) Glob_term.glob_sort_gen
 
-type sort_expr = (Sorts.QVar.t option * universe_expr) Glob_term.glob_sort_gen
+type instance_expr = quality_expr list * opt_universe_expr list
 
 (** Constraints don't have anonymous universes *)
 type univ_constraint_expr = universe_expr * (Univ.constraint_type * bool) * universe_expr

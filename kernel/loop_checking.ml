@@ -1749,7 +1749,7 @@ let check_clause model cl =
   | Some (prems, (concl, k)) -> check_one_clause model prems concl k
 
 let check_constraint (m : t) u k u' =
-  debug_global Pp.(fun () -> str"Checking " ++ pr_constraints Level.raw_pr (Constraints.singleton (u,k,u')));
+  debug_global Pp.(fun () -> str"Checking " ++ Constraints.pr Level.raw_pr (Constraints.singleton (u,k,u')));
   let cls = clauses_of_constraint u k u' [] in
   let res = List.fold_left (fun check cl -> check && check_clause m (can_clause_of_clause m cl)) true cls in
   if res then (debug_global Pp.(fun () -> str" Clause holds"); res)

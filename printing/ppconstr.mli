@@ -31,7 +31,8 @@ val pr_qualid : qualid -> Pp.t
 val pr_patvar : Pattern.patvar -> Pp.t
 
 val pr_sort_name_expr : sort_name_expr -> Pp.t
-val pr_universe_expr : universe_expr Glob_term.glob_sort_gen -> Pp.t
+val pr_universe_expr : universe_expr -> Pp.t
+val pr_opt_universe_expr : universe_expr Glob_term.glob_sort_gen -> Pp.t
 val pr_sort_expr : sort_expr -> Pp.t
 val pr_guard_annot
   :  (constr_expr -> Pp.t)
