@@ -87,12 +87,11 @@ let test_sort_qvar =
   end
 
 type univ_or_quality =
-  | SProp | Prop | Set | Type | Anon of Loc.t | Global of universe_expr
+  | SProp | Prop | Type | Anon of Loc.t | Global of universe_expr
 
 let force_univ_level ?loc = function
   | SProp -> UNamed [CSProp,0]
   | Prop -> UNamed [CProp,0]
-  | Set -> UNamed [CSet,0]
   | Type -> UAnonymous {rigid=UnivRigid}
   | Anon _ -> UAnonymous {rigid=UnivFlexible}
   | Global u -> UNamed u
@@ -100,7 +99,6 @@ let force_univ_level ?loc = function
 let force_quality ?loc = function
   | SProp -> CQConstant QSProp
   | Prop -> CQConstant QProp
-  | Set -> CErrors.user_err ?loc Pp.(str "Universe quality cannot be Set.")
   | Type -> CQConstant QType
   | Anon loc -> CQualVar (CQAnon (Some loc))
   | Global u ->
@@ -322,8 +320,7 @@ GRAMMAR EXTEND Gram
       | -> { None } ] ]
   ;
   univ_or_quality:
-    [ [ "Set" -> { Set }
-      | "SProp" -> { SProp }
+    [ [ "SProp" -> { SProp }
       | "Prop" -> { Prop }
       | "Type" -> { Type }
       | "_" -> { Anon loc }
