@@ -265,7 +265,7 @@ let v_vm_structured_constant = v_sum "vm_structured_constant" 0 [|
     [|Fail "Const_evar"|];
     [|Int|];
     [|v_quality|];
-    [|v_level|];
+    [|v_univ|];
     [|v_univ_instance|];
     [|Any|]; (* contains a Vmvalues.value *)
     [|v_uint63|];
@@ -308,7 +308,7 @@ let v_vm_to_patch = v_tuple "vm_to_patch" [|v_vm_emitcodes; v_vm_fv; v_vm_positi
 
 let v_cb = v_tuple "constant_body"
   [|v_section_ctxt;
-    v_univ_instance;
+    v_level_instance;
     v_cst_def;
     v_constr;
     v_relevance;
@@ -367,7 +367,7 @@ let v_ind_pack = v_tuple "mutual_inductive_body"
     v_finite;
     Int;
     v_section_ctxt;
-    v_univ_instance;
+    v_level_instance;
     Int;
     Int;
     v_rctxt;
