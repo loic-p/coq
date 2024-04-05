@@ -224,7 +224,7 @@ let test_variance_ident =
 
 let test_univ_decl =
   let open Pcoq.Lookahead in
-  to_entry "test_univ_decl" (lk_ident_list >> lk_kw "|" >> lk_ident_list >> (lk_kw "+" <+> lk_empty) >> (lk_kw "|" <+> lk_kw "|}"))
+  to_entry "test_univ_decl" (lk_ident_list >> lk_kw "|" >> lk_ident_list >> (lk_kw "?" <+> lk_empty) >> (lk_kw "|" <+> lk_kw "|}"))
 
 let test_cumul_univ_decl =
   let open Pcoq.Lookahead in
