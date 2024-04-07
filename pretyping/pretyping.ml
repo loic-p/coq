@@ -157,18 +157,6 @@ let level_name sigma = function
     let sigma, u = universe_level_name sigma l in
     Some (sigma, u)
 
-(* let glob_level ?loc evd : glob_level -> _ = function
-  | UAnonymous {rigid} ->
-    assert (rigid <> UnivFlexible);
-    new_univ_level_variable ?loc rigid evd
-  | UNamed s ->
-    match level_name evd s with
-    | None ->
-      user_err ?loc
-        (str "Universe instances cannot contain non-Set small levels," ++ spc() ++
-         str "polymorphic universe instances must be greater or equal to Set.");
-    | Some r -> r *)
-
 let glob_qvar ?loc evd : glob_qvar -> _ = function
   | GQVar q -> evd, q
   | GLocalQVar {v=Anonymous} ->
@@ -191,39 +179,46 @@ let glob_quality ?loc evd = let open Sorts.Quality in function
     let evd, q = glob_qvar ?loc evd q in
     evd, QVar q
 
+let universe_info ?loc sigma l = match l with
+  | [] -> assert false
+  | [GSProp, _] | [GProp, _] ->
+      user_err ?loc
+      (str "Non-Set small universes cannot be used in universe instances.")
+  | (u, n) :: us ->
+    let open Pp in
+    let get_level sigma u n = match level_name sigma u with
+    | None ->
+      user_err ?loc
+        (str "Non-Set small universes cannot be used in algebraic expressions.")
+    | Some (sigma, u) ->
+      let u =
+        if n < 0 then
+          user_err ?loc
+            (str "Cannot interpret universe increment +" ++ int n ++ str ".")
+        else Univ.Universe.of_expr (u, n)
+      in
+      (sigma, u)
+    in
+    let fold (sigma, u) (l, n) =
+      let sigma, u' = get_level sigma l n in
+      (sigma, Univ.Universe.sup u u')
+    in
+    let (sigma, u) = get_level sigma u n in
+    let (sigma, u) = List.fold_left fold (sigma, u) us in
+    sigma, u
+
 let sort_info ?loc sigma q l = match l with
 | [] -> assert false
 | [GSProp, 0] -> assert (Option.is_empty q); sigma, Sorts.sprop
 | [GProp, 0] -> assert (Option.is_empty q); sigma, Sorts.prop
-| (u, n) :: us ->
-  let open Pp in
+| _ ->
   let sigma, q = match q with
     | None -> sigma, None
     | Some q ->
       let sigma, q = glob_qvar ?loc sigma q in
       sigma, Some q
   in
-  let get_level sigma u n = match level_name sigma u with
-  | None ->
-    user_err ?loc
-      (str "Non-Set small universes cannot be used in algebraic expressions.")
-  | Some (sigma, u) ->
-    let u = Univ.Universe.make u in
-    let u = match n with
-    | 0 -> u
-    | 1 -> Univ.Universe.super u
-    | n ->
-      user_err ?loc
-        (str "Cannot interpret universe increment +" ++ int n ++ str ".")
-    in
-    (sigma, u)
-  in
-  let fold (sigma, u) (l, n) =
-    let sigma, u' = get_level sigma l n in
-    (sigma, Univ.Universe.sup u u')
-  in
-  let (sigma, u) = get_level sigma u n in
-  let (sigma, u) = List.fold_left fold (sigma, u) us in
+  let sigma, u = universe_info ?loc sigma l in
   let s = match q with
     | None -> Sorts.sort_of_univ u
     | Some q -> Sorts.qsort q u
@@ -479,36 +474,6 @@ let pretype_id pretype loc env sigma id =
 
 (*************************************************************************)
 (* Main pretyping function                                               *)
-
-let universe_info ?loc sigma l = match l with
-| [] -> assert false
-| [GSProp, 0] | [GProp, 0] ->
-    user_err ?loc
-    (str "Non-Set small universes cannot be used in universe instances.")
-| (u, n) :: us ->
-  let open Pp in
-  let get_level sigma u n = match level_name sigma u with
-  | None ->
-    user_err ?loc
-      (str "Non-Set small universes cannot be used in algebraic expressions.")
-  | Some (sigma, u) ->
-    let u = Univ.Universe.make u in
-    let u = match n with
-    | 0 -> u
-    | 1 -> Univ.Universe.super u
-    | n ->
-      user_err ?loc
-        (str "Cannot interpret universe increment +" ++ int n ++ str ".")
-    in
-    (sigma, u)
-  in
-  let fold (sigma, u) (l, n) =
-    let sigma, u' = get_level sigma l n in
-    (sigma, Univ.Universe.sup u u')
-  in
-  let (sigma, u) = get_level sigma u n in
-  let (sigma, u) = List.fold_left fold (sigma, u) us in
-  sigma, u
 
 let glob_univ ?loc evd : glob_univ -> _ = function
   | UAnonymous {rigid} ->
