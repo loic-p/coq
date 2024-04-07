@@ -325,10 +325,13 @@ let is_toplevel_inst env u =
   Array.for_all_i (fun i q -> Sorts.Quality.equal q (Sorts.Quality.var i)) 0 qs
   && Array.for_all_i (fun i l -> Univ.Universe.equal l (Univ.Universe.var i)) 0 us
 
+let is_closed_univ u =
+  Univ.Universe.for_all (fun (l, _) -> Option.is_empty @@ Univ.Level.var_index l) u
+
 let is_closed_inst u =
   let qs, us = UVars.Instance.to_array u in
   Array.for_all (fun q -> Option.is_empty (Sorts.Quality.var_index q)) qs
-  && Array.for_all (fun l -> Univ.Universe.for_all (fun (l, _) -> Option.is_empty @@ Univ.Level.var_index l) l) us
+  && Array.for_all (fun u -> is_closed_univ u) us
 
 (*i  Examination of the continuation *)
 
@@ -831,15 +834,36 @@ and compile_instance env cenv u sz cont =
     | None -> compile_structured_constant cenv (Const_quality q) sz cont
     | Some idx -> pos_instance cenv sz :: Kfield 0 :: Kfield idx :: cont
     in
-    (* todo fix MS *)
     let comp_univ cenv u sz cont = 
-      match Univ.Universe.level u with
-      | Some l ->
-        (match Univ.Level.var_index l with
-        | None -> compile_structured_constant cenv (Const_univ u) sz cont
-        | Some idx -> pos_instance cenv sz :: Kfield 1 :: Kfield idx :: cont)
-      | None ->
+      let () = set_max_stack_size cenv (sz + 2) in
+      (* Length is always >= 1 *)
+      if is_closed_univ u then
         compile_structured_constant cenv (Const_univ u) sz cont
+      else
+        let u = Univ.Universe.repr u in
+        (* let len = List.length u in *)
+        let () = set_max_stack_size cenv (sz + 2) in
+        let rec fold cont = function
+          | [] -> Kconst (Const_b0 0) :: cont (* nil *)
+          | (l, k as le) :: xs ->
+            (* Tail of list is on top *)
+            match Univ.Level.var_index l with
+            | None ->
+              fold (Kpush :: (* Tail is built *)
+                Kconst (Const_level_expr le) :: (* Constant level expression *)
+                Kmakeblock (2, 0) :: (* List is built *)
+                cont) xs
+             | Some idx ->
+              fold (Kpush :: (* Tail is built *)
+                    Kconst (Const_b0 k) :: Kpush :: (* Second component *)
+                    pos_instance cenv (sz + 2) :: Kfield 1 :: Kfield idx :: (* First component *)
+                    (* This refers to a universe now *)
+
+                    Kmakeblock (2, 0) :: (* pair is built *)
+                    Kmakeblock (2, 0) :: (* list is built *)
+                    cont) xs
+        in
+        fold cont u
     in
     let comp_array comp_val cenv vs sz cont =
       if Array.is_empty vs then Kmakeblock (0,0) :: cont
