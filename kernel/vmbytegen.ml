@@ -835,35 +835,31 @@ and compile_instance env cenv u sz cont =
     | Some idx -> pos_instance cenv sz :: Kfield 0 :: Kfield idx :: cont
     in
     let comp_univ cenv u sz cont = 
-      let () = set_max_stack_size cenv (sz + 2) in
+      let () = set_max_stack_size cenv sz in
       (* Length is always >= 1 *)
       if is_closed_univ u then
         compile_structured_constant cenv (Const_univ u) sz cont
       else
         let u = Univ.Universe.repr u in
-        (* let len = List.length u in *)
-        let () = set_max_stack_size cenv (sz + 2) in
-        let rec fold cont = function
-          | [] -> Kconst (Const_b0 0) :: cont (* nil *)
-          | (l, k as le) :: xs ->
-            (* Tail of list is on top *)
+        let len = List.length u in
+        let () = set_max_stack_size cenv (sz + len * 2 - 1) in (* u1 :: ... :: un :: l1 :: ... :: ln *)
+        let rec push_univs (contl, contu) n = function
+          | [] -> contl @ contu
+          | (l, k as x) :: xs ->
             match Univ.Level.var_index l with
-            | None ->
-              fold (Kpush :: (* Tail is built *)
-                Kconst (Const_level_expr le) :: (* Constant level expression *)
-                Kmakeblock (2, 0) :: (* List is built *)
-                cont) xs
-             | Some idx ->
-              fold (Kpush :: (* Tail is built *)
-                    Kconst (Const_b0 k) :: Kpush :: (* Second component *)
-                    pos_instance cenv (sz + 2) :: Kfield 1 :: Kfield idx :: (* First component *)
-                    (* This refers to a universe now *)
-
-                    Kmakeblock (2, 0) :: (* pair is built *)
-                    Kmakeblock (2, 0) :: (* list is built *)
-                    cont) xs
+            | None -> (* Closed level *)
+              let contl = Kconst (Const_b0 0) :: Kpush :: contl in
+              let contu = Kconst (Const_univ (Univ.Universe.of_expr x)) ::
+                (if Int.equal n 0 then contu else Kpush :: contu) in
+              push_univs (contl, contu) (succ n) xs
+            | Some idx ->
+              let contl = Kconst (Const_b0 k) :: Kpush :: contl in
+              let contu =
+                  pos_instance cenv (sz + len (* for all increments *) + (len - n - 1) (* for previous universes *))
+                  :: Kfield 1 :: Kfield idx :: (if Int.equal n 0 then contu else Kpush :: contu) in (* We keep the first universe in accu *)
+              push_univs (contl, contu) (succ n) xs
         in
-        fold cont u
+        push_univs ([], Kmakeuniv len :: cont) 0 u
     in
     let comp_array comp_val cenv vs sz cont =
       if Array.is_empty vs then Kmakeblock (0,0) :: cont
@@ -894,6 +890,14 @@ and compile_constant env cenv kn u args sz cont =
     in
     comp_app (fun _ _ _ cont -> Kgetglobal kn :: cont)
       compile_arg cenv () all sz cont
+
+let coq_make_univ univs incrs =
+  let fold acc univ incr =
+    Univ.Universe.sup (Univ.Universe.addn univ incr) acc
+  in
+  Array.fold_left2 fold Univ.Universe.type0 univs incrs
+
+let () = Callback.register "coq_make_univ" coq_make_univ
 
 let is_univ_copy (maxq,maxu) u =
   let qs,us = UVars.Instance.to_array u in

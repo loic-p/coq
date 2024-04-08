@@ -29,3 +29,5 @@ val compile_alias : Names.Constant.t -> 'a pbody_code
 
 (** Dump the bytecode after compilation (for debugging purposes) *)
 val dump_bytecode : bool ref
+
+val coq_make_univ : Univ.Universe.t array -> int array -> Univ.Universe.t

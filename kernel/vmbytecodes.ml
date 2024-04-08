@@ -56,6 +56,7 @@ type instruction =
   | Kclosurecofix of int * int * Label.t array * Label.t array
                    (* nb fv, init, lbl types, lbl bodies *)
   | Kgetglobal of Constant.t
+  | Kmakeuniv of int
   | Kconst of structured_constant
   | Kmakeblock of int * tag
   | Kmakeswitchblock of Label.t * Label.t * annot_switch * int
@@ -132,6 +133,7 @@ let rec pp_instr i =
              str " bodies = " ++
              prlist_with_sep spc pp_lbl (Array.to_list lblb))
   | Kgetglobal idu -> str "getglobal " ++ Constant.print idu
+  | Kmakeuniv n -> str "makeuniv " ++ int n
   | Kconst sc ->
       str "const " ++ pp_struct_const sc
   | Kmakeblock(n, m) ->

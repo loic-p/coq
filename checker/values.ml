@@ -265,6 +265,7 @@ let v_vm_structured_constant = v_sum "vm_structured_constant" 0 [|
     [|Fail "Const_evar"|];
     [|Int|];
     [|v_quality|];
+    [|v_level|];
     [|v_univ|];
     [|v_univ_instance|];
     [|Any|]; (* contains a Vmvalues.value *)

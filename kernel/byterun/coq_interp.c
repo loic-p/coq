@@ -272,6 +272,16 @@ extern void caml_process_pending_signals(void);
 extern double coq_next_up(double);
 extern double coq_next_down(double);
 
+value coq_make_univ(value univs, value incrs)
+{
+  static const value * closure_f = NULL;
+  if (closure_f == NULL) {
+     /* First time around, look up by name */
+    closure_f = caml_named_value("coq_make_univ");
+  }
+  return caml_callback2_exn(*closure_f, univs, incrs);
+}
+
 /* The interpreter itself */
 
 value coq_interprete
@@ -1313,6 +1323,30 @@ value coq_interprete
         coq_env = sp[1];
         coq_extra_args = Long_val(sp[2]);
         sp += 3;
+        Next;
+      }
+
+      Instruct(MAKEUNIV) {
+        mlsize_t wosize = *pc++;
+        mlsize_t i;
+        value block;
+        print_instr("MAKEUNIV, tag=");
+        if (wosize == 0) {
+          accu = Atom(0); // FIXME forbidden
+        } else {
+          Coq_alloc_small(block, wosize, 0);
+          Field(block, 0) = accu;
+          for (i = 1; i < wosize; i++) Field(block, i) = *sp++;
+          *--sp = block;
+          Coq_alloc_small(accu, wosize, 0);
+          for (i = 0; i < wosize; i++) Field(accu, i) = sp[i+1];
+
+          Setup_for_caml_call;
+          accu = coq_make_univ(block /* Univ.Universe.t array */, accu /* int array */);
+          Restore_after_caml_call;
+          Handle_potential_exception(accu);
+          sp += wosize + 1;
+        }
         Next;
       }
 
