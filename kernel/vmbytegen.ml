@@ -859,6 +859,10 @@ and compile_instance env cenv u sz cont =
                   :: Kfield 1 :: Kfield idx :: (if Int.equal n 0 then contu else Kpush :: contu) in (* We keep the first universe in accu *)
               push_univs (contl, contu) (succ n) xs
         in
+        (* Kmakeuniv n (n always > 0) expects the first universe [u0] in accumulator,
+           then a stack of shape [u1 :: .. :: un :: i0 :: .. :: in], where [ui]'s are universes
+           and [ik]'s are constant increments. It produces a valid universe representing the
+           supremum of [u0+i0 ... un+in]  *)
         push_univs ([], Kmakeuniv len :: cont) 0 u
     in
     let comp_array comp_val cenv vs sz cont =
