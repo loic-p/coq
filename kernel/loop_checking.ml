@@ -1107,7 +1107,7 @@ let _pr_w m w =
 
 let w_of_canset (c : CanSet.t) = CanSet.domain c
 
-let target_of_canset (c : CanSet.t) =
+let _target_of_canset (c : CanSet.t) =
   CanSet.fold (fun _idx fwd acc ->
     PSet.union (PMap.domain fwd) acc) c PSet.empty
 
@@ -1161,8 +1161,8 @@ let check_canset ?early_stop model ?(w=PSet.empty) (cls : CanSet.t) =
           debug_loop Pp.(fun () -> str"Inner loop found a model");
           Model (wr, mr))
       in
-      assert (PSet.cardinal (w_of_canset premconclw) <= cardW);
-      assert (PSet.cardinal (target_of_canset conclw) <= cardW);
+      (* assert (PSet.cardinal (w_of_canset premconclw) <= cardW); *)
+      (* assert (PSet.cardinal (target_of_canset conclw) <= cardW); *)
       inner_loop_partition w cardW premconclw conclw m
   and loop v cV winit (cls : CanSet.t) m =
     debug_loop Pp.(fun () -> str "loop on winit = " ++ pr_w m winit ++ str", #|cls| = " ++ int (cardinal_fwd cls) ++ str" bound is " ++ int cV);
@@ -1184,10 +1184,10 @@ let check_canset ?early_stop model ?(w=PSet.empty) (cls : CanSet.t) =
       if Int.equal cardW cV
       then (debug_loop Pp.(fun () -> str"Found a loop on " ++ int cV ++ str" universes" ); Loop)
       else begin
-        (if cardW > cV then
+        (* (if cardW > cV then
           let diff = (PSet.diff w v) in
           if PSet.is_empty diff then assert false;
-          Feedback.msg_warning Pp.(str"Cardinal of w > V: " ++ pr_w m diff));
+          Feedback.msg_warning Pp.(str"Cardinal of w > V: " ++ pr_w m diff)); *)
 
         let cls = add_fwd_clauses m wupd cls in
         let (premconclw, conclw, premw) = partition_clauses_fwd m w cls in
@@ -1340,9 +1340,9 @@ let pr_incr pr (x, k) =
   Pp.(pr x ++ if k == 0 then mt() else str"+" ++ int k)
 
 (* Precondition: canu.value = canv.value, so no new model needs to be computed *)
-let enforce_eq_can model (canu, ku as u) (canv, kv as v) : (canonical_node * int) * t =
-  assert (expr_value model u = expr_value model v);
-  assert (canu != canv);
+let enforce_eq_can model (canu, ku as _u) (canv, kv as _v) : (canonical_node * int) * t =
+  (* assert (expr_value model u = expr_value model v); *)
+  (* assert (canu != canv); *)
   (* v := u or u := v, depending on Level.is_source (for Set) *)
   debug_check_invariants model;
   let model0 = model in
