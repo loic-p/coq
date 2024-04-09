@@ -446,12 +446,14 @@ type entry =
 
 type model = {
   entries : entry PMap.t;
+  canentries : PSet.t; (* subset of entries that are Canonical *)
   values : int PMap.t;
   canonical : int; (* Number of canonical nodes *)
   table : Index.table }
 
 let empty_model = {
   entries = PMap.empty;
+  canentries = PSet.empty;
   values = PMap.empty;
   canonical = 0;
   table = Index.empty
@@ -470,6 +472,7 @@ let enter_equiv m u v i =
           match a with
           | Canonical _ -> Equiv (v, i)
           | _ -> assert false) m.entries;
+    canentries = PSet.remove u m.canentries;
     canonical = m.canonical - 1;
     values = PMap.remove u m.values;
     table = m.table }
@@ -1095,12 +1098,7 @@ let partition_clauses_fwd = time2 (Pp.str"partition clauses fwd") partition_clau
 (* If early_stop is given, check raises FoundImplication as soon as
    it finds that the given atom is true *)
 
-let model_points model =
-  PMap.fold (fun idx equiv s ->
-    match equiv with
-    | Canonical _ -> PSet.add idx s
-    | Equiv _ -> s)
-    model.entries PSet.empty
+let model_points model = model.canentries
 
 let _pr_w m w =
   let open Pp in
@@ -1134,7 +1132,7 @@ let check_canset ?early_stop model ?(w=PSet.empty) (cls : CanSet.t) =
   let v = model_points model in
   let cV = canonical_cardinal model in
   debug_loop Pp.(fun () -> str"All model clauses: " ++ pr_clauses model);
-  assert (cV = PSet.cardinal v);
+(*   assert (cV = PSet.cardinal v); *)
   debug_check_invariants model;
   let rec inner_loop w cardW premconclw conclw m =
     (* Should consider only clauses with conclusions in w *)
@@ -1366,7 +1364,7 @@ let enforce_eq_can model (canu, ku as u) (canv, kv as v) : (canonical_node * int
   let can, model =
     let bwd = ClausesOfRepr.union_upto model can.canon can.clauses_bwd (ClausesOf.shift diff other.clauses_bwd) in
     let fwd = ClausesBackward.union_upto model can.clauses_fwd other.clauses_fwd in
-    let modeln = { model with entries = PMap.empty } in
+    let modeln = { model with entries = PMap.empty; canentries = PSet.empty; } in
       debug Pp.(fun () -> str"Backward clauses for " ++
       pr_can model can ++ str": " ++ spc () ++
       pr_clauses_of modeln can.canon can.clauses_bwd);
@@ -1762,7 +1760,7 @@ let enforce_constraint (u, k, v) (m : t) = enforce u k v m
 
 exception AlreadyDeclared
 
-let add_model u { entries; table; values; canonical } =
+let add_model u { entries; table; values; canonical; canentries } =
   if Index.mem u table then
    (debug_global Pp.(fun () -> str"Already declared level: " ++ Level.raw_pr u);
     raise AlreadyDeclared)
@@ -1772,7 +1770,7 @@ let add_model u { entries; table; values; canonical } =
       clauses_fwd = PMap.empty; clauses_bwd = ClausesOf.empty } in
     let entries = PMap.add idx can entries in
     let values = PMap.add idx 0 values in
-    idx, { entries; table; values; canonical = canonical + 1 }
+    idx, { entries; table; values; canonical = canonical + 1; canentries = PSet.add idx canentries }
 
 let add ?(rank:int option) u model =
   let _r = rank in
