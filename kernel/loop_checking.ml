@@ -679,7 +679,7 @@ struct
     let open Pp in
     PMap.fold (fun concl cls acc -> pr_clauses_of m concl cls ++ spc () ++ acc) cls (Pp.mt())
 
-  let _union_upto (m : model) (clauses : t) (clauses' : t) : t =
+  let union_upto (m : model) (clauses : t) (clauses' : t) : t =
     let merge idx cls cls' =
       match cls, cls' with
       | None, None -> cls
@@ -692,7 +692,7 @@ struct
     and iclauses' = reindex m clauses' in
     PMap.merge merge iclauses iclauses'
 
-  let union clauses clauses' =
+  let _union clauses clauses' =
     let merge _idx cls cls' =
       match cls, cls' with
       | None, None -> cls
@@ -1382,10 +1382,10 @@ let enforce_eq_can model (canu, ku as _u) (canv, kv as _v) : (canonical_node * i
   in
   (* other = can + diff *)
   let can, model =
-    (* let bwd = ClausesOfRepr.union_upto model can.canon can.clauses_bwd (ClausesOf.shift diff other.clauses_bwd) in *)
-    (* let fwd = ClausesBackward.union_upto model can.clauses_fwd other.clauses_fwd in *)
-    let bwd = ClausesOfRepr.union can.clauses_bwd (ClausesOf.shift diff other.clauses_bwd) in
-    let fwd = ClausesBackward.union can.clauses_fwd other.clauses_fwd in
+    let bwd = ClausesOfRepr.union_upto model can.canon can.clauses_bwd (ClausesOf.shift diff other.clauses_bwd) in
+    let fwd = ClausesBackward.union_upto model can.clauses_fwd other.clauses_fwd in
+    (* let bwd = ClausesOfRepr.union can.clauses_bwd (ClausesOf.shift diff other.clauses_bwd) in
+    let fwd = ClausesBackward.union can.clauses_fwd other.clauses_fwd in *)
     let modeln = { model with entries = PMap.empty; canentries = PSet.empty; } in
       debug Pp.(fun () -> str"Backward clauses for " ++
       pr_can model can ++ str": " ++ spc () ++
@@ -1616,10 +1616,12 @@ let update_model ((prems, (can, k)) : can_clause) (m : model) : PSet.t * model =
       | None -> (PSet.empty, m')
     else (PSet.empty, m)
 
-let infer_clause_extension cl m =
+let infer_clause_extension cl minit =
   (* debug Pp.(fun () -> str "current model is: " ++ pr_levelmap model); *)
-  debug_check_invariants m;
-  let cl, m = add_can_clause_model m cl in
+  debug_check_invariants minit;
+  let cl, m = add_can_clause_model minit cl in
+  (* The clause was already present in the model *)
+  if m == minit then Some minit else
   let cans, m = update_model cl m in
   if PSet.is_empty cans then begin
     (* The clause is already true in the current model,
