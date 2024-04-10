@@ -1484,6 +1484,8 @@ let find_to_merge model status (canv, kv) (canu, ku) =
                   (* Stay in the same equivalence class *)
                   let conclvalue = if Int.equal clk 0 then conclvalue else conclvalue - clk in
                   if Int.equal conclvalue canvalue then
+                    (* can + kprem -> conlcan + conck + clk implies
+                       can + k -> conclcan + conclk + clk + (k - kprem) *)
                     let merge' = forward (conclcan, conclk + clk + (k - kprem)) in
                     merge' || merge
                   else merge
@@ -1653,8 +1655,8 @@ let infer_extension =
 
 (* Enforce u <= v and check if v <= u already held, in that case, enforce u = v *)
 let enforce_leq_can u v m =
-  let cl = (NeList.tip v, u) in
-  debug_global Pp.(fun () -> str"enforce_leq " ++ pr_can_clause m cl);
+  (* let cl = (NeList.tip v, u) in *)
+  (* debug_global Pp.(fun () -> str"enforce_leq " ++ pr_can_clause m cl); *)
   match infer_extension u v m with
   | None -> None
   | Some m' ->
