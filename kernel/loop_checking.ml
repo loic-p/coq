@@ -380,6 +380,8 @@ struct
   let to_list = NeList.to_list
 
   let smart_map = NeList.smart_map
+
+  let map = NeList.map
 end
 
 let pr_with f (l, n) =
@@ -595,17 +597,17 @@ struct
   let subset_upto m cls cls' =
     for_all (fun cl -> mem_upto m cl cls') cls
 
-  let expr_eq (idx, k) (idx', k') =
+  let _expr_eq (idx, k) (idx', k') =
     Index.equal idx idx' && Int.equal k k'
 
   let filter_trivial_clause m l (k, prems) =
     (* Canonicalize the premises *)
-    let prems' = NeList.map (repr_expr m) prems in
+    let prems' = Premises.map (repr_expr m) prems in
      (* Filter out ..., u + k, ... -> u trivial clause *)
     if NeList.exists (fun (can, k') -> Index.equal can l && k' >= k) prems' then None
     else
       (* Simplify (u + k, ... u + k -> v + k') clauses to have a single premise by universe *)
-      let prems' = NeList.uniq expr_eq prems' in
+      (* let prems' = NeList.uniq expr_eq prems' in *)
       Some (k, prems')
 
   let filter_trivial (m : model) l kprem =
@@ -613,6 +615,8 @@ struct
 
   let union_upto m idx x y =
     union (filter_trivial m idx x) (filter_trivial m idx y)
+
+  let union x y = union x y
 end
 
 module ClausesBackward =
@@ -675,7 +679,7 @@ struct
     let open Pp in
     PMap.fold (fun concl cls acc -> pr_clauses_of m concl cls ++ spc () ++ acc) cls (Pp.mt())
 
-  let union_upto (m : model) (clauses : t) (clauses' : t) : t =
+  let _union_upto (m : model) (clauses : t) (clauses' : t) : t =
     let merge idx cls cls' =
       match cls, cls' with
       | None, None -> cls
@@ -687,6 +691,17 @@ struct
     let iclauses = reindex m clauses
     and iclauses' = reindex m clauses' in
     PMap.merge merge iclauses iclauses'
+
+  let union clauses clauses' =
+    let merge _idx cls cls' =
+      match cls, cls' with
+      | None, None -> cls
+      | None, Some _ -> cls'
+      | Some _, None -> cls
+      | Some cls, Some cls' ->
+        Some (ClausesOfRepr.union cls cls')
+    in
+    PMap.merge merge clauses clauses'
 
   let repr m (clauses : t) : t =
     PMap.fold (fun idx clsof acc ->
@@ -856,6 +871,8 @@ let debug_check_invariants m =
 
 exception Undeclared of Level.t
 
+let get_canonical_value m c = PMap.find c.canon m.values
+
 let canonical_value m c = PMap.find_opt c.canon m.values
 let index_value m idx = PMap.find_opt idx m.values
 
@@ -872,7 +889,7 @@ let _repr_canon m can =
   change_node m can, can
 
 let add_opt o k =
-  Option.map ((+) k) o
+  if Int.equal k 0 then o else Option.map ((+) k) o
 
 let model_value m l =
   let canon, k =
@@ -1224,6 +1241,9 @@ let check ?early_stop model w =
 
 let expr_value m (can, k) = add_opt (canonical_value m can) (- k)
 
+let defined_expr_value m (can, k) = get_canonical_value m can - k
+
+
 let entry_value m e =
   match e with
   | Equiv (idx, k) -> expr_value m (repr_expr_can m (idx, k))
@@ -1362,8 +1382,10 @@ let enforce_eq_can model (canu, ku as _u) (canv, kv as _v) : (canonical_node * i
   in
   (* other = can + diff *)
   let can, model =
-    let bwd = ClausesOfRepr.union_upto model can.canon can.clauses_bwd (ClausesOf.shift diff other.clauses_bwd) in
-    let fwd = ClausesBackward.union_upto model can.clauses_fwd other.clauses_fwd in
+    (* let bwd = ClausesOfRepr.union_upto model can.canon can.clauses_bwd (ClausesOf.shift diff other.clauses_bwd) in *)
+    (* let fwd = ClausesBackward.union_upto model can.clauses_fwd other.clauses_fwd in *)
+    let bwd = ClausesOfRepr.union can.clauses_bwd (ClausesOf.shift diff other.clauses_bwd) in
+    let fwd = ClausesBackward.union can.clauses_fwd other.clauses_fwd in
     let modeln = { model with entries = PMap.empty; canentries = PSet.empty; } in
       debug Pp.(fun () -> str"Backward clauses for " ++
       pr_can model can ++ str": " ++ spc () ++
@@ -1446,21 +1468,26 @@ let find_to_merge model status (canv, kv) (canu, ku) =
       let merge =
         ClausesBackward.fold (fun concl cls (* cls = { prems -> concl + k | can + k' ∈ prems } *) merge ->
           let conclcan, conclk = repr model concl in
-          if (* Avoid self-loops *) conclcan != can
-          then
+          if (* Avoid self-loops *) conclcan == can then merge
+          else
+            let canvalue = defined_expr_value model (can, k) in
+            let conclvalue = defined_expr_value model (conclcan, conclk) in
+            (* Stay in the same equivalence class *)
+            if conclvalue < canvalue then merge else
             (* Ensure there is indeed a forward clause of shape can -> conclcan, not going through max() premises *)
             ClausesOf.fold (fun (clk, prems) merge ->
               match prems with
               | NeList.Tip (_, kprem) ->
-                (* Stay in the same equivalence class *)
-                if expr_value model (conclcan, conclk + clk) = expr_value model (can, k) then
-                  if kprem > k then merge (* The clause is too high: i.e. l + 1 -> concl while we are looking at merging l *)
-                  else
+                if kprem > k then merge
+                  (* The clause is too high: i.e. l + 1 -> concl while we are looking at merging l *)
+                else
+                  (* Stay in the same equivalence class *)
+                  let conclvalue = if Int.equal clk 0 then conclvalue else conclvalue - clk in
+                  if Int.equal conclvalue canvalue then
                     let merge' = forward (conclcan, conclk + clk + (k - kprem)) in
                     merge' || merge
-                else merge
-              | _ -> merge) cls merge
-          else merge) cls merge
+                  else merge
+              | _ -> merge) cls merge) cls merge
       in
       Status.replace status can (merge, k);
       merge
@@ -1679,6 +1706,11 @@ let enforce_eq_level u v m =
           enforce_leq_can canv' canu' m')
   end
 
+let check_eq_level_expr u v m =
+  let canu, ku = repr_node_expr m u in
+  let canv, kv = repr_node_expr m v in
+  canu == canv && Int.equal ku kv
+
 (* max u_i <= v <-> ∧_i u_i <= v *)
 let clauses_of_le_constraint u v cls =
   List.fold_right (fun (u, k) cls -> (Universe.repr v, (u, k)) :: cls) (Universe.repr u) cls
@@ -1746,6 +1778,8 @@ let check_clause model cl =
   | None -> true
   | Some (prems, (concl, k)) -> check_one_clause model prems concl k
 
+let check_clause = time2 (Pp.str "check_clause") check_clause
+
 let check_constraint (m : t) u k u' =
   debug_global Pp.(fun () -> str"Checking " ++ Constraints.pr Level.raw_pr (Constraints.singleton (u,k,u')));
   let cls = clauses_of_constraint u k u' [] in
@@ -1754,7 +1788,10 @@ let check_constraint (m : t) u k u' =
   else (debug_global Pp.(fun () -> str" Clause does not hold"); res)
 
 let check_leq m u v = check_constraint m u Le v
-let check_eq m u v = check_constraint m u Eq v
+let check_eq m u v =
+  match Universe.repr u, Universe.repr v with
+  | [u], [v] -> check_eq_level_expr u v m
+  | _, _ -> check_constraint m u Eq v
 
 let enforce_constraint (u, k, v) (m : t) = enforce u k v m
 
