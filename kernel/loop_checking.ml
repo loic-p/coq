@@ -18,6 +18,8 @@ let _debug_loop_checking_check, _debug_check = CDebug.create_full ~name:"loop-ch
 
 let _debug_loop_checking_global_flag, debug_global = CDebug.create_full ~name:"loop-checking-global" ()
 
+(* let debug_loop_checking_reached, debug_reached = CDebug.create_full ~name:"loop-checking-reached" () *)
+(* let () = CDebug.set_flag debug_loop_checking_reached true *)
 
 (* let _ = CDebug.set_flag debug_loop_checking_check true *)
 
@@ -1007,20 +1009,20 @@ let find_bwd m idx cls =
       if can'.canon == idx then ClausesOf.union cls acc else acc) cls ClausesOf.empty
 
 (** Check a set of forward clauses *)
-let check_model_fwd_clauses_aux ?early_stop (cls : ClausesBackward.t) (acc : PSet.t * model) : PSet.t * model =
+let check_model_fwd_clauses_aux ?early_stop (cls : ClausesBackward.t) (acc : PSet.t * PSet.t * model) : PSet.t * PSet.t * model =
   let check () =
-    PMap.fold (fun concl cls (* premises -> concl + k *) (wcls, m as acc) ->
+    PMap.fold (fun concl cls (* premises -> concl + k *) (wcls, nw, m) ->
       let can, k = repr m concl in
       let cls = ClausesOf.shift k cls in
       let m' = check_model_clauses_of_aux m can.canon cls in
-      if m == m' then (* not modifed *) acc
-      else (PSet.add can.canon wcls, m'))
+      if m == m' then (* not modifed *) (wcls, PSet.add can.canon nw, m)
+      else (PSet.add can.canon wcls, nw, m'))
       cls acc
   in
   match early_stop with
   | None -> check ()
   | Some (can, k) ->
-      let (_, m) = acc in
+      let (_, _, m) = acc in
       let cls = find_bwd m can.canon cls in
         ClausesOf.iter (fun cls ->
           match update_value can.canon m cls with
@@ -1029,8 +1031,8 @@ let check_model_fwd_clauses_aux ?early_stop (cls : ClausesBackward.t) (acc : PSe
           cls;
         check ()
 
-let check_model_fwd_aux ?early_stop (cls, m) : PSet.t * model =
-  CanSet.fold (fun _ fwd m -> check_model_fwd_clauses_aux ?early_stop fwd m) cls (PSet.empty, m)
+let check_model_fwd_aux ?early_stop (cls, m) : PSet.t * PSet.t * model =
+  CanSet.fold (fun _ fwd m -> check_model_fwd_clauses_aux ?early_stop fwd m) cls (PSet.empty, PSet.empty, m)
 
 (* let check_model_fwd_aux ?early_stop (cls, m) =
   (* if CDebug.get_flag debug_check_fwd then
@@ -1039,16 +1041,20 @@ let check_model_fwd_aux ?early_stop (cls, m) : PSet.t * model =
   else  *)
     check_model_fwd_aux ?early_stop (cls, m) *)
 
-let check_clauses_with_premises ?early_stop (cls : CanSet.t) model : (PSet.t * model) option =
-  let (updates, model') = check_model_fwd_aux ?early_stop (cls, model) in
-  if model == model' then (debug Pp.(fun () -> str"Found a model"); None)
-  else Some (updates, model')
+type check_clause_result =
+  | Valid of PSet.t
+  | Update of PSet.t * PSet.t * model
+
+let check_clauses_with_premises ?early_stop (cls : CanSet.t) model =
+  let (updates, reached, model') = check_model_fwd_aux ?early_stop (cls, model) in
+  if model == model' then (debug Pp.(fun () -> str"Found a model"); Valid reached)
+  else Update (updates, reached, model')
 
 (* let _check_model_bwd = check_model *)
 let cardinal_fwd w =
   CanSet.fold (fun _idx fwd acc -> ClausesBackward.cardinal fwd + acc) w 0
 
-let check_clauses_with_premises ?early_stop (updates : CanSet.t) model : (PSet.t * model) option =
+let check_clauses_with_premises ?early_stop (updates : CanSet.t) model =
   let open Pp in
   debug_check_model (fun () -> str"check_model on " ++ int (CanSet.cardinal updates) ++ str" universes, " ++
   int (cardinal_fwd updates) ++ str " clauses");
@@ -1139,7 +1145,7 @@ let pr_clauses m =
   PMap.fold (fun p e acc ->
     match e with
     | Equiv (p', k) ->
-      Pp.(pr_index_point m p ++ str " = " ++ pr_with_incr (pr_index_point m) (p', k) ++ acc)
+      Pp.(pr_raw_index_point m p ++ str " = " ++ pr_with_incr (pr_raw_index_point m) (p', k) ++ spc () ++ acc)
     | Canonical can ->
       let bwd = can.clauses_bwd in
       Pp.(pr_clauses_of m can.canon bwd ++ fnl () ++ acc)) m.entries (Pp.mt ())
@@ -1161,36 +1167,37 @@ let check_canset ?early_stop model ?(w=PSet.empty) (cls : CanSet.t) =
     let rec inner_loop_partition w cardW premconclw conclw m =
       debug_loop Pp.(fun () -> str "inner_loop_partition on #|premconclw| = " ++ int (CanSet.cardinal premconclw) ++ str" cardW = " ++ int cardW);
       (* debug_loop Pp.(fun () -> str "cls = " ++ pr_w m cls); *)
-      match loop w cardW PSet.empty premconclw m with
+      match loop w cardW PSet.empty PSet.empty premconclw m with
       | Loop -> Loop
-      | Model (wr, mr) ->
+      | Model ((wr, _), mr) ->
         debug_loop Pp.(fun () -> str "inner_loop_partition call to loop results in a model with wr of size " ++ int (CanSet.cardinal wr) );
         (* debug_loop Pp.(fun () -> str "wr = " ++ pr_w mr wr); *)
         (* This is only necessary when clauses do have multiple premises,
            otherwise each clause is either in premconclw and already considered
            or in conclw but then the premise cannot be updated and this is useless work *)
         (match check_clauses_with_premises ?early_stop conclw mr with
-        | Some (_wconcl, mconcl) ->
+        | Update (_wconcl, _rconcl, mconcl) ->
           (* debug_loop Pp.(fun () -> str "clsconcl = " ++ pr_w mconcl clsconcl); *)
           debug_loop Pp.(fun () -> str"Found an update in conclw after finding a model of premconclw in inner loop");
           inner_loop_partition w cardW premconclw conclw mconcl
-        | None ->
+        | Valid _ ->
           debug_loop Pp.(fun () -> str"Inner loop found a model");
           Model (wr, mr))
       in
       (* assert (PSet.cardinal (w_of_canset premconclw) <= cardW); *)
       (* assert (PSet.cardinal (target_of_canset conclw) <= cardW); *)
       inner_loop_partition w cardW premconclw conclw m
-  and loop v cV winit (cls : CanSet.t) m =
+  and loop v cV winit wreached (cls : CanSet.t) m =
     debug_loop Pp.(fun () -> str "loop on winit = " ++ pr_w m winit ++ str", #|cls| = " ++ int (cardinal_fwd cls) ++ str" bound is " ++ int cV);
     (* debug_loop Pp.(fun () -> str" cls = : " ++ pr_w m u); *)
     debug_loop_partition Pp.(fun () -> str"initial clauses: " ++ CanSet.pr_clauses m cls);
     (* debug_loop Pp.(fun () -> str"loop iteration on " ++ CanSet.pr_clauses m cls ++ str" with bound " ++ int cV); *)
     match check_clauses_with_premises ?early_stop cls m with
-    | None -> debug_loop Pp.(fun () -> str "loop on #|w| = " ++ int (CanSet.cardinal cls) ++ str" found a model, bound is " ++ int cV);
-      Model (cls, m)
-    | Some (wupd, m) ->
+    | Valid reached -> debug_loop Pp.(fun () -> str "loop on #|w| = " ++ int (CanSet.cardinal cls) ++ str" found a model, bound is " ++ int cV);
+      Model ((cls, PSet.union wreached reached), m)
+    | Update (wupd, reached, m) ->
       let w = PSet.union winit wupd in
+      let wreached = PSet.union wreached reached in
       debug_loop Pp.(fun () -> str"check_clauses_with_premises updated " ++ int (PSet.cardinal w) ++ str" universes, bound is " ++ int cV);
       (* debug_loop Pp.(fun () -> str"diff between w and cls: " ++ pr_w m (PSet.diff w u)); *)
       (* debug_loop Pp.(fun () -> str"diff between w and cls domain: " ++ pr_w m (PSet.diff w (CanSet.domain cls))); *)
@@ -1224,16 +1231,16 @@ let check_canset ?early_stop model ?(w=PSet.empty) (cls : CanSet.t) =
           (* wc is a subset of w *)
           (* TODO check weird Loop behavior in cumulativity.v without early stop *)
           (match check_clauses_with_premises ?early_stop premw mc with
-          | None -> Model (wc, mc)
-          | Some (w', mcls) ->
+          | Valid wreached' -> Model ((wc, PSet.union wreached wreached'), mc)
+          | Update (w', wreached', mcls) ->
             (* if Int.equal (PSet.cardinal w') cV then Loop else *)
             (debug_loop Pp.(fun () -> str"Resulted in an update of #|w| = " ++ int (PSet.cardinal w') ++
               str" universes, launching back loop. w = " ++ pr_w mcls w ++ spc () ++ str" w' = " ++ pr_w mcls w');
             let cls = add_fwd_clauses mcls w' cls in
-            loop v cV (PSet.union w w') cls mcls)))
+            loop v cV (PSet.union w w') (PSet.union wreached wreached') cls mcls)))
       end
   in
-  loop v cV w cls model
+  loop v cV w PSet.empty cls model
 
 let check ?early_stop model w =
   let cls = add_fwd_clauses model w CanSet.empty in
@@ -1347,11 +1354,11 @@ let infer_clauses_extension cans m =
   | Loop ->
     debug Pp.(fun () -> str"loop-checking found a loop");
     None
-  | Model (_updates, model) ->
+  | Model (updates, model) ->
     debug_check_invariants model;
     debug_model model;
     debug Pp.(fun () -> str"loop-checking found a model");
-    Some model
+    Some (updates, model)
 
 (* let infer_clauses_extension ?w = time2 Pp.(str"infer_clauses_extension") (infer_clauses_extension ?w) *)
 let empty = empty_model
@@ -1431,7 +1438,7 @@ let make_equiv m equiv =
       List.fold_left (fun (can, m) can' -> enforce_eq_can m can can')
         (enforce_eq_can m can can') tl
     in
-    debug_global Pp.(fun () -> str"Chosen canonical universe: " ++ pr_incr (pr_can m) can ++
+    debug_global Pp.(fun () -> str"Chosen canonical universe: " ++ pr_incr (pr_can m) can ++ spc () ++
           str"Constraints:" ++ pr_can_constraints m (fst can));
     m
   | [_] -> m
@@ -1545,10 +1552,6 @@ let enforce_eq_points ({ model; clauses } as m : t) u v =
 type nat = int
 type can_constraint = (canonical_node * nat) * (canonical_node * nat)
 
-let can_clause_of_can_constraint (cstr : can_constraint) : can_clause =
-  let (l, r) = cstr in (* l + k <= r *)
-  (NeList.tip r, l)
-
 type 'a check_function = t -> 'a -> 'a -> bool
 
 (* @raises VacuouslyTrue if there is an undefined level in the premises *)
@@ -1604,31 +1607,31 @@ let check_one_clause model prems concl k =
         str" in the minimal model, expecting conclusion + " ++ int k ++ str " to hold");
       k <= value
 
-let update_model ((prems, (can, k)) : can_clause) (m : model) : PSet.t * model =
+let update_model ((prems, (can, k)) : can_clause) (m : model) : PSet.t * PSet.t * model =
   match min_can_premise m prems with
-  | exception VacuouslyTrue -> (PSet.empty, m)
+  | exception VacuouslyTrue -> (PSet.empty, PSet.empty, m)
   | k0 ->
     let m' = update_model_value m can (Some (k + k0)) in
     if m' != m then
       let canset = CanSet.add can.canon can.clauses_fwd CanSet.empty in
       match check_clauses_with_premises canset m' with
-      | Some (modified, wm) -> (modified, wm)
-      | None -> (PSet.empty, m')
-    else (PSet.empty, m)
+      | Update (modified, reached, wm) -> (modified, reached, wm)
+      | Valid reached -> (PSet.empty, reached, m')
+    else (PSet.empty, PSet.empty, m)
 
-let infer_clause_extension cl minit =
+let infer_can_clause_extension cl minit =
   (* debug Pp.(fun () -> str "current model is: " ++ pr_levelmap model); *)
   debug_check_invariants minit;
   let cl, m = add_can_clause_model minit cl in
   (* The clause was already present in the model *)
-  if m == minit then Some minit else
-  let cans, m = update_model cl m in
+  if m == minit then Some (PSet.empty, minit) else
+  let cans, reached, m = update_model cl m in
   if PSet.is_empty cans then begin
     (* The clause is already true in the current model,
       but might not be in an extension, so we keep it *)
     debug Pp.(fun () -> str"Clause is valid in the current model");
     (* debug_clauses Pp.(fun () -> str"Clauses: " ++ pr_clauses model m.clauses); *)
-    Some m
+    Some (reached, m)
   end else begin
     (* The clauses are not valid in the current model, we have to find a new one *)
     debug Pp.(fun () -> str"Enforcing clauses requires a new inference");
@@ -1636,38 +1639,55 @@ let infer_clause_extension cl minit =
     | None ->
       debug Pp.(fun () -> str"Enforcing clauses " ++ pr_can_clause m cl ++ str" resulted in a loop");
       None
-    | Some _ as x -> x
+    | Some ((_updates, reached'), model) -> Some (PSet.union reached reached', model)
   end
 
 let infer_clause_extension cl m =
   debug_global Pp.(fun () -> str"Enforcing clause " ++ pr_can_clause m cl);
-  let res = infer_clause_extension cl m in
+  let res = infer_can_clause_extension cl m in
   match res with
-  | None -> debug_global Pp.(fun () -> str"Resulted in a loop"); res
-  | Some m ->
+  | None -> debug_global Pp.(fun () -> str"Resulted in a loop"); None
+  | Some (_, m) ->
     debug_check_invariants m;
-    debug_global Pp.(fun () -> str" is consistent"); res
+    debug_global Pp.(fun () -> str" is consistent");
+    Some m
+
+let can_clause_of_can_constraint (cstr : can_constraint) : can_clause =
+  let (l, r) = cstr in (* l + k <= r *)
+  (NeList.tip r, l)
 
 let infer_extension x y m =
   let cl = can_clause_of_can_constraint (x, y) in
-  infer_clause_extension cl m
+  infer_can_clause_extension cl m
 
 let infer_extension =
   time3 Pp.(str "infer_extension") infer_extension
 
 (* Enforce u <= v and check if v <= u already held, in that case, enforce u = v *)
 let enforce_leq_can u v m =
-  (* let cl = (NeList.tip v, u) in *)
-  (* debug_global Pp.(fun () -> str"enforce_leq " ++ pr_can_clause m cl); *)
+  let cl = (NeList.tip v, u) in
+  debug_global Pp.(fun () -> str"enforce_leq " ++ pr_can_clause m cl);
   match infer_extension u v m with
   | None -> None
-  | Some m' ->
-    if m' != m then
-      (debug_global Pp.(fun () -> str"enforce_leq did modify the model");
-      let v = repr_can_expr m' v in
+  | Some (reached, m') ->
+    if m' == m then Some m
+    else begin
+      debug_global Pp.(fun () -> str"enforce_leq did modify the model");
+      let vc = repr_can_expr m' v in
       let u = repr_can_expr m' u in
-      Some (simplify_clauses_between m' v u))
-    else Some m
+      if PSet.is_empty reached (* Reached universes can be empty if the clause is already valid *) ||
+         PSet.mem (fst vc).canon reached (* Otherwise there is a possible safe loop iff v was reached from u *) then
+        Some (simplify_clauses_between m' vc u)
+      else Some m'
+      (* let mres = simplify_clauses_between m' vc u in
+      if not (PSet.is_empty reached) && not (PSet.mem (fst vc).canon reached) && mres != m' then
+        debug_reached Pp.(fun () -> pr_can_expr m' vc ++ str" not in reached universes from " ++ pr_can_expr m' u ++ str " but simplify_clauses_between performed a change. Reached universes in before simplify_clauses_between: " ++
+        pr_w m' reached
+      );
+      (* if PSet.mem (fst v).canon reached then *)
+      Some mres *)
+    end
+      (* else Some m') *)
 
 let enforce_leq_level u v m =
   let m, canu = repr_compress_node m u in
