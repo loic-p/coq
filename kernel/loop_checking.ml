@@ -652,7 +652,7 @@ struct
       cls 0
 
   let empty = PMap.empty
-  let _is_empty = PMap.is_empty
+  let is_empty = PMap.is_empty
 
   let singleton cl = add cl empty
 
@@ -1470,6 +1470,8 @@ let find_to_merge model status (canv, kv) (canu, ku) =
       let merge = (can == canv && Int.equal k kv) || (can == canu && Int.equal k ku) in
       let () = Status.replace status can (merge, k) in
       let cls = can.clauses_fwd in
+      if ClausesBackward.is_empty cls then merge else
+      let canvalue = defined_expr_value model (can, k) in
       debug Pp.(fun () -> str"Forward universes: " ++ int (ClausesBackward.cardinal cls) ++
         str " Canonical: " ++ int (PSet.cardinal (clauses_bwd_univs model cls)));
       let merge =
@@ -1477,10 +1479,10 @@ let find_to_merge model status (canv, kv) (canu, ku) =
           let conclcan, conclk = repr model concl in
           if (* Avoid self-loops *) conclcan == can then merge
           else
-            let canvalue = defined_expr_value model (can, k) in
             let conclvalue = defined_expr_value model (conclcan, conclk) in
             (* Stay in the same equivalence class *)
-            if conclvalue < canvalue then merge else
+            if conclvalue < canvalue then merge
+            else
             (* Ensure there is indeed a forward clause of shape can -> conclcan, not going through max() premises *)
             ClausesOf.fold (fun (clk, prems) merge ->
               match prems with
@@ -1501,6 +1503,7 @@ let find_to_merge model status (canv, kv) (canu, ku) =
       Status.replace status can (merge, k);
       merge
   in
+  if ClausesOf.is_empty canu.clauses_bwd || ClausesOf.is_empty canv.clauses_bwd then false, [] else
   let merge = forward (canu, ku) in
   if merge then
     let merge_fn can (mark, k) acc = if mark then (can, k) :: acc else acc in
@@ -1729,6 +1732,8 @@ let enforce_eq_level u v m =
           let canv' = repr_expr_can m' (canv.canon, kv) in
           enforce_leq_can canv' canu' m')
   end
+
+let enforce_eq_level = time3 (Pp.str "enforce_eq_level") enforce_eq_level
 
 let check_eq_level_expr u v m =
   let canu, ku = repr_node_expr m u in
