@@ -1465,7 +1465,7 @@ end
 
 (** [find_to_merge_bwd model status u v] Search for an equivalence class of universes backward from u to v *)
 let find_to_merge_bwd model status (canu, ku) (canv, kv) =
-  let nb_univs = ref 0 and nb_cstrs = ref 0 in
+  (* let nb_univs = ref 0 and nb_cstrs = ref 0 in *)
   let rec backward (can, k) : bool =
     debug Pp.(fun () -> str"visiting " ++ pr_can model can);
     match Status.find status can with
@@ -1475,7 +1475,7 @@ let find_to_merge_bwd model status (canu, ku) (canv, kv) =
       let merge = isv || (can == canu && Int.equal k ku) in
       let () = Status.replace status can (merge, k) in
       if isv then true else
-      let () = incr nb_univs in
+      (* let () = incr nb_univs in *)
       let cls = can.clauses_bwd in
       if ClausesOf.is_empty cls then merge else
       let canvalue = defined_expr_value model (can, k) in
@@ -1484,7 +1484,7 @@ let find_to_merge_bwd model status (canu, ku) (canv, kv) =
       let merge =
         (* Ensure there is indeed a backward clause of shape canv -> can, not going through max() premises *)
         ClausesOf.fold (fun (clk, prems) merge ->
-          incr nb_cstrs;
+          (* incr nb_cstrs; *)
           (* prems -> can + clk *)
           if clk > k then merge (* Looking at prems -> can + k + S k' clause, not applicable to find a loop with canv *)
           else (* k >= clk *)
@@ -1505,7 +1505,7 @@ let find_to_merge_bwd model status (canu, ku) (canv, kv) =
       merge
   in
   let merge = backward (canu, ku) in
-  debug_enforce_eq Pp.(fun () -> int !nb_univs ++ str" universes and " ++ int !nb_cstrs ++ str" constraints considered in backward search");
+  (* debug_enforce_eq Pp.(fun () -> int !nb_univs ++ str" universes and " ++ int !nb_cstrs ++ str" constraints considered in backward search"); *)
   if merge then
     let merge_fn can (mark, k) acc = if mark then (can, k) :: acc else acc in
     let equiv = Status.fold merge_fn status [] in
