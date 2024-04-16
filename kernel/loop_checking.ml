@@ -18,6 +18,9 @@ let _debug_loop_checking_check, _debug_check = CDebug.create_full ~name:"loop-ch
 
 let _debug_loop_checking_global_flag, debug_global = CDebug.create_full ~name:"loop-checking-global" ()
 
+let _debug_enforce_eq, debug_enforce_eq = CDebug.create_full ~name:"loop-checking-enforce-eq" ()
+
+let debug_switch_find_to_merge, _debug_switch_find_to_merge_fn = CDebug.create_full ~name:"loop-checking-switch-find-to-merge" ()
 
 (* let _ = CDebug.set_flag debug_loop_checking_check true *)
 
@@ -847,15 +850,17 @@ let statistics model =
 let pr_can m can =
   Level.raw_pr (Index.repr can.canon m.table)
 
+let pr_can_clauses m can =
+  Pp.(str"For " ++ pr_can m can ++ fnl () ++ pr_clauses_of m can.canon can.clauses_bwd ++ fnl () ++
+  str"Forward" ++ spc () ++ pr_clauses_bwd m can.clauses_fwd ++ fnl ())
+
 let pr_clauses_all m =
+  let open Pp in
   PMap.fold (fun p e acc ->
     match e with
     | Equiv (p', k) ->
-      Pp.(pr_raw_index_point m p ++ str " = " ++ pr_with_incr (pr_raw_index_point m) (p',k) ++ spc () ++ acc)
-    | Canonical can ->
-      let bwd = can.clauses_bwd in
-      Pp.(str"For " ++ pr_can m can ++ fnl () ++ pr_clauses_of m can.canon bwd ++ fnl () ++
-        str"Forward" ++ spc () ++ pr_clauses_bwd m can.clauses_fwd ++ fnl () ++ acc))
+      pr_raw_index_point m p ++ str " = " ++ pr_with_incr (pr_raw_index_point m) (p',k) ++ spc () ++ acc
+    | Canonical can -> pr_can_clauses m can ++ acc)
     m.entries (Pp.mt ())
 
 let debug_check_invariants m =
@@ -1372,6 +1377,10 @@ let enforce_eq_can model (canu, ku as _u) (canv, kv as _v) : (canonical_node * i
         -> l = Set + (k - k') *)
       (assert (kv <= ku);
        (canu, ku, canv, ku - kv, enter_equiv model canv.canon canu.canon (ku - kv)))
+    else if Int.equal ku kv then
+      if ClausesBackward.cardinal canu.clauses_fwd <= ClausesBackward.cardinal canv.clauses_fwd then
+        (canv, kv, canu, 0, enter_equiv model canu.canon canv.canon 0)
+      else (canu, ku, canv, 0, enter_equiv model canv.canon canu.canon 0)
     else if ku <= kv then
       (canv, kv, canu, kv - ku, enter_equiv model canu.canon canv.canon (kv - ku))
     else
@@ -1419,7 +1428,7 @@ let enforce_eq_can = time3 (Pp.str"enforce_eq_can") enforce_eq_can
   str"Forward clauses: " ++ pr_clauses_bwd m can.clauses_fwd
 
 let make_equiv m equiv =
-  debug_global Pp.(fun () -> str"Unifying universes: " ++
+  debug_enforce_eq Pp.(fun () -> str"Unifying universes: " ++
     prlist_with_sep spc (fun can -> pr_incr (pr_can m) can) equiv);
   match equiv with
   | can :: can' :: tl ->
@@ -1431,7 +1440,7 @@ let make_equiv m equiv =
       List.fold_left (fun (can, m) can' -> enforce_eq_can m can can')
         (enforce_eq_can m can can') tl
     in
-    debug_global Pp.(fun () -> str"Chosen canonical universe: " ++ pr_incr (pr_can m) can ++
+    debug_enforce_eq Pp.(fun () -> str"Chosen canonical universe: " ++ pr_incr (pr_can m) can ++
           str"Constraints:" ++ pr_can_constraints m (fst can));
     m
   | [_] -> m
@@ -1454,14 +1463,72 @@ module Status = struct
   let fold = Internal.fold
 end
 
-let find_to_merge model status (canv, kv) (canu, ku) =
+(** [find_to_merge_bwd model status u v] Search for an equivalence class of universes backward from u to v *)
+let find_to_merge_bwd model status (canu, ku) (canv, kv) =
+  let nb_univs = ref 0 and nb_cstrs = ref 0 in
+  let rec backward (can, k) : bool =
+    debug Pp.(fun () -> str"visiting " ++ pr_can model can);
+    match Status.find status can with
+    | merge, _ -> merge
+    | exception Not_found ->
+      let isv = can == canv && Int.equal k kv in
+      let merge = isv || (can == canu && Int.equal k ku) in
+      let () = Status.replace status can (merge, k) in
+      if isv then true else
+      let () = incr nb_univs in
+      let cls = can.clauses_bwd in
+      if ClausesOf.is_empty cls then merge else
+      let canvalue = defined_expr_value model (can, k) in
+      debug_enforce_eq Pp.(fun () -> str"Searching through " ++ int (ClausesOf.cardinal cls) ++ str" backward universes of " ++ pr_can model can);
+        (* str " Canonical: " ++ int (PSet.cardinal (clauses_bwd_univs model cls))); *)
+      let merge =
+        (* Ensure there is indeed a backward clause of shape canv -> can, not going through max() premises *)
+        ClausesOf.fold (fun (clk, prems) merge ->
+          incr nb_cstrs;
+          (* prems -> can + clk *)
+          if clk > k then merge (* Looking at prems -> can + k + S k' clause, not applicable to find a loop with canv *)
+          else (* k >= clk *)
+          match prems with
+          | NeList.Tip (prem, kprem) ->
+            let p = repr_expr_can model (prem, kprem + (k - clk)) in
+            (* Stay in the same equivalence class *)
+            let premvalue = defined_expr_value model p in
+            if Int.equal premvalue canvalue then
+              (* prem + kprem -> can + clk      , with k >= clk implies
+                 prem + kprem + (k - clk) -> can + k by upwards closure with shifting *)
+                let merge' = backward p in
+                merge' || merge
+              else merge
+          | _ -> merge) cls merge
+      in
+      Status.replace status can (merge, k);
+      merge
+  in
+  let merge = backward (canu, ku) in
+  debug_enforce_eq Pp.(fun () -> int !nb_univs ++ str" universes and " ++ int !nb_cstrs ++ str" constraints considered in backward search");
+  if merge then
+    let merge_fn can (mark, k) acc = if mark then (can, k) :: acc else acc in
+    let equiv = Status.fold merge_fn status [] in
+    merge, equiv
+  else merge, []
+
+(** [find_to_merge_bwd model status u v] Search for an equivalence class of universes backward from u to v *)
+let find_to_merge_bwd =
+  time4 (Pp.str "find_to_merge_bwd") find_to_merge_bwd
+
+(** [find_to_merge_fwd model status u v] Search for an equivalence class of universes forward from u to v *)
+let find_to_merge_fwd model status (canu, ku) (canv, kv) =
+  let nb_univs = ref 0 and nb_cstrs = ref 0 in
   let rec forward (can, k) : bool =
     debug Pp.(fun () -> str"visiting " ++ pr_can model can);
     match Status.find status can with
     | merge, _ -> merge
     | exception Not_found ->
-      let merge = (can == canv && Int.equal k kv) || (can == canu && Int.equal k ku) in
+      let isv = can == canv && Int.equal k kv in
+      let merge = isv || (can == canu && Int.equal k ku) in
       let () = Status.replace status can (merge, k) in
+      if isv then true else
+      let () = incr nb_univs in
       let cls = can.clauses_fwd in
       if ClausesBackward.is_empty cls then merge else
       let canvalue = defined_expr_value model (can, k) in
@@ -1478,6 +1545,7 @@ let find_to_merge model status (canv, kv) (canu, ku) =
             else
             (* Ensure there is indeed a forward clause of shape can -> conclcan, not going through max() premises *)
             ClausesOf.fold (fun (clk, prems) merge ->
+              incr nb_cstrs;
               match prems with
               | NeList.Tip (_, kprem) ->
                 if kprem > k then merge
@@ -1498,31 +1566,41 @@ let find_to_merge model status (canv, kv) (canu, ku) =
   in
   if ClausesOf.is_empty canu.clauses_bwd || ClausesOf.is_empty canv.clauses_bwd then false, [] else
   let merge = forward (canu, ku) in
+  debug_enforce_eq Pp.(fun () -> int !nb_univs ++ str" universes and " ++ int !nb_cstrs ++ str" constraints considered in forward search");
   if merge then
     let merge_fn can (mark, k) acc = if mark then (can, k) :: acc else acc in
     let equiv = Status.fold merge_fn status [] in
     merge, equiv
   else merge, []
 
-let find_to_merge =
-  time4 (Pp.str "find_to_merge") find_to_merge
+(** [find_to_merge_fwd model status u v] Search for an equivalence class of universes forward from u to v *)
+let find_to_merge_fwd =
+  time4 (Pp.str "find_to_merge_fwd") find_to_merge_fwd
 
 let pr_can_expr m = pr_incr (fun c -> pr_index_point m c.canon)
 
-let simplify_clauses_between model (canv, kv as v) (canu, _ as u) =
+(** [simplify_clauses_between model u v] Checks if [v <= u] holds, in which case it merges the equivalence class
+    @param model Assumes [u <= v] holds already
+    @return a potentially modified model, without changing any values *)
+let simplify_clauses_between model (canu, _ as u) (canv, kv as v) =
   if canv == canu then
-    (debug_global Pp.(fun () -> str"simplify clauses between: same universes"); model)
+    (debug_enforce_eq Pp.(fun () -> str"simplify clauses between: same universes"); model)
   else if not (Option.equal Int.equal (expr_value model u) (expr_value model v)) then
       (* We know v -> u and check for u -> v, this can only be true if both levels
         already have the same value *)
-    (debug_global Pp.(fun () -> pr_can model canu ++ str"'s value =  " ++
+    (debug_enforce_eq Pp.(fun () -> pr_can model canu ++ str"'s value =  " ++
         pr_opt int (canonical_value model canu) ++ str" and " ++ pr_can model canv ++ str "'s value = "
       ++ pr_opt int (canonical_value model canv) ++ str", no simplification possible");
       model)
   else
     let status = Status.create model in
-    let merge, equiv = find_to_merge model status v u in
-    (if merge then debug_global Pp.(fun () -> str"Trying to merge: " ++ pr_can_expr model u ++ str" (value =  " ++
+    let () = debug_enforce_eq Pp.(fun () -> str"simplify_clauses_between calling find_to_merge") in
+    let merge, equiv =
+      if CDebug.get_flag debug_switch_find_to_merge then
+        find_to_merge_fwd model status u v
+      else find_to_merge_bwd model status v u
+    in
+    (if merge then debug_enforce_eq Pp.(fun () -> str"Trying to merge: " ++ pr_can_expr model u ++ str" (value =  " ++
         pr_opt int (canonical_value model canu) ++ str") and " ++ pr_can_expr model (canv, kv) ++ str " (value = " ++
         pr_opt int (canonical_value model canv));
     if merge then make_equiv model equiv else model)
@@ -1651,25 +1729,36 @@ let infer_clause_extension cl m =
     debug_check_invariants m;
     debug_global Pp.(fun () -> str" is consistent"); res
 
+(** [infer_extension u v m] enforces [u <= v] in [m] *)
 let infer_extension x y m =
-  let cl = can_clause_of_can_constraint (x, y) in
+  let cl = can_clause_of_can_constraint (x, y) in (* x <= y *)
   infer_clause_extension cl m
 
+(** [infer_extension u v m] enforces [u <= v] in [m] *)
 let infer_extension =
   time3 Pp.(str "infer_extension") infer_extension
 
-(* Enforce u <= v and check if v <= u already held, in that case, enforce u = v *)
+let eq_can_expr (canu, ku) (canv, kv) =
+  canu == canv && Int.equal ku kv
+
+(** Enforce u <= v and check if v <= u already held, in that case, enforce u = v *)
 let enforce_leq_can u v m =
-  (* let cl = (NeList.tip v, u) in *)
+  let cl = (NeList.tip v, u) in
+  let vcan = v in
   (* debug_global Pp.(fun () -> str"enforce_leq " ++ pr_can_clause m cl); *)
+  debug_enforce_eq Pp.(fun () -> str"enforce_leq " ++ pr_can_clause m cl ++ spc () ++
+    pr_can_clauses m (fst vcan) ++ pr_can_clauses m (fst u));
+  if eq_can_expr u v then
+    (debug_enforce_eq Pp.(fun () -> str"already equal"); Some m)
+  else
   match infer_extension u v m with
   | None -> None
   | Some m' ->
     if m' != m then
-      (debug_global Pp.(fun () -> str"enforce_leq did modify the model");
-      let v = repr_can_expr m' v in
+      (debug_enforce_eq Pp.(fun () -> str"enforce_leq did modify the model, looking for inverse clause");
       let u = repr_can_expr m' u in
-      Some (simplify_clauses_between m' v u))
+      let v = repr_can_expr m' v in
+      Some (simplify_clauses_between m' u v))
     else Some m
 
 let enforce_leq_level u v m =
@@ -1677,41 +1766,21 @@ let enforce_leq_level u v m =
   let m, canv = repr_compress_node m v in
   enforce_leq_can canu canv m
 
-let get_proper_value m can =
+let _get_proper_value m can =
   match canonical_value m can with
   | Some v -> v
   | None -> raise (Undeclared (Index.repr can.canon m.table))
 
 let enforce_eq_level u v m =
-  let canu, ku = repr_node m u in
-  let canv, kv = repr_node m v in
-  if canu == canv && Int.equal ku kv then Some m
-  else begin
-    debug_global Pp.(fun () -> str"enforce_eq: " ++ pr_with_incr (pr_can m) (canu, ku) ++ str" = " ++ pr_with_incr (pr_can m) (canv, kv));
-    match Int.compare (get_proper_value m canu) (get_proper_value m canv) with
-    (* | 0 -> Some (snd (enforce_eq_can m canu canv)) *)
-    | x when x <= 0 ->
-      (* canu.value <= canv.value, so v <= u is trivial and we cannot have u < v,
-         only u <= v in the clauses.
-         The first enforce will be fast, the second can involve an inference *)
-      (* let cls = clauses_forward model m.clauses (PSet.singleton canu.canon) in *)
-      (* debug Pp.(fun () -> str"enforce_eq: clauses to move " ++ pr_clauses model cls); *)
-      Option.bind (enforce_leq_can (canv, kv) (canu, ku) m)
-        (fun m' ->
-          let canu' = repr_expr_can m' (canu.canon, ku) in
-          let canv' =  repr_expr_can m' (canv.canon, kv) in
-          enforce_leq_can canu' canv' m')
-    | _ ->
-      (* canv.value < canu.value, so u <= v is trivial.
-          The first enforce will be fast, the second can involve an inference *)
-      (* let cls = clauses_forward model m.clauses (PSet.singleton canv.canon) in *)
-      (* debug Pp.(fun () -> str"enforce_eq: clauses to move " ++ pr_clauses model cls); *)
-      Option.bind (enforce_leq_can (canu, ku) (canv, kv) m)
-        (fun m' ->
-          let canu' = repr_expr_can m' (canu.canon, ku) in
-          let canv' = repr_expr_can m' (canv.canon, kv) in
-          enforce_leq_can canv' canu' m')
-  end
+  let (canu, ku as u) = repr_node m u in
+  let (canv, kv as v) = repr_node m v in
+  debug_enforce_eq Pp.(fun () -> str"enforce_eq: " ++ pr_with_incr (pr_can m) u ++ str" = " ++ pr_with_incr (pr_can m) (canv, kv));
+  match enforce_leq_can v u m with
+  | None -> None
+  | Some m' ->
+    let canu' = repr_expr_can m' (canu.canon, ku) in
+    let canv' = repr_expr_can m' (canv.canon, kv) in
+    enforce_leq_can canu' canv' m'
 
 let enforce_eq_level = time3 (Pp.str "enforce_eq_level") enforce_eq_level
 
@@ -1778,7 +1847,9 @@ let enforce u k v m =
   | [(u, 0)], Le, [(v, 0)] -> enforce_leq_level u v m
   | _, _, _ -> enforce_constraint u k v m
 
-let enforce_eq u v m = enforce u Eq v m
+let enforce_eq u v m =
+  debug_enforce_eq (let vc = v in Pp.(fun () -> Universe.pr Level.raw_pr u ++ str" = " ++ Universe.pr Level.raw_pr vc));
+  enforce u Eq v m
 let enforce_leq u v m = enforce u Le v m
 let enforce_lt u v m = enforce_constraint (Universe.addn u 1) Le v m
 
