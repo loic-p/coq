@@ -167,7 +167,7 @@ let build_wellfounded pm (recname,pl,bl,arityc,body) ?scope ?clearbody poly ?typ
         let univs = UState.check_univ_decl ~poly uctx udecl in
         let h_body =
           let inst = UState.(match fst univs with
-              | Polymorphic_entry uctx -> EConstr.EInstance.make (UVars.UContext.instance uctx)
+              | Polymorphic_entry uctx -> EConstr.EInstance.make (UVars.Instance.of_level_instance (UVars.UContext.instance uctx))
               | Monomorphic_entry _ -> EConstr.EInstance.empty) in
           EConstr.mkRef (dref, inst) in
         let body = it_mkLambda_or_LetIn (mkApp (h_body, [|make|])) binders_rel in
