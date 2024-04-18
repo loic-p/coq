@@ -21,6 +21,7 @@ let _debug_loop_checking_global_flag, debug_global = CDebug.create_full ~name:"l
 let _debug_enforce_eq, debug_enforce_eq = CDebug.create_full ~name:"loop-checking-enforce-eq" ()
 
 let debug_switch_find_to_merge, _debug_switch_find_to_merge_fn = CDebug.create_full ~name:"loop-checking-switch-find-to-merge" ()
+let debug_switch_union_upto, _debug_switch_union_upto = CDebug.create_full ~name:"loop-checking-switch-union-upto" ()
 
 (* let _ = CDebug.set_flag debug_loop_checking_check true *)
 
@@ -339,110 +340,6 @@ struct
 
 end
 
-module Premises =
-struct
-
-  module Premise =
-  struct
-    type t = Index.t * int
-
-    let equal x y : bool =
-      let (idx, k) = x in
-      let (idx', k') = y in
-      if Index.equal idx idx' then
-        Int.equal k k'
-      else false
-
-    let compare x y : int =
-      let (idx, k) = x in
-      let (idx', k') = y in
-      match Index.compare idx idx' with
-      | 0 -> Int.compare k k'
-      | x -> x
-
-  end
-
-  (* Invariant: sorted, non-empty *)
-  type t = Premise.t NeList.t
-
-  let _fold = NeList.fold
-
-  let fold_ne = NeList.fold_ne
-
-  let iter = NeList.iter
-  let for_all = NeList.for_all
-  let _exists = NeList.exists
-  (* let _add prem (x : t) : t = CList.merge_set Premise.compare [prem] x *)
-  (* let _union (x : t) (y : t) : t = CList.merge_set Premise.compare x y *)
-  let compare : t -> t -> int = NeList.compare Premise.compare
-  let equal : t -> t -> bool = NeList.equal Premise.equal
-
-  (* let of_list = NeList.of_list *)
-
-  let to_list = NeList.to_list
-
-  let smart_map = NeList.smart_map
-
-  let map = NeList.map
-
-  let pr pr_pointint prem =
-    let open Pp in
-    prlist_with_sep (fun () -> str ",") pr_pointint (to_list prem)
-end
-
-let pr_with f (l, n) =
-  if Int.equal n 0 then f l
-  else Pp.(f l ++ Pp.str"+" ++ int n)
-
-let pr_clause pr_pointint (prems, concl) =
-  let open Pp in
-  hov 0 (Premises.pr pr_pointint prems ++ str " → " ++ pr_pointint concl)
-
-module ClausesOf = struct
-  module ClauseInfo = struct
-    type t = int * Premises.t
-
-    let _equal x y : bool =
-      let (k, prems) = x in
-      let (k', prems') = y in
-      if Int.equal k k' then
-        Premises.equal prems prems'
-      else false
-
-    let compare x y : int =
-      let (k, prems) = x in
-      let (k', prems') = y in
-      match Int.compare k k' with
-      | 0 -> Premises.compare prems prems'
-      | x -> x
-
-    (* let of_list (k, prems) = (k, Premises.of_list prems) *)
-
-    let pr pr_pointint concl (k, prem) =
-      let open Pp in
-      hov 0 (Premises.pr pr_pointint prem ++ str " → " ++ pr_pointint (concl, k))
-  end
-
-  module S = Set.Make(ClauseInfo)
-  include S
-
-  let pr pr_pointint concl cls =
-    let open Pp in
-    v 0 (prlist_with_sep spc (ClauseInfo.pr pr_pointint concl) (elements cls))
-
-  (* Ocaml >= 4.11 has a more efficient version. *)
-  let filter_map p l =
-    fold (fun x acc ->
-      match p x with
-      | None ->  remove x acc
-      | Some x' -> if x' == x then acc else add x' (remove x acc)) l l
-
-  let shift n cls = if Int.equal n 0 then cls else map (fun (k, prems) -> (k + n, prems)) cls
-
-end
-
-type clause = Index.t * ClausesOf.t
-
 module SetWithCardinal (O:OrderedType.S) =
 struct
   module S = Set.Make(O)
@@ -577,6 +474,110 @@ struct
 
 end
 
+module Premises =
+struct
+
+  module Premise =
+  struct
+    type t = Index.t * int
+
+    let equal x y : bool =
+      let (idx, k) = x in
+      let (idx', k') = y in
+      if Index.equal idx idx' then
+        Int.equal k k'
+      else false
+
+    let compare x y : int =
+      let (idx, k) = x in
+      let (idx', k') = y in
+      match Index.compare idx idx' with
+      | 0 -> Int.compare k k'
+      | x -> x
+
+  end
+
+  (* Invariant: sorted, non-empty *)
+  type t = Premise.t NeList.t
+
+  let _fold = NeList.fold
+
+  let fold_ne = NeList.fold_ne
+
+  let iter = NeList.iter
+  let for_all = NeList.for_all
+  let _exists = NeList.exists
+  (* let _add prem (x : t) : t = CList.merge_set Premise.compare [prem] x *)
+  (* let _union (x : t) (y : t) : t = CList.merge_set Premise.compare x y *)
+  let compare : t -> t -> int = NeList.compare Premise.compare
+  let equal : t -> t -> bool = NeList.equal Premise.equal
+
+  (* let of_list = NeList.of_list *)
+
+  let to_list = NeList.to_list
+
+  let smart_map = NeList.smart_map
+
+  let map = NeList.map
+
+  let pr pr_pointint prem =
+    let open Pp in
+    prlist_with_sep (fun () -> str ",") pr_pointint (to_list prem)
+end
+
+let pr_with f (l, n) =
+  if Int.equal n 0 then f l
+  else Pp.(f l ++ Pp.str"+" ++ int n)
+
+let pr_clause pr_pointint (prems, concl) =
+  let open Pp in
+  hov 0 (Premises.pr pr_pointint prems ++ str " → " ++ pr_pointint concl)
+
+module ClausesOf = struct
+  module ClauseInfo = struct
+    type t = int * Premises.t
+
+    let _equal x y : bool =
+      let (k, prems) = x in
+      let (k', prems') = y in
+      if Int.equal k k' then
+        Premises.equal prems prems'
+      else false
+
+    let compare x y : int =
+      let (k, prems) = x in
+      let (k', prems') = y in
+      match Int.compare k k' with
+      | 0 -> Premises.compare prems prems'
+      | x -> x
+
+    (* let of_list (k, prems) = (k, Premises.of_list prems) *)
+
+    let pr pr_pointint concl (k, prem) =
+      let open Pp in
+      hov 0 (Premises.pr pr_pointint prem ++ str " → " ++ pr_pointint (concl, k))
+  end
+
+  module SWC = SetWithCardinal(ClauseInfo)
+  include SWC
+
+  let pr pr_pointint concl cls =
+    let open Pp in
+    v 0 (prlist_with_sep spc (ClauseInfo.pr pr_pointint concl) (elements cls))
+
+  (* Ocaml >= 4.11 has a more efficient version. *)
+  let filter_map p l =
+    fold (fun x acc ->
+      match p x with
+      | None ->  remove x acc
+      | Some x' -> if x' == x then acc else add x' (remove x acc)) l l
+
+  let shift n cls = if Int.equal n 0 then cls else map (fun (k, prems) -> (k + n, prems)) cls
+
+end
+
+type clause = Index.t * ClausesOf.t
+
 module PartialClausesOf = struct
   module ClauseInfo = struct
     type t = int * Premises.t option
@@ -658,27 +659,13 @@ struct
   (* let union (clauses : t) (clauses' : t) : t = *)
     (* PMap.fold (fun idx cls acc -> add (idx, cls) acc) clauses clauses' *)
 
-  (*let _union (clauses : t) (clauses' : t) : t =
-    let cardinal = ref clauses.cardinal in
+  let _union (clauses : t) (clauses' : t) : t =
     let merge_pclauses clauses clauses' =
-      let merge _idx cls cls' =
-      match cls, cls' with
-      | None, None -> cls
-      | None, Some _ -> cls'
-      | Some _, None -> cls
-      | Some cls, Some cls' -> Some (PartialClausesOf.union cls cls')
-      in
-      PMap.merge merge clauses clauses'
+      let merge _idx cls cls' = PartialClausesOf.union cls cls' in
+      PMap.union merge clauses clauses'
     in
-    let merge_by_kprem _kprem cls cls' =
-      match cls, cls' with
-      | None, None -> cls
-      | None, Some _ -> cls'
-      | Some _, None -> cls
-      | Some cls, Some cls' -> Some (merge_pclauses cls cls')
-    in
-    { clauses = Int.Map.merge merge_by_kprem clauses clauses';
-      cardinal = !cardinal }*)
+    let merge_by_kprem _kprem cls cls' = merge_pclauses cls cls' in
+    IntMap.union merge_by_kprem clauses clauses'
 
   (** [shift n clauses] Shift by n the clauses.
       The resulting clauses represents (_ + k + n, ... -> concl) *)
@@ -1740,8 +1727,14 @@ let enforce_eq_can model (canu, ku as _u) (canv, kv as _v) : (canonical_node * i
       debug_enforce_eq Pp.(fun () -> str"Other forward clauses for " ++
         pr_can model0 other ++ str": " ++ spc () ++
         pr_fwd_clause modeln can.canon other.clauses_fwd);
-    let bwd = ClausesOfRepr._union_upto model can.canon can.clauses_bwd (ClausesOf.shift diff other.clauses_bwd) in
-    let fwd = ForwardClausesRepr._union_upto model can.canon can.clauses_fwd (ForwardClauses.shift diff other.clauses_fwd) in
+    let bwd =
+      if CDebug.get_flag debug_switch_union_upto then
+        ClausesOf.union can.clauses_bwd (ClausesOf.shift diff other.clauses_bwd)
+      else ClausesOfRepr._union_upto model can.canon can.clauses_bwd (ClausesOf.shift diff other.clauses_bwd) in
+    let fwd =
+      if CDebug.get_flag debug_switch_union_upto then
+        ForwardClauses._union can.clauses_fwd (ForwardClauses.shift diff other.clauses_fwd)
+      else ForwardClausesRepr._union_upto model can.canon can.clauses_fwd (ForwardClauses.shift diff other.clauses_fwd) in
     debug_enforce_eq Pp.(fun () -> str"New backward clauses for " ++
     pr_can model can ++ str": " ++ spc () ++
     pr_clauses_of modeln can.canon bwd);
@@ -1937,7 +1930,11 @@ let simplify_clauses_between model (canu, _ as u) (canv, kv as v) =
     let merge, equiv =
       if CDebug.get_flag debug_switch_find_to_merge then
         find_to_merge_fwd model status u v
-      else find_to_merge_bwd model status v u
+      else
+        if ForwardClauses.cardinal canu.clauses_fwd < ClausesOf.cardinal canv.clauses_bwd then
+          find_to_merge_fwd model status u v
+        else
+          find_to_merge_bwd model status v u
     in
     (if merge then debug_enforce_eq Pp.(fun () -> str"Trying to merge: " ++ pr_can_expr model u ++ str" (value =  " ++
         pr_opt int (canonical_value model canu) ++ str") and " ++ pr_can_expr model (canv, kv) ++ str " (value = " ++
