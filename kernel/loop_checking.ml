@@ -140,7 +140,6 @@ struct
 end
 
 module PMap = Index.Map
-module PSet = Index.Set
 
 module NeList =
 struct
@@ -452,7 +451,7 @@ struct
 
   let empty = { set = S.empty; cardinal = 0 }
 
-  let is_empty s = S.is_empty s
+  let is_empty s = S.is_empty s.set
   let cardinal s = s.cardinal
 
   let add x ({set; cardinal} as s) =
@@ -460,6 +459,9 @@ struct
     if set' == set then s
     else { set = set'; cardinal = cardinal + 1}
 
+  let singleton x = add x empty
+
+  let mem x s = S.mem x s.set
   let remove x ({set; cardinal} as s) =
     let set' = S.remove x set in
     if set' == set then s
@@ -477,6 +479,19 @@ struct
 
   let for_all p s = S.for_all p s.set
   let exists p s = S.exists p s.set
+
+  let iter f s = S.iter f s.set
+
+  let partition f (s : t) =
+    let left = ref 0 and right = ref 0 in
+    let f x =
+      let res = f x in
+      if res then (incr left; res)
+      else (incr right; res)
+    in
+    let l, r = S.partition f s.set in
+    { set = l; cardinal = !left }, { set = r; cardinal = !right }
+
 end
 
 module type TypeWithCardinal =
@@ -497,12 +512,12 @@ struct
     if m' == m.map then m
     else { map = m'; cardinal = m.cardinal + 1}
 
+  let singleton x k = add x k empty
+
   let remove x m =
     let m' = M.remove x m.map in
     if m' == m.map then m
     else { map = m'; cardinal = m.cardinal - 1}
-
-  let union (m : t) (m' : t) : t = M.fold add m.map m'
 
   let fold f m = M.fold f m.map
   let cardinal m = m.cardinal
@@ -515,7 +530,7 @@ struct
       | Some x, None -> cardinal := !cardinal + T.cardinal x; Some x
       | None, Some x -> cardinal := !cardinal + T.cardinal x; Some x
       | Some x, Some y ->
-        let xy = f x y in
+        let xy = f k x y in
         cardinal := !cardinal + T.cardinal xy;
         Some xy
     in
@@ -535,6 +550,31 @@ struct
     in
     let m' = M.update x fn map in
     { map = m'; cardinal = !cardinal}
+
+  let compute_cardinal m' =
+    M.fold (fun _ v acc -> acc + T.cardinal v) m' 0
+
+  let map f m =
+    let m' = M.map f m.map in
+    if m' == m.map then m
+    else { map = m'; cardinal = compute_cardinal m' }
+
+  let exists f m = M.exists f m.map
+  let _for_all f m = M.for_all f m.map
+  let iter f m = M.iter f m.map
+
+  let _find x m = M.find x m.map
+  let find_opt x m = M.find_opt x m.map
+  let _partition f (m : t) =
+    let left = ref 0 and right = ref 0 in
+    let f k x =
+      let res = f k x in
+      if res then (left := !left + T.cardinal x; res)
+      else (right := !right + T.cardinal x; res)
+    in
+    let l, r = M.partition f m.map in
+    { map = l; cardinal = !left}, { map = r; cardinal = !right}
+
 end
 
 module PartialClausesOf = struct
@@ -579,13 +619,6 @@ module PartialClausesOf = struct
 
   let shift n cls = if Int.equal n 0 then cls else map (fun (k, prems) -> (k + n, prems)) cls
 
-  let union_cardinal (cardinal : int ref) cls cls' =
-    fold (fun cli cls ->
-      let cls' = add cli cls in
-      if cls' == cls then cls
-      else (incr cardinal; cls'))
-      cls cls'
-
 end
 
 type fwd_clause =
@@ -595,35 +628,32 @@ type fwd_clause =
 
 module ForwardClauses =
 struct
-  module PMapCard = MapWithCardinal (Int) (PartialClausesOf)
-  module IntMapCard = MapWithCardinal (Int) (PMapCard)
+  module PMap = MapWithCardinal (Index) (PartialClausesOf)
+  (** This type represents a map from conclusions to increments + premises,
+     e.g [other -> concl + n] *)
+  type fwd_clauses = PMap.t
+
+  module IntMap = MapWithCardinal (Int) (PMap)
   (** [t] This type represents forward clauses [(_ + k, other -> concl + n)].
     The premises are necessarily non-empty, and the [(_ + k)] one is singled out.
     They are indexed by [k], then by the conlusion universe [concl] and finally
     by [n], in PartialClausesOf.t, which contains the potentially empty [other] premises.
     The cardinal is maintained for fast computations. *)
-  type fwd_clauses = IntMapCard.t
-  type t =
-    { clauses : fwd_clauses;
-      cardinal : int }
+  type t = IntMap.t
 
   let add (cl : fwd_clause) (clauses : t) : t =
-    let {clauses; cardinal} = clauses in
-    let cardinal = ref cardinal in
-    let clauses = IntMapCard.update cl.kprem
+    IntMap.update cl.kprem
       (fun cls ->
         match cls with
-        | None -> incr cardinal; Some (PMap.singleton cl.concl cl.prems)
+        | None -> Some (PMap.singleton cl.concl cl.prems)
         | Some cls ->
           Some (PMap.update cl.concl
             (fun cls ->
               match cls with
-              | None -> incr cardinal; Some cl.prems
-              | Some cls -> Some (PartialClausesOf.union_cardinal cardinal cl.prems cls))
+              | None -> Some cl.prems
+              | Some cls -> Some (PartialClausesOf.union cl.prems cls))
           cls))
       clauses
-    in
-    { clauses; cardinal = !cardinal}
 
   (* let union (clauses : t) (clauses' : t) : t = *)
     (* PMap.fold (fun idx cls acc -> add (idx, cls) acc) clauses clauses' *)
@@ -654,21 +684,21 @@ struct
       The resulting clauses represents (_ + k + n, ... -> concl) *)
   let shift n clauses =
     if Int.equal n 0 then clauses else
-    Int.Map.fold (fun k fwd acc ->
-      Int.Map.add (k + n) fwd acc)
-      clauses Int.Map.empty
+    IntMap.fold (fun k fwd acc ->
+      IntMap.add (k + n) fwd acc)
+      clauses IntMap.empty
 
-  let cardinal (cls : t) : int = cls.cardinal
-  let empty = { clauses = Int.Map.empty; cardinal = 0 }
-  let is_empty x = Int.Map.is_empty x.clauses
+  let cardinal (cls : t) : int = IntMap.cardinal cls
+  let empty = IntMap.empty
+  let is_empty x = IntMap.is_empty x
 
   let singleton cl = add cl empty
 
   let fold (f : kprem:int -> concl:Index.t -> prems:PartialClausesOf.t -> 'a -> 'a) (cls : t) : 'a -> 'a =
-    Int.Map.fold (fun kprem cls acc ->
+    IntMap.fold (fun kprem cls acc ->
       PMap.fold (fun concl prems acc ->
         f ~kprem ~concl ~prems acc) cls acc)
-      cls.clauses
+      cls
 
   (* let union clauses clauses' =
     let merge _idx cls cls' =
@@ -684,17 +714,19 @@ struct
   (* let _partition (p : Index.t -> ClausesOf.t -> bool) (cls : t) : t * t = PMap.partition p cls *)
   (* let _filter (p : Index.t -> ClausesOf.t -> bool) (cls : t) : t = PMap.filter p cls *)
 
-  let pr_clauses pr prem (cls : PartialClausesOf.t PMap.t) =
+  let pr_clauses pr prem (cls : PMap.t) =
     let open Pp in
     PMap.fold (fun concl cls acc -> PartialClausesOf.pr pr prem concl cls ++ spc () ++ acc) cls (mt())
 
   let pr pr_prem prem (cls : t) =
     let open Pp in
-    Int.Map.fold
+    IntMap.fold
       (fun kprem cls acc -> pr_clauses pr_prem (prem, kprem) cls ++ acc)
-      cls.clauses (mt ())
+      cls (mt ())
 
 end
+
+module PSet = SetWithCardinal(Index)
 
 (* Comparison on this type is pointer equality *)
 type canonical_node =
@@ -948,7 +980,7 @@ struct
     (* if ClausesOfRepr.subset_upto m kprem (find cl.concl cls) then cls *)
     (* else add cl cls *)
 
-  let reindex_clauses m (clauses : PartialClausesOf.t PMap.t) : PartialClausesOf.t PMap.t =
+  let reindex_clauses m (clauses : PMap.t) : PMap.t =
     PMap.fold (fun idx clsof acc ->
       let idx', k = repr m idx in
       if Index.equal idx'.canon idx then acc
@@ -963,32 +995,16 @@ struct
     (* Int.Map.map (fun cls -> reindex_clauses m cls) fwd *)
 
   let _union_upto (m : model) prem (clauses : t) (clauses' : t) : t =
-    let {clauses; cardinal} = clauses in
-    let {clauses= clauses'; cardinal = cardinal' } = clauses' in
     let merge_by_kprem kprem cls cls' =
-      let merge concl cls cls' =
-      match cls, cls' with
-      | None, None -> cls
-      | None, Some _ -> cls'
-      | Some _, None -> cls
-      | Some cls, Some cls' ->
-        Some (PartialClausesOfRepr._union_upto m prem kprem concl cls cls')
-      in
+      let merge concl cls cls' = PartialClausesOfRepr._union_upto m prem kprem concl cls cls' in
       let iclauses = reindex_clauses m cls
       and iclauses' = reindex_clauses m cls' in
-      PMap.merge merge iclauses iclauses'
+      PMap.union merge iclauses iclauses'
     in
-    let merge kprem cls cls' =
-      match cls, cls' with
-      | None, None -> cls
-      | None, Some _ -> cls'
-      | Some _, None -> cls
-      | Some cls, Some cls' ->
-        Some (merge_by_kprem kprem cls cls')
-    in
-    Int.Map.merge merge clauses clauses'
+    let merge kprem cls cls' = merge_by_kprem kprem cls cls' in
+    IntMap.union merge clauses clauses'
 
-  let repr_clauses m (clauses : PartialClausesOf.t PMap.t) : PartialClausesOf.t PMap.t =
+  let repr_clauses m (clauses : fwd_clauses) : fwd_clauses =
     PMap.fold (fun idx clsof acc ->
       let idx', k = repr m idx in
       let clsof' = PartialClausesOfRepr.repr m clsof in
@@ -1000,7 +1016,7 @@ struct
       clauses clauses
 
   let repr m (cls : t) : t =
-    Int.Map.map (repr_clauses m) cls
+    IntMap.map (repr_clauses m) cls
 
 end
 
@@ -1049,8 +1065,8 @@ let check_invariants ~(required_canonical:Level.t -> bool) model =
             assert (PMap.mem l model.entries);
             let lcan, _lk = repr_expr_can model (l, lk) in
             (* Ensure this backward clause of shape [max(... l + lk ... ) -> can + k] is registered as a forward clause for the premise l *)
-            Int.Map.exists (fun k fwd ->
-              PMap.exists (fun idx kprem ->
+            ForwardClauses.IntMap.exists (fun k fwd ->
+              ForwardClauses.PMap.exists (fun idx kprem ->
               (* kprem = { (kconcl, max ( ... l' + lk' ... )) } -> idx *)
               let (can', shift) = repr model idx in
               can' == can &&
@@ -1297,6 +1313,7 @@ let check_model_clauses_of_aux m prem premk premv concl cls =
     cls m
 
 let find_bwd m idx cls =
+  let open ForwardClauses in
   match PMap.find_opt idx cls with
   | Some cls -> cls
   | None ->
@@ -1306,8 +1323,9 @@ let find_bwd m idx cls =
 
 (** Check a set of forward clauses *)
 let check_model_fwd_clause_aux ?early_stop prem (fwd : ForwardClauses.t) (acc : PSet.t * model) : PSet.t * model =
+  let open ForwardClauses in
   let check () =
-    Int.Map.fold (fun premk fwd acc ->
+    IntMap.fold (fun premk fwd acc ->
       let premv = get_model_value (snd acc) prem premk in
       PMap.fold (fun concl fwd (* (prem + premk), premises -> concl + k *) (wcls, m as acc) ->
         let can, k = repr m concl in
@@ -1321,7 +1339,7 @@ let check_model_fwd_clause_aux ?early_stop prem (fwd : ForwardClauses.t) (acc : 
   | None -> check ()
   | Some (can, k) ->
       let (_, m) = acc in
-      Int.Map.iter (fun premk fwd ->
+      IntMap.iter (fun premk fwd ->
         let cls = find_bwd m can.canon fwd in
         let premv = get_model_value (snd acc) prem premk in
         PartialClausesOf.iter (fun cls ->
@@ -1376,7 +1394,7 @@ let add_bwd prems kprem concl clsof =
   else ForwardClauses.add { prems; kprem; concl } clsof
 
 let add_canset idx (clauses : ForwardClauses.t) canset =
-  if Int.Map.is_empty clauses then canset
+  if ForwardClauses.IntMap.is_empty clauses then canset
   else CanSet.add idx clauses canset
 
 (* Partition the clauses according to the presence of w in the premises, and only w in the conclusions *)
@@ -1460,8 +1478,8 @@ let check_canset ?early_stop model ?(w=PSet.empty) (cls : CanSet.t) =
     (* Should consider only clauses with conclusions in w *)
     (* Partition the clauses acscording to the presence of w in the premises *)
     debug_loop Pp.(fun () -> str "Inner loop on " ++ int cardW ++ str" universes: " ++ spc () ++
-      hov 2 (str " Premises and conclusions in w: " ++ int (PSet.cardinal (w_of_canset premconclw))) ++ fnl () ++
-      hov 2 (str " Conclusions in w: " ++ int (PSet.cardinal (w_of_canset conclw))));
+      hov 2 (str " Premises and conclusions in w: " ++ int (Index.Set.cardinal (w_of_canset premconclw))) ++ fnl () ++
+      hov 2 (str " Conclusions in w: " ++ int (Index.Set.cardinal (w_of_canset conclw))));
     (* Warning: m is not necessarily a model for w *)
     let rec inner_loop_partition w cardW premconclw conclw m =
       debug_loop Pp.(fun () -> str "inner_loop_partition on #|premconclw| = " ++ int (CanSet.cardinal premconclw) ++ str" cardW = " ++ int cardW);
@@ -1766,7 +1784,8 @@ let make_equiv m equiv =
 let make_equiv = time2 (Pp.str"make_equiv") make_equiv
 
 let clauses_bwd_univs m cls =
-  Int.Map.fold (fun _premk cls acc ->
+  let open ForwardClauses in
+  IntMap.fold (fun _premk cls acc ->
     PMap.fold (fun concl _ acc -> PSet.add (fst (repr m concl)).canon acc) cls acc)
     cls PSet.empty
 
@@ -1982,10 +2001,10 @@ let check_one_clause model prems concl k =
     update_model_value values x (Some k)) prems
     { model with values = PMap.empty }
   in
-  let cls = NeList.fold (fun (prem, _k) cls -> CanSet.add prem.canon prem.clauses_fwd cls) prems CanSet.empty in
+  let w, cls = NeList.fold (fun (prem, _k) (w, cls) -> (PSet.add prem.canon w, CanSet.add prem.canon prem.clauses_fwd cls)) prems (PSet.empty, CanSet.empty) in
   (* We have a model where only the premise is true, check if the conclusion follows *)
   debug Pp.(fun () -> str"Launching loop-checking to check for entailment");
-  match check_canset ~early_stop:(concl, k) model ~w:(w_of_canset cls) cls with
+  match check_canset ~early_stop:(concl, k) model ~w cls with
   | exception FoundImplication ->
     debug Pp.(fun () -> str"loop-checking found the implication early");
     true
@@ -2201,7 +2220,7 @@ let add_model u { entries; table; values; canonical; canentries } =
   else
     let idx, table = Index.fresh u table in
     let can = Canonical { canon = idx;
-      clauses_fwd = Int.Map.empty; clauses_bwd = ClausesOf.empty } in
+      clauses_fwd = ForwardClauses.empty; clauses_bwd = ClausesOf.empty } in
     let entries = PMap.add idx can entries in
     let values = PMap.add idx 0 values in
     idx, { entries; table; values; canonical = canonical + 1; canentries = PSet.add idx canentries }
