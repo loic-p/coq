@@ -1930,11 +1930,7 @@ let simplify_clauses_between model (canu, _ as u) (canv, kv as v) =
     let merge, equiv =
       if CDebug.get_flag debug_switch_find_to_merge then
         find_to_merge_fwd model status u v
-      else
-        if ForwardClauses.cardinal canu.clauses_fwd < ClausesOf.cardinal canv.clauses_bwd then
-          find_to_merge_fwd model status u v
-        else
-          find_to_merge_bwd model status v u
+      else find_to_merge_bwd model status v u
     in
     (if merge then debug_enforce_eq Pp.(fun () -> str"Trying to merge: " ++ pr_can_expr model u ++ str" (value =  " ++
         pr_opt int (canonical_value model canu) ++ str") and " ++ pr_can_expr model (canv, kv) ++ str " (value = " ++
