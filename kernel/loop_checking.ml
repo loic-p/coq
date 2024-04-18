@@ -497,7 +497,6 @@ struct
 
   end
 
-  (* Invariant: sorted, non-empty *)
   type t = Premise.t NeList.t
 
   let _fold = NeList.fold
@@ -518,7 +517,7 @@ struct
 
   let smart_map = NeList.smart_map
 
-  let map = NeList.map
+  let _map = NeList.map
 
   let pr pr_pointint prem =
     let open Pp in
@@ -569,7 +568,7 @@ module ClausesOf = struct
   let filter_map p l =
     fold (fun x acc ->
       match p x with
-      | None ->  remove x acc
+      | None -> remove x acc
       | Some x' -> if x' == x then acc else add x' (remove x acc)) l l
 
   let shift n cls = if Int.equal n 0 then cls else map (fun (k, prems) -> (k + n, prems)) cls
@@ -615,7 +614,7 @@ module PartialClausesOf = struct
   let filter_map p l =
     fold (fun x acc ->
       match p x with
-      | None ->  remove x acc
+      | None -> remove x acc
       | Some x' -> if x' == x then acc else add x' (remove x acc)) l l
 
   let shift n cls = if Int.equal n 0 then cls else map (fun (k, prems) -> (k + n, prems)) cls
@@ -782,17 +781,20 @@ let rec repr m u =
   | Equiv (v, k) -> let (can, k') = repr m v in (can, k' + k)
   | Canonical arc -> (arc, 0)
 
-let repr_expr m (u, k) =
-  let can, k' = repr m u in
-  (can.canon, k + k')
+let rec repr_expr m (u, k as x) =
+  match PMap.find u m.entries with
+  | Equiv (v, k') -> repr_expr m (v, k' + k)
+  | Canonical _ -> x
 
-let repr_expr_can m (u, k) =
-  let can, k' = repr m u in
-  (can, k + k')
+let rec repr_expr_can m (u, k) =
+  match PMap.find u m.entries with
+  | Equiv (v, k') -> repr_expr_can m (v, k' + k)
+  | Canonical can -> (can, k)
 
 let repr_can_expr m (u, k) =
-  let can, k' = repr m u.canon in
-  (can, k + k')
+  match PMap.find u.canon m.entries with
+  | Equiv (v, k') -> repr_expr_can m (v, k' + k)
+  | Canonical can -> (can, k)
 
 (* canonical representative with path compression : we follow the Equiv links
   and updated them as needed *)
@@ -843,22 +845,17 @@ let _pr_clause_info m concl cl = ClausesOf.ClauseInfo.pr (pr_pointint m) concl c
 
 let pr_clauses_of m = ClausesOf.pr (pr_pointint m)
 
-let eq_expr (idxu, ku) (idxv, kv) =
-  Index.equal idxu idxv && Int.equal ku kv
+let eq_expr (idxu, ku as u) (idxv, kv as v) =
+  u == v || (Index.equal idxu idxv && Int.equal ku kv)
 
-let eq_can_expr (canu, ku) (canv, kv) =
-  canu == canv && Int.equal ku kv
+let eq_can_expr (canu, ku as u) (canv, kv as v) =
+  u == v || (canu == canv && Int.equal ku kv)
 
 module PremisesRepr =
 struct
 
-  let repr_premise m (idx, k as x) =
-    let idx', k' = repr m idx in
-    if Index.equal idx idx'.canon then x
-    else (idx'.canon, k + k')
-
   let repr m (x : Premises.t) : Premises.t =
-    Premises.smart_map (repr_premise m) x
+    Premises.smart_map (repr_expr m) x
 
   let premise_equal_upto m u v =
     eq_expr (repr_expr m u) (repr_expr m v)
@@ -891,12 +888,14 @@ struct
   let _subset_upto m cls cls' =
     for_all (fun cl -> mem_upto m cl cls') cls
 
-  let filter_trivial_clause m l (k, prems) =
+  let filter_trivial_clause m l (k, prems as cl) =
     (* Canonicalize the premises *)
-    let prems' = Premises.map (repr_expr m) prems in
+    let prems' = Premises.smart_map (repr_expr m) prems in
      (* Filter out ..., u + k, ... -> u trivial clause *)
     if NeList.exists (fun (can, k') -> Index.equal can l && k' >= k) prems' then None
     else
+      if prems' == prems then Some cl
+      else
       (* Simplify (u + k, ... u + k -> v + k') clauses to have a single premise by universe *)
       (* let prems' = NeList.uniq eq_expr prems' in *)
       Some (k, prems')
@@ -933,22 +932,24 @@ struct
     for_all (fun cl -> mem_upto m cl cls') cls
 
   let filter_trivial_clause m (prem:Index.t) (kprem : int) (concl : Index.t) ((k, prems as x) : ClauseInfo.t) : ClauseInfo.t option =
-    (* Canonicalize the premises *)
-    let prems' = Option.map (Premises.map (repr_expr m)) prems in
      (* Filter out ..., u + kprem, ... -> u + k trivial clause *)
     if Index.equal prem concl && kprem >= k then
       (* if kprem >= k then the clause is trivial, otherwise
          necessarily other premises can make the clause non-trivial *)
       None
     else
-      match prems' with
+      match prems with
       | None -> (* prem -> concl + k *) Some x
-      | Some prems' ->
+      | Some prems ->
+        (* Canonicalize the premises *)
+        let prems' = Premises.smart_map (repr_expr m) prems in
         if NeList.exists (fun (can, k') -> Index.equal can concl && k' >= k) prems' then None
         else
-          (* Simplify (u + k, ... u + k -> v + k') clauses to have a single premise by universe *)
-          (* let prems' = NeList.uniq eq_expr prems' in *)
-          Some (k, Some prems')
+          if prems' == prems then Some x
+          else
+           (* Simplify (u + k, ... u + k -> v + k') clauses to have a single premise by universe *)
+           (* let prems' = NeList.uniq eq_expr prems' in *)
+           Some (k, Some prems')
 
   let filter_trivial (m : model) prem kprem concl (cls : t) =
     filter_map (filter_trivial_clause m prem kprem concl) cls
@@ -1170,9 +1171,6 @@ let get_canonical_value m c = PMap.find c.canon m.values
 
 let canonical_value m c = PMap.find_opt c.canon m.values
 let index_value m idx = PMap.find_opt idx m.values
-
-let set_canonical_value m can v =
-  { m with values = PMap.add can.canon v m.values }
 
 let set_index_value m idx v =
   { m with values = PMap.add idx v m.values }
@@ -1964,19 +1962,13 @@ let can_clause_of_can_constraint (cstr : can_constraint) : can_clause =
 
 type 'a check_function = t -> 'a -> 'a -> bool
 
-(* @raises VacuouslyTrue if there is an undefined level in the premises *)
-let min_can_premise model prem =
-  let g (l, k) = (match canonical_value model l with Some v -> v | None -> raise VacuouslyTrue) - k in
-  let f prem minl = min minl (g prem) in
-  Premises.fold_ne f g prem
-
 let update_model_value (m : model) can k' : model =
-  let v = canonical_value m can in
+  let v = index_value m can in
   let k' = max_opt v k' in
   if Option.equal Int.equal k' v then m
   else
-    (debug Pp.(fun () -> str"Updated value of " ++ pr_can m can ++ str " to " ++ pr_opt int k');
-    set_canonical_value m can (Option.get k'))
+    (debug Pp.(fun () -> str"Updated value of " ++ pr_index_point m can ++ str " to " ++ pr_opt int k');
+    set_index_value m can (Option.get k'))
 
 (* A clause premises -> concl + k might hold in the current minimal model without being valid in all
    its extensions.
@@ -1991,7 +1983,7 @@ let check_one_clause model prems concl k =
   (* if (Level.is_set (Index.repr concl.canon model.table)) && k == 0 then true else *)
   let model = NeList.fold (fun prem values ->
     let x, k = repr_can_expr model prem in
-    update_model_value values x (Some k)) prems
+    update_model_value values x.canon (Some k)) prems
     { model with values = PMap.empty }
   in
   let w, cls = NeList.fold (fun (prem, _k) (w, cls) -> (PSet.add prem.canon w, CanSet.add prem.canon prem.clauses_fwd cls)) prems (PSet.empty, CanSet.empty) in
@@ -2017,11 +2009,18 @@ let check_one_clause model prems concl k =
         str" in the minimal model, expecting conclusion + " ++ int k ++ str " to hold");
       k <= value
 
+(** [min_can_premise model prem]
+    @raises VacuouslyTrue if there is an undefined level in the premises *)
+let min_can_premise model prem =
+  let g (l, k) = (match canonical_value model l with Some v -> v | None -> raise VacuouslyTrue) - k in
+  let f prem minl = min minl (g prem) in
+  Premises.fold_ne f g prem
+
 let update_model ((prems, (can, k)) : can_clause) (m : model) : PSet.t * model =
   match min_can_premise m prems with
   | exception VacuouslyTrue -> (PSet.empty, m)
   | k0 ->
-    let m' = update_model_value m can (Some (k + k0)) in
+    let m' = update_model_value m can.canon (Some (k + k0)) in
     if m' != m then
       let canset = CanSet.add can.canon can.clauses_fwd CanSet.empty in
       match check_clauses_with_premises canset m' with
