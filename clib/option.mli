@@ -130,3 +130,11 @@ module List : sig
   val map : ('a -> 'b option) -> 'a list -> 'b list option
 
 end
+
+(** {6 Operations with Arrays} *)
+
+module Array : sig
+  (** [Array.fold_left2 f a b] is the regular [fold_left2] if [f] returns [Some acc] and [None] otherwise. *)
+  val fold_left2 : ('acc -> 'a -> 'b -> 'acc option) -> 'acc -> 'a array -> 'b array -> 'acc option
+
+end

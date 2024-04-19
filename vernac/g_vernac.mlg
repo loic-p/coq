@@ -507,12 +507,17 @@ GRAMMAR EXTEND Gram
         } ]]
   ;
   (* Rewrite Rules *)
+  rr_equation:
+    [ [ l = constr; "="; r = constr -> { l, r } ] ];
+  rr_equations:
+    [ [ "["; e = LIST0 rr_equation SEP ";"; "]" -> { e } ] ];
   rw_pattern:
     [ [ p = lconstr -> { p } ] ];
   rewrite_rule:
-    [ [ u = OPT [ u = univ_decl; "|-" -> { u }];
+    [ [ u = OPT [ u = OPT univ_decl; e = OPT rr_equations; "|-" -> { u, e }];
         lhs = rw_pattern; ">->" ; rhs = lconstr ->
-        { (u, lhs, rhs)
+        { let u, e = match u with None -> None, [] | Some (u, e) -> u, Option.default [] e in
+          (u, e, lhs, rhs)
         } ] ]
   ;
   (* Inductive schemes *)

@@ -568,18 +568,22 @@ let apply_branch env sigma (ind, i) args (ci, u, pms, iv, r, lf) =
 
 exception PatternFailure
 
+let qconv _info q q' = Sorts.Quality.equal q q'
+let uconv sigma u u' = UGraph.check_eq (Evd.universes sigma) u u'
+let quconv info = (qconv info, uconv info)
+
 let match_einstance sigma pu u psubst =
-  match UVars.Instance.pattern_match pu (EInstance.kind sigma u) psubst with
+  match UVars.Instance.pattern_match (quconv sigma) pu (EInstance.kind sigma u) psubst with
   | Some psubst -> psubst
   | None -> raise PatternFailure
 
 let match_equaluniv sigma pu u psubst =
-  match UVars.QualUniv.pattern_match pu (EQualUniv.kind sigma u) psubst with
+  match UVars.QualUniv.pattern_match (quconv sigma) pu (EQualUniv.kind sigma u) psubst with
   | Some psubst -> psubst
   | None -> raise PatternFailure
 
-let match_sort ps s psubst =
-  match Sorts.pattern_match ps s psubst with
+let match_sort sigma ps s psubst =
+  match Sorts.pattern_match (quconv sigma) ps (ESorts.kind sigma s) psubst with
   | Some psubst -> psubst
   | None -> raise PatternFailure
 
@@ -587,7 +591,16 @@ let rec match_arg_pattern whrec env sigma ctx psubst p t =
   let open Declarations in
   let t' = EConstr.it_mkLambda_or_LetIn t ctx in
   match p with
-  | EHole i -> Partial_subst.add_term i t' psubst
+  | EHole i ->
+    begin match Partial_subst.get_term psubst i with
+    | None -> Partial_subst.add_term i t' psubst
+    | Some t0 ->
+      let eq_istrue = Reductionops.is_conv env sigma t' t0 in
+      if eq_istrue then
+        psubst
+      else
+        raise PatternFailure
+    end
   | EHoleIgnored -> psubst
   | ERigid (ph, es) ->
       let (t, stk), _ = whrec Cst_stack.empty (t, Stack.empty) in
@@ -604,7 +617,7 @@ and match_rigid_arg_pattern whrec env sigma ctx psubst p t =
   | PHConstr (constr, pu), Construct (constr', u) ->
     if Construct.CanOrd.equal constr constr' then match_einstance sigma pu u psubst else raise PatternFailure
   | PHRel i, Rel n when i = n -> psubst
-  | PHSort ps, Sort s -> match_sort ps (ESorts.kind sigma s) psubst
+  | PHSort ps, Sort s -> match_sort sigma ps s psubst
   | PHSymbol (c, pu), Const (c', u) ->
     if Constant.CanOrd.equal c c' then match_einstance sigma pu u psubst else raise PatternFailure
   | PHInt i, Int i' ->
@@ -671,15 +684,24 @@ let rec apply_rules whrec env sigma u r stk =
   let open Declarations in
   match r with
   | [] -> raise PatternFailure
-  | { lhs_pat = (pu, elims); nvars; rhs } :: rs ->
+  | { lhs_pat = (pu, elims); nvars; equalities; rhs } :: rs ->
     try
       let psubst = Partial_subst.make nvars in
       let psubst = match_einstance sigma pu u psubst in
       let psubst, stk = apply_rule whrec env sigma [] psubst elims stk in
       let subst, qsubst, usubst = Partial_subst.to_arrays psubst in
-      let usubst = UVars.Instance.of_array (qsubst, usubst) in
-      let rhsu = subst_instance_constr (EConstr.EInstance.make usubst) (EConstr.of_constr rhs) in
-      let rhs' = substl (Array.to_list subst) rhsu in
+      let subst = Array.to_list subst in
+      let usubst = EConstr.EInstance.make @@ UVars.Instance.of_array (qsubst, usubst) in
+      let () =
+        let fequalities = List.map (map_pair (fun t -> substl subst @@ subst_instance_constr usubst @@ EConstr.of_constr @@ t)) equalities in
+        let eq_istrue = List.for_all (fun (a, b) -> Reductionops.is_conv env sigma a b) fequalities in
+        if eq_istrue then
+          ()
+        else
+          raise PatternFailure
+      in
+      let rhsu = subst_instance_constr usubst (EConstr.of_constr rhs) in
+      let rhs' = substl subst rhsu in
       (rhs', stk)
     with PatternFailure -> apply_rules whrec env sigma u rs stk
 

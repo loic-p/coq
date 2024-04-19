@@ -498,6 +498,10 @@ let cbv_subst_of_rel_context_instance_list mkclos sign args env =
  * stack. *)
 
 exception PatternFailure
+let qconv _info q q' = Sorts.Quality.equal q q'
+let uconv info u u' = UGraph.check_eq (Evd.universes info.sigma) u u'
+let quconv info = (qconv info, uconv info)
+
 
 let rec norm_head info env t stack =
   (* no reduction under binders *)
@@ -762,7 +766,16 @@ and cbv_match_arg_pattern info env ctx psubst p t =
   let open Declarations in
   let t' = it_mkLambda_or_LetIn info ctx t in
   match p with
-  | EHole i -> Partial_subst.add_term i t' psubst
+  | EHole i ->
+    begin match Partial_subst.get_term psubst i with
+    | None -> Partial_subst.add_term i t' psubst
+    | Some t0 ->
+      let eq_istrue = Reductionops.is_conv info.env info.sigma (EConstr.of_constr @@ reify_value t') (EConstr.of_constr @@ reify_value t0) in
+      if eq_istrue then
+        psubst
+      else
+        raise PatternFailure
+    end
   | EHoleIgnored -> psubst
   | ERigid (ph, es) ->
       let t, stk = destack t TOP in
@@ -777,18 +790,18 @@ and cbv_match_arg_pattern_lift info env ctx n psubst p t =
   cbv_match_arg_pattern info env ctx psubst p
     (cbv_stack_term info TOP env t)
 
-and match_sort ps s subst =
-  match Sorts.pattern_match ps s subst with
+and match_sort info ps s subst =
+  match Sorts.pattern_match (quconv info) ps s subst with
   | Some subst -> subst
   | None -> raise PatternFailure
 
-and match_instance pu u psubst =
-  match UVars.Instance.pattern_match pu u psubst with
+and match_instance info pu u psubst =
+  match UVars.Instance.pattern_match (quconv info) pu u psubst with
   | Some subst -> subst
   | None -> raise PatternFailure
 
-and match_qualuniv pu u psubst =
-  match UVars.QualUniv.pattern_match pu u psubst with
+and match_qualuniv info pu u psubst =
+  match UVars.QualUniv.pattern_match (quconv info) pu u psubst with
   | Some subst -> subst
   | None -> raise PatternFailure
 
@@ -796,15 +809,15 @@ and cbv_match_rigid_arg_pattern info env ctx psubst p t =
   let open Declarations in
   match [@ocaml.warning "-4"] p, t with
   | PHInd (ind, pu), VAL(0, t') ->
-    begin match kind t' with Ind (ind', u) when Ind.CanOrd.equal ind ind' -> match_instance pu u psubst | _ -> raise PatternFailure end
+    begin match kind t' with Ind (ind', u) when Ind.CanOrd.equal ind ind' -> match_instance info pu u psubst | _ -> raise PatternFailure end
   | PHConstr (constr, pu), CONSTRUCT ((constr', u), [||]) ->
-    if Construct.CanOrd.equal constr constr' then match_instance pu u psubst else raise PatternFailure
+    if Construct.CanOrd.equal constr constr' then match_instance info pu u psubst else raise PatternFailure
   | PHRel i, VAL(k, t') ->
     begin match kind t' with Rel n when Int.equal i (k + n) -> psubst | _ -> raise PatternFailure end
   | PHSort ps, VAL(0, t') ->
-    begin match kind t' with Sort s -> match_sort ps s psubst | _ -> raise PatternFailure end
+    begin match kind t' with Sort s -> match_sort info ps s psubst | _ -> raise PatternFailure end
   | PHSymbol (c, pu), SYMBOL { cst = c', u; _ } ->
-    if Constant.CanOrd.equal c c' then match_instance pu u psubst else raise PatternFailure
+    if Constant.CanOrd.equal c c' then match_instance info pu u psubst else raise PatternFailure
   | PHInt i, VAL(0, t') ->
     begin match kind t' with Int i' when Uint63.equal i i' -> psubst | _ -> raise PatternFailure end
   | PHFloat f, VAL(0, t') ->
@@ -866,8 +879,8 @@ and cbv_apply_rule info env ctx psubst es stk =
       let ntys_ret = Inductive.expand_arity specif (ci.ci_ind, u) pms (fst p) in
       let ntys_ret = apply_env_context env ntys_ret in
       let ntys_brs = Inductive.expand_branch_contexts specif u pms brs in
-      let psubst = match_instance pu u psubst in
-      let psubst = match_qualuniv pqu qu psubst in
+      let psubst = match_instance info pu u psubst in
+      let psubst = match_qualuniv info pqu qu psubst in
       let brs = Array.map2 (fun ctx' br -> List.length ctx', ctx' @ ctx, (snd br)) ntys_brs brs in
       let psubst = cbv_match_arg_pattern_lift info env (ntys_ret @ ctx) (List.length ntys_ret) psubst pret (snd p) in
       let psubst = Array.fold_left2 (fun psubst pat (n, ctx, br) -> cbv_match_arg_pattern_lift info env (apply_env_context env ctx) n psubst pat br) psubst pbrs brs in
@@ -881,14 +894,22 @@ and cbv_apply_rule info env ctx psubst es stk =
 and cbv_apply_rules info env u r stk =
   match r with
   | [] -> raise PatternFailure
-  | { lhs_pat = (pu, elims); nvars; rhs } :: rs ->
+  | { lhs_pat = (pu, elims); nvars; equalities; rhs } :: rs ->
     try
       let psubst = Partial_subst.make nvars in
-      let psubst = match_instance pu u psubst in
+      let psubst = match_instance info pu u psubst in
       let psubst, stk = cbv_apply_rule info env [] psubst elims stk in
       let subst, qsubst, usubst = Partial_subst.to_arrays psubst in
       let subst = Array.fold_right subs_cons subst env in
       let usubst = UVars.Instance.of_array (qsubst, usubst) in
+      let () =
+        let fequalities = List.map (map_pair (fun t -> EConstr.of_constr @@ apply_env subst @@ Vars.subst_instance_constr usubst t)) equalities in
+        let eq_istrue = List.for_all (fun (a, b) -> Reductionops.is_conv info.env info.sigma a b) fequalities in
+        if eq_istrue then
+          ()
+        else
+          raise PatternFailure
+      in
       let rhsu = Vars.subst_instance_constr usubst rhs in
       let rhs' = cbv_stack_term info TOP subst rhsu in
       rhs', stk

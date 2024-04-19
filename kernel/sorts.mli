@@ -91,7 +91,7 @@ module Quality : sig
   type pattern =
     PQVar of int option | PQConstant of constant
 
-  val pattern_match : pattern -> t -> ('t, t, 'u) Partial_subst.t -> ('t, t, 'u) Partial_subst.t option
+  val pattern_match : (t -> t -> bool) -> pattern -> t -> ('t, t, 'u) Partial_subst.t -> ('t, t, 'u) Partial_subst.t option
 end
 
 module QConstraint : sig
@@ -195,4 +195,4 @@ val pr_sort_family : family -> Pp.t
 type pattern =
   | PSProp | PSSProp | PSSet | PSType of int option | PSQSort of int option * int option
 
-val pattern_match : pattern -> t -> ('t, Quality.t, Univ.Universe.t) Partial_subst.t -> ('t, Quality.t, Univ.Universe.t) Partial_subst.t option
+val pattern_match : (Quality.t -> Quality.t -> bool) * (Univ.Universe.t -> Univ.Universe.t -> bool) -> pattern -> t -> ('t, Quality.t, Univ.Universe.t) Partial_subst.t -> ('t, Quality.t, Univ.Universe.t) Partial_subst.t option

@@ -128,7 +128,8 @@ sig
 
   type mask = Quality.pattern array * int option array
 
-  val pattern_match : mask -> t -> ('term, Quality.t, Universe.t) Partial_subst.t -> ('term, Quality.t, Universe.t) Partial_subst.t option
+  val pattern_match : (Quality.t -> Quality.t -> bool) * (Universe.t -> Universe.t -> bool) ->
+    mask -> t -> ('term, Quality.t, Universe.t) Partial_subst.t -> ('term, Quality.t, Universe.t) Partial_subst.t option
   (** Pattern matching, as used by the rewrite rules mechanism *)
 
 end
@@ -169,7 +170,8 @@ sig
   val pr : (Sorts.QVar.t -> Pp.t) -> (Univ.Universe.t -> Pp.t) -> t -> Pp.t
 
   type mask = Quality.pattern * int option
-  val pattern_match : mask -> t -> ('term, Quality.t, Universe.t) Partial_subst.t -> ('term, Quality.t, Universe.t) Partial_subst.t option
+  val pattern_match : (Quality.t -> Quality.t -> bool) * (Universe.t -> Universe.t -> bool) ->
+    mask -> t -> ('term, Quality.t, Universe.t) Partial_subst.t -> ('term, Quality.t, Universe.t) Partial_subst.t option
 end
 
 val eq_sizes : int * int -> int * int -> bool

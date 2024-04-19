@@ -120,7 +120,11 @@ and get_holes_profiles_elim env nargs ndecls lincheck = function
 
 and get_holes_profiles_parg env nargs ndecls lincheck = function
   | EHoleIgnored -> lincheck
-  | EHole i -> Partial_subst.add_term i nargs lincheck
+  | EHole i ->
+    begin match Partial_subst.get_term lincheck i with
+    | None -> Partial_subst.add_term i nargs lincheck
+    | Some depth' -> ignore depth'; lincheck
+    end
   | ERigid (h, el) ->
       let lincheck = get_holes_profiles_head env nargs ndecls lincheck h in
       get_holes_profiles env nargs ndecls lincheck el
@@ -167,7 +171,7 @@ let check_rhs env holes_profile rhs =
 
 let check_rewrite_rule env lab i (symb, rule) =
   Flags.if_verbose Feedback.msg_notice (str "  checking rule:" ++ Label.print lab ++ str"#" ++ Pp.int i);
-  let { nvars; lhs_pat; rhs } = rule in
+  let { nvars; lhs_pat; rhs; equalities } = rule in
   let symb_cb = Environ.lookup_constant symb env in
   let () =
     match symb_cb.const_body with Symbol _ -> ()
@@ -178,6 +182,7 @@ let check_rewrite_rule env lab i (symb, rule) =
   let lincheck = get_holes_profiles env 0 0 lincheck (snd lhs_pat) in
   let holes_profile, _, _ = Partial_subst.to_arrays lincheck in
   let () = check_rhs env holes_profile rhs in
+  let () = List.iter (fun (a, b) -> check_rhs env holes_profile a; check_rhs env holes_profile b) equalities in
   ()
 
 let check_rewrite_rules_body env lab rrb =
