@@ -24,6 +24,12 @@ val declare_observational_equality :
    -> Constr.t
    -> Constant.t) ref
 
+val declare_forded_constructor :
+  (univs:UState.named_universes_entry
+   -> name:Id.t
+   -> Constr.t
+   -> Constant.t) ref
+
 val declare_observational_rewrite :
   (univs:UState.named_universes_entry
    -> name:Id.t
