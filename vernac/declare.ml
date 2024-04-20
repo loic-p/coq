@@ -704,7 +704,7 @@ let declare_observational_equality ~univs ~name c =
 
 let declare_forded_constructor ~univs ~name c =
   let kind = Decls.IsSymbol in
-  let entry = ParameterEntry (parameter_entry ~univs c) in
+  let entry = SymbolEntry (symbol_entry ~univs ~unfold_fix:true c) in
   let kn = declare_constant ~name ~kind ~typing_flags:None entry in
   let () = definition_message name in
   kn

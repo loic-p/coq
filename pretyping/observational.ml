@@ -209,7 +209,7 @@ let rec evar_subst evmap evd k t =
   | _ -> EConstr.map_with_binders evd succ (evar_subst evmap evd) k t
 
 
-(** Adding a universe level above s (or equal to s) to an evar map.
+(** Adding a universe level >= s to an evar map.
     s is a sort, which might be a sup of several levels. *)
 
 let univ_level_sup env sigma s =
@@ -281,8 +281,7 @@ let make_obseqU ?(is_sprop = false) env sigma u tm1 tm2 =
     | Some obseq ->
        let obseq_fam = Inductiveops.make_ind_family ((obseq, UVars.Instance.of_array ([| |], [| |])), [tm1]) in
        let obseq_tm = Inductiveops.mkAppliedInd (Inductiveops.make_ind_type (obseq_fam, [EConstr.of_constr tm2])) in
-       let x = EConstr.to_constr sigma obseq_tm in
-       Feedback.msg_debug (Constr.debug_print x) ; x
+       EConstr.to_constr sigma obseq_tm
   else
     match !obseqU_constant with
     | None -> user_err Pp.(str "The observational equality on types does not exist.")
@@ -317,7 +316,7 @@ let make_type sigma u =
 
 (** This function uses the constant ap_ty to obtain an equality between two instances of the last type of a (smashed) context
    - telescope should be a smashed context of n+1 types
-   - univs should be a list of n+1 pairs (u, u+) where u is the universe of the n-th type, and u+ is above
+   - univs should be a list of n+1 universe levels for the types in telescope
    - inst0 and inst1 are two instances of size n of the first n types of context
    - eqs is a list of n equalities between inst0 and inst1 *)
 
@@ -342,8 +341,8 @@ let make_ap_ty n telescope univs inst0 inst1 eqs =
 
 
 (** This function produces a context of equalities that encodes the equality of two instances
-    - telescope should be a context of types
-    - univs should be a list of pairs (u, u+) where u is the universe of the n-th type, and u+ is above
+    - telescope should be a context of types (not necessarily smashed)
+    - univs should be a list of n+1 universe levels for the types in telescope
     - inst0 and inst1 are two instances of the telescope *)
 
 let telescope_equality env sigma telescope univs inst0 inst1 =
@@ -399,9 +398,8 @@ let telescope_equality env sigma telescope univs inst0 inst1 =
   | _, _, _, _ -> user_err Pp.(str "function telescope_equality called with unbalanced arguments")
 
 
-(** This function converts a constructor with indices to a forded constructor
-    - param_indx_ctxt is the context of parameters and indices of the inductive
-    - ctor is the base constructor_summary and ctor_name is its name *)
+(** This function converts a constructor with indices to a forded constructor.
+    ctor is the base constructor_summary and ctor_name is its name *)
 
 let get_forded_ctor env sigma instanciated_ind ctor ctor_name =
   let param_ctxt = instanciated_ind.idi_params in
@@ -425,7 +423,7 @@ let get_forded_ctor env sigma instanciated_ind ctor ctor_name =
   ; csi_base_name = ctor_name }
 
 
-(** This function declares a forded constructor *)
+(** This function declares a forded constructor and returns the declared name with the universe entry *)
 
 let declare_forded_ctor ?loc ~poly env sigma ctor =
   let ctxt = ctor.csi_args @ ctor.csi_params in
@@ -446,7 +444,7 @@ let declare_forded_ctor ?loc ~poly env sigma ctor =
   (* declaring the axiom with its local universe context *)
   let univs = UState.univ_entry ~poly uctx in
   let declared_name = !declare_forded_constructor ~univs ~name:ctor.csi_name forded_ctor in
-  declared_name
+  (declared_name, univs)
 
 
 (** Building a rewrite rule *)
@@ -492,6 +490,8 @@ let make_rewrite_rule ?loc env sigma uinst u1 ty lhs rhs =
   head_symbol, { nvars = (nvars' - 1, nvarqs', nvarus'); lhs_pat = head_umask, elims; rhs }
 
 
+(** This function declares a new observational equality axiom, and updates the state
+    TODO: better documentation *)
 
 let declare_ctorarg_obs_eq ~poly env uinfo name decl (sigma, ctxt, ren1, ren2, cnt) =
   match decl with
@@ -566,6 +566,11 @@ let declare_ctorarg_obs_eq ~poly env uinfo name decl (sigma, ctxt, ren1, ren2, c
      let arg0_ctxt = decl2::arg0_ctxt in
      (sigma, (param_ctxt, arg_ctxt, arg0_ctxt), ren1, ren2, cnt)
 
+
+(** This function declares all the observational equality axioms that correspond to the
+    arguments of the constructor `ctor`
+    TODO: document return type *)
+
 let declare_ctor_obs_eqs ?loc ~poly env sigma ind univ ctor =
   (* preparing the context of hypotheses for the axioms *)
   let ctxt = ind.idi_indx @ ind.idi_params in
@@ -587,6 +592,7 @@ let declare_ctor_obs_eqs ?loc ~poly env sigma ind univ ctor =
   let new_ctxt = Context.Rel.fold_outside (declare_ctorarg_obs_eq ~poly env univ eq_name) args
     ~init:(sigma, (hyp_ctxt, Context.Rel.empty, Context.Rel.empty), ren1, ren2, 0) in
   new_ctxt
+
 
 let declare_ctor_cast_rule ?loc ~poly env uinst state ind univ (ctor, ctor_constr) =
   let sigma, (param_ctxt, arg_ctxt, arg0_ctxt), ren1, ren2, _ = state in
@@ -710,6 +716,17 @@ let get_ctor_info instanciated_ind ctor ctor_name =
   ; csi_base_name = ctor_name }
 
 
+let build_forded_constructor ctor (name, univs) =
+  let ctor_constr = match fst univs with
+    | UState.Polymorphic_entry uc -> Constr.mkConstU (name, UVars.UContext.instance uc)
+    | UState.Monomorphic_entry pe -> Constr.mkConstU (name, UVars.Instance.empty)
+  in
+  let args = (Context.Rel.instance_list mkRel 0 ctor.csi_args) in
+  let nargs = List.length ctor.csi_args in
+  let params = List.map (lift nargs) (Context.Rel.instance_list mkRel 0 ctor.csi_params) in
+  let res = Term.applist (ctor_constr, params @ args) in
+  res
+
 let declare_one_inductive_obs_eqs ?loc ind =
   let env = Global.env () in
   let sigma = Evd.from_env env in
@@ -736,16 +753,16 @@ let declare_one_inductive_obs_eqs ?loc ind =
          (* do the fording translation *)
          let forded_ctor = get_forded_ctor env sigma instanciated_ind ctors.(i) ctors_names.(i) in
          let forded_ctor_cst = declare_forded_ctor ?loc ~poly env sigma forded_ctor in
-         (* let forded_ctor_constr = unbound in *)
+         let env = Global.env () in (* do I really need to fetch a new env after a declaration???? *)
+         let forded_ctor_constr = build_forded_constructor forded_ctor forded_ctor_cst in
          (* declaring the observational axioms + rewrite rule *)
          let sigma_plus, univ = univ_for_inductive env sigma instanciated_ind.idi_sort in
          let state = declare_ctor_obs_eqs ?loc ~poly env sigma_plus instanciated_ind univ forded_ctor in
-         (* declare_ctor_cast_rule ?loc ~poly env u state instanciated_ind univ (forded_ctor, forded_ctor_constr) ; *)
+         declare_ctor_cast_rule ?loc ~poly env u state instanciated_ind univ (forded_ctor, forded_ctor_constr) ;
          (* rewrite rules between forded and non-forded constructor *)
          (* declare_forded_ctor_cast_rule *)
          (* match and fix for forded contstructor *)
          (* declare_forded_ctor_match_rule *)
-         (* declare_forded_ctor_fix_rule *)
          ()
        else
          let ctor_constr = Inductiveops.build_dependent_constructor ctors.(i) in
@@ -755,7 +772,6 @@ let declare_one_inductive_obs_eqs ?loc ind =
          declare_ctor_cast_rule ?loc ~poly env u state instanciated_ind univ (ctor, ctor_constr)
      done
   | _ -> ()
-
 
 let warn_about_sections () =
   CWarnings.create ~name:"observational-in-section"
