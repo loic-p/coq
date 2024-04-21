@@ -10,7 +10,7 @@
 
 (** Interpreting a rewrite rule from a constr *)
 
-type state = (int * int Evar.Map.t) * (int * int Int.Map.t) * (int * bool list * int Int.Map.t)
+type state = (int * int Evar.Map.t) * (int * int Int.Map.t) * (int * int Int.Map.t)
 
 val safe_pattern_of_constr :
   loc:Loc.t option -> Environ.env -> Evd.evar_map -> Sorts.Quality.t Sorts.QVar.Map.t * Univ.universe_level_subst

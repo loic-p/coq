@@ -12,8 +12,6 @@ open Util
 open Constr
 open Declarations
 
-type state = (int * int Evar.Map.t) * (int * int Int.Map.t) * (int * bool list * int Int.Map.t)
-
 type state = (int * int Evar.Map.t) * (int * int Int.Map.t) * (int * int Int.Map.t)
 
 let rec is_rel_inst k = function
@@ -150,7 +148,7 @@ let rec safe_pattern_of_constr_aux ~loc env evd usubst depth state t = Constr.ki
           let inst = UVars.Instance.(abstract_instance (length u)) in
           mkApp (mkIndU (ci.ci_ind, inst), args)
         in
-        let realdecls = Context.Rel.Declaration.LocalAssum (Context.make_annot Anonymous mip.mind_relevance, self) :: realdecls in
+        let realdecls = Context.Rel.Declaration.LocalAssum (Context.make_annot Names.Anonymous mip.mind_relevance, self) :: realdecls in
         let realdecls =
           Inductive.instantiate_context u paramsubst nas realdecls
         in
@@ -232,17 +230,20 @@ and safe_arg_pattern_of_constr ~loc env evd usubst depth (st, stateq, stateu as 
       let holei, st = update_invtbl ~loc env evd evk st in
       if not @@ is_rel_inst 1 inst then
         CErrors.user_err ?loc
-          Pp.(str "In " ++ Printer.safe_pr_lconstr_env env evd (of_kind (Evar (evk, inst)))
+          Pp.(str "In " ++ Termops.Internal.print_constr_env env evd (EConstr.of_constr (of_kind (Evar (evk, inst))))
             ++ str ", variable "
             ++ Termops.pr_existential_key env evd evk
             ++ str" appears with a non-trivial instantiation.");
       if Evd.evar_hyps evi |> Environ.named_context_of_val |> Context.Named.length <> SList.length inst then
-        CErrors.user_err ?loc Pp.(str "Pattern variable cannot access the whole context: " ++ Printer.safe_pr_lconstr_env env evd t);
+        CErrors.user_err ?loc Pp.(str "Pattern variable cannot access the whole context: "
+                                  ++ Termops.Internal.print_constr_env env evd (EConstr.of_constr t));
       (st, stateq, stateu), EHole holei
-    | Evar_kinds.NamedHole _ -> CErrors.user_err ?loc Pp.(str "Named holes are not supported, you must use regular evars: " ++ Printer.safe_pr_lconstr_env env evd t)
+    | Evar_kinds.NamedHole _ -> CErrors.user_err ?loc Pp.(str "Named holes are not supported, you must use regular evars: "
+                                                          ++ Termops.Internal.print_constr_env env evd (EConstr.of_constr t))
     | _ ->
       if Option.is_empty @@ Evd.evar_ident evk evd then state, EHoleIgnored else
-        CErrors.user_err ?loc Pp.(str "Named evar in unsupported context: " ++ Printer.safe_pr_lconstr_env env evd t)
+        CErrors.user_err ?loc Pp.(str "Named evar in unsupported context: "
+                                  ++ Termops.Internal.print_constr_env env evd (EConstr.of_constr t))
     )
   | _ ->
     test_may_eta ~loc env evd (EConstr.of_constr t);

@@ -9,12 +9,7 @@
 (************************************************************************)
 
 open Names
-open Constr
 
-(** From an inductive type, generates a list of observational equalities
-    that *)
-
-val duplicate_context : (constr, constr) Context.Rel.pt -> Esubst.lift * (constr, constr) Context.Rel.pt
 
 val declare_inductive_observational_data : ?loc:Loc.t -> (Names.MutInd.t * int) -> unit
 

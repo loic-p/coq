@@ -15,43 +15,29 @@ Definition obseq_trans {A : Type} {a b c : A} (e : a ~ b) (e' : b ~ c) : a ~ c :
   obseq_sind _ b (fun X _ => a ~ X) e c e'.
 Notation "e @@@ f" := (obseq_trans e f) (at level 40, left associativity, only parsing).
 
-(* The equality on the universe is annoying, because it needs a superfluous universe level.
-   The other option is to have a second observational equality exclusively for universes: *)
-Inductive obseqU@{u} (A : Type@{u}) : Type@{u} -> SProp :=
-| obseqU_refl : obseqU A A.
-Arguments obseqU_refl {A} , A.
 (* Type casting *)
 (* cast has two universe parameters because we use obseq instead of obseqU *)
 
-Inductive obseq_prop (A : SProp) : SProp -> SProp :=
-| obseq_prop_refl : obseq_prop A A.
-Arguments obseq_prop_refl {A} , A.
-
-Definition test := obseq_prop@{} (nat ~ nat) (nat ~ nat).
-
-Symbol cast@{u} : forall (A B : Type@{u}), @obseqU@{u} A B -> A -> B.
+Symbol cast@{u} : forall (A B : Type@{u}), @obseq@{u+1} Type@{u} A B -> A -> B.
 Notation "e # a" := (cast _ _ e a) (at level 55, only parsing).
 
 (* SProp casting *)
 (* We do not want to use sort polymorphism for cast, to avoid useless (and potentially looping)
    computations in SProp *)
 
-Definition cast_prop (A B : SProp) (e : obseq_prop A B) (a : A) := obseq_prop_sind A (fun X _ => X) a B e.
+Definition cast_prop (A B : SProp) (e : @obseq@{Set+1} SProp A B) (a : A) := obseq_sind SProp A (fun X _ => X) a B e.
 Notation "e #% a" := (cast_prop _ _ e a) (at level 40, only parsing).
 
 Rewrite Rule cast_refl :=
-| cast ?A ?A _ ?t ==> ?t.
+| cast ?A ?A _ ?t >-> ?t.
 
 (* We can use cast to derive large elimination principles for obseq *)
 
 Definition ap {A B} (f : A -> B) {x y} (e : x ~ y) : f x ~ f y :=
   obseq_sind _ x (fun y _ => f x ~ f y) obseq_refl _ e.
 
-Definition apU {A} (f : A -> Type) {x y} (e : x ~ y) : obseqU (f x) (f y) :=
-  obseq_sind _ x (fun y _ => obseqU (f x) (f y)) obseqU_refl _ e.
-
-Definition apd {A} {a} (P : forall b : A, a ~ b -> Type) (b : A) (e : a ~ b) : obseqU (P a obseq_refl) (P b e) :=
-  obseq_sind _ a (fun b e => obseqU (P a obseq_refl) (P b e)) obseqU_refl b e.
+Definition apd {A} {a} (P : forall b : A, a ~ b -> Type) (b : A) (e : a ~ b) : (P a obseq_refl) ~ (P b e) :=
+  obseq_sind _ a (fun b e => (P a obseq_refl) ~ (P b e)) obseq_refl b e.
 
 Definition obseq_rect@{u v} : forall (A : Type@{u}) (a : A) (P : forall b : A, obseq@{u} a b -> Type@{v}),
     P a obseq_refl@{u} -> forall (b : A) (e : obseq@{u} a b), P b e :=
@@ -68,18 +54,21 @@ Axiom obseq_ind@{u} : forall (A : Type@{u}) (a : A) (P : forall b : A, obseq@{u}
 
 (** Definition of the observational equality on pi's *)
 
-Parameter obseq_forall_1 : forall {A A' B B'}, obseqU (forall (x : A), B x) (forall (x : A'), B' x) -> obseqU A' A.
-Parameter obseq_forall_2 : forall {A A' B B'} (e : obseqU (forall (x : A), B x) (forall (x : A'), B' x)) (x : A'),
-    obseqU (B (obseq_forall_1 e # x)) (B' x).
+Parameter obseq_forall_1@{u v} : forall {A A' : Type@{u}} {B : A -> Type@{v}} {B' : A' -> Type@{v}},
+    @obseq@{max(u+1,v+1)} Type@{max(u,v)} (forall (x : A), B x) (forall (x : A'), B' x) -> @obseq@{u+1} Type@{u} A' A.
+
+Parameter obseq_forall_2@{u v} : forall {A A' : Type@{u}} {B : A -> Type@{v}} {B' : A' -> Type@{v}}
+                                        (e : @obseq@{max(u+1,v+1)} Type@{max(u,v)} (forall (x : A), B x) (forall (x : A'), B' x)),
+  forall (x : A'), @obseq@{v+1} Type@{v} (B (obseq_forall_1@{u v} e # x)) (B' x).
 
 Parameter funext : forall {A B} (f g : forall (x : A), B x), (forall (x : A), f x ~ g x) -> f ~ g.
 
 Rewrite Rule cast_pi :=
-| @{|u+|+} |- cast@{u} (forall (x : ?A), ?B) (forall (x : ?A'), ?B') ?e ?f
-   ==> fun (x : ?A') => cast ?B@{x := cast ?A' ?A (obseq_forall_1@{u u u u u u} ?e) x}
+| @{u?} |- cast@{u} (forall (x : ?A), ?B) (forall (x : ?A'), ?B') ?e ?f
+   >-> fun (x : ?A') => cast ?B@{x := cast ?A' ?A (obseq_forall_1 ?e) x}
                              ?B'@{x := x}
-                             (obseq_forall_2@{u u u u u u u} ?e x)
-                             (?f (cast ?A' ?A (obseq_forall_1@{u u u u u u} ?e) x)).
+                             (obseq_forall_2@{u u} ?e x)
+                             (?f (cast ?A' ?A (obseq_forall_1 ?e) x)).
 
 (** Definition of the observational equality on strict propositions *)
 
@@ -89,28 +78,28 @@ Parameter propext : forall {A B : SProp}, (A -> B) -> (B -> A) -> A ~ B.
 
 Section Basic_Test.
   Variable A B C : Set.
-  Variable obseq_fun1 : obseqU (A -> C) (B -> C).
-  Variable obseq_fun2 : obseqU (C -> A) (C -> B).
+  Variable obseq_fun1 : (A -> C) ~ (B -> C).
+  Variable obseq_fun2 : (C -> A) ~ (C -> B).
   Variable f : A -> C.
   Variable g : C -> A.
 
   (* remark that when the domain/codomain match, one of the casts is eliminated *)
   Eval lazy in (cast (A -> C) (B -> C) (obseq_fun1) f).
   Eval lazy in (cast (C -> A) (C -> B) (obseq_fun2) g).
-  Eval lazy in (cast (A -> C) (A -> C) (obseqU_refl _) f).
+  Eval lazy in (cast (A -> C) (A -> C) obseq_refl f).
 
 End Basic_Test.
 
 Definition ap_ty1 (A : Type) (B : A -> Type)
   (a0 : A) (a1 : A) (ae : a0 ~ a1)
-  : obseqU (B a0) (B a1) :=
-  obseq_sind A a0 (fun x _ => obseqU (B a0) (B x)) obseqU_refl a1 ae.
+  : (B a0) ~ (B a1) :=
+  obseq_sind A a0 (fun x _ => (B a0) ~ (B x)) obseq_refl a1 ae.
 
 Definition ap_ty2 (A : Type) (B : A -> Type) (C : forall (a : A) (b : B a), Type)
   (a0 : A) (a1 : A) (ae : a0 ~ a1)
   (b0 : B a0) (b1 : B a1) (be : cast (B a0) (B a1) (ap_ty1 A B a0 a1 ae) b0 ~ b1)
-  : obseqU (C a0 b0) (C a1 b1) :=
-  obseq_sind A a0 (fun x e => forall (y : B x) (ye : cast (B a0) (B x) (ap_ty1 A B a0 x e) b0 ~ y), obseqU (C a0 b0) (C x y))
+  : (C a0 b0) ~ (C a1 b1) :=
+  obseq_sind A a0 (fun x e => forall (y : B x) (ye : cast (B a0) (B x) (ap_ty1 A B a0 x e) b0 ~ y), (C a0 b0) ~ (C x y))
     (fun y ye => ap_ty1 (B a0) (C a0) b0 y ye)
     a1 ae b1 be.
 
@@ -118,8 +107,8 @@ Definition ap_ty3 (A : Type) (B : A -> Type) (C : forall (a : A) (b : B a), Type
   (a0 : A) (a1 : A) (ae : a0 ~ a1)
   (b0 : B a0) (b1 : B a1) (be : cast (B a0) (B a1) (ap_ty1 A B a0 a1 ae) b0 ~ b1)
   (c0 : C a0 b0) (c1 : C a1 b1) (ce : cast (C a0 b0) (C a1 b1) (ap_ty2 A B C a0 a1 ae b0 b1 be) c0 ~ c1)
-  : obseqU (D a0 b0 c0) (D a1 b1 c1) :=
-  obseq_sind A a0 (fun x e => forall (y : B x) (ye : cast (B a0) (B x) (ap_ty1 A B a0 x e) b0 ~ y) (z : C x y) (ze : cast (C a0 b0) (C x y) (ap_ty2 A B C a0 x e b0 y ye) c0 ~ z), obseqU (D a0 b0 c0) (D x y z))
+  : (D a0 b0 c0) ~ (D a1 b1 c1) :=
+  obseq_sind A a0 (fun x e => forall (y : B x) (ye : cast (B a0) (B x) (ap_ty1 A B a0 x e) b0 ~ y) (z : C x y) (ze : cast (C a0 b0) (C x y) (ap_ty2 A B C a0 x e b0 y ye) c0 ~ z), (D a0 b0 c0) ~ (D x y z))
     (fun y ye z ze => ap_ty2 (B a0) (C a0) (D a0) b0 y ye c0 z ze)
     a1 ae b1 be c1 ce.
 
@@ -128,12 +117,12 @@ Definition ap_ty4 (A : Type) (B : A -> Type) (C : forall (a : A) (b : B a), Type
   (b0 : B a0) (b1 : B a1) (be : cast (B a0) (B a1) (ap_ty1 A B a0 a1 ae) b0 ~ b1)
   (c0 : C a0 b0) (c1 : C a1 b1) (ce : cast (C a0 b0) (C a1 b1) (ap_ty2 A B C a0 a1 ae b0 b1 be) c0 ~ c1)
   (d0 : D a0 b0 c0) (d1 : D a1 b1 c1) (de : cast (D a0 b0 c0) (D a1 b1 c1) (ap_ty3 A B C D a0 a1 ae b0 b1 be c0 c1 ce) d0 ~ d1)
-  : obseqU (E a0 b0 c0 d0) (E a1 b1 c1 d1) :=
-  obseq_sind A a0 (fun x e => forall (y : B x) (ye : cast (B a0) (B x) (ap_ty1 A B a0 x e) b0 ~ y) (z : C x y) (ze : cast (C a0 b0) (C x y) (ap_ty2 A B C a0 x e b0 y ye) c0 ~ z) (t : D x y z) (te : cast (D a0 b0 c0) (D x y z) (ap_ty3 A B C D a0 x e b0 y ye c0 z ze) d0 ~ t), obseqU (E a0 b0 c0 d0) (E x y z t))
+  : (E a0 b0 c0 d0) ~ (E a1 b1 c1 d1) :=
+  obseq_sind A a0 (fun x e => forall (y : B x) (ye : cast (B a0) (B x) (ap_ty1 A B a0 x e) b0 ~ y) (z : C x y) (ze : cast (C a0 b0) (C x y) (ap_ty2 A B C a0 x e b0 y ye) c0 ~ z) (t : D x y z) (te : cast (D a0 b0 c0) (D x y z) (ap_ty3 A B C D a0 x e b0 y ye c0 z ze) d0 ~ t), (E a0 b0 c0 d0) ~ (E x y z t))
     (fun y ye z ze t te => ap_ty3 (B a0) (C a0) (D a0) (E a0) b0 y ye c0 z ze d0 t te)
     a1 ae b1 be c1 ce d1 de.
 
-(* Set Printing Universes. *)
+Set Printing Universes.
 
 About ap_ty1.
 About ap_ty2.
@@ -178,7 +167,7 @@ Inductive IV (a0 : A0) (a1 : A1 a0) (x0 : X0 a0 a1) (x1 : X1 a0 a1 x0) : Type :=
 
 Inductive III (a0 : A0) (a1 : A1 a0) (x0 : X0 a0 a1) (x1 : X1 a0 a1 x0) : Type :=
 | cIII : forall (b0 : B0 a0 a1) (b1 : B1 a0 a1 b0) (b2 : B2 a0 a1 b0 b1) (e : @obseq (X0 a0 a1) x0 (t0 a0 a1 b0 b1 b2)),
-    let h : obseqU (X1 a0 a1 x0) (X1 a0 a1 (t0 a0 a1 b0 b1 b2)) :=
+    let h : (X1 a0 a1 x0) ~ (X1 a0 a1 (t0 a0 a1 b0 b1 b2)) :=
       ap_ty1 (X0 a0 a1) (fun x2 : X0 a0 a1 => X1 a0 a1 x2) x0
         (t0 a0 a1 b0 b1 b2) e in
     forall
