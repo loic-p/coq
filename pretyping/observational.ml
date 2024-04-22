@@ -548,7 +548,7 @@ let declare_forded_ctor ?loc ~poly env sigma ctor =
 
 (** Building a rewrite rule *)
 
-let make_rewrite_rule ?loc env sigma uinst lhs rhs =
+let make_rewrite_rule ?loc env sigma uinst lhs rhs eqs =
   (* at this point there are two kinds of universes:
      - the ones that come from the instance of the inductive (if polymorphic), call them v1 v2...
      - the ones that we added, u1 and u2
@@ -558,10 +558,7 @@ let make_rewrite_rule ?loc env sigma uinst lhs rhs =
          ==> ctor@{v1 v2...} ?A0 (cast@{u1 u2} B@{A := ?A} B@{A := ?A0} (ax ?e) ?t)
 
      Note that some levels appear several times, which should imply level equations--otherwise,
-     universe polymorphic inductives will break SR
-  *)
-  (* let cast_uinst = UVars.Instance.of_array ([| |], [| u1 |]) in *)
-  (* let uinst = UVars.Instance.append uinst cast_uinst in *)
+     universe polymorphic inductives will break SR *)
   let usubst = UVars.make_instance_subst uinst in
   let ((nvars', invtbl), (nvarqs', invtblq), (nvarus', invtblu)), (head_pat, elims) =
     Rewrite_rule.safe_pattern_of_constr ~loc:loc env sigma usubst 0
@@ -573,20 +570,24 @@ let make_rewrite_rule ?loc env sigma uinst lhs rhs =
     Evar.Map.add evk (n, vars) invtbl
   in
   let invtbl = Evar.Map.fold (update_invtbl sigma) invtbl Evar.Map.empty in
-  let rhs =
-    let rhs' = evar_subst invtbl sigma 0 rhs in
-    match EConstr.to_constr_opt sigma rhs' with
-    | Some rhs -> rhs
-    | None ->
-       CErrors.user_err ?loc Pp.(str "The right side of the rewrite rule contains unresolved evars: "
-                                 ++ Constr.debug_print (EConstr.Unsafe.to_constr rhs))
+  let update_rhs rhs =
+    let rhs =
+      let rhs' = evar_subst invtbl sigma 0 rhs in
+      match EConstr.to_constr_opt sigma rhs' with
+      | Some rhs -> rhs
+      | None ->
+         CErrors.user_err ?loc Pp.(str "The right side of the rewrite rule contains unresolved evars: "
+                                   ++ Constr.debug_print (EConstr.Unsafe.to_constr rhs))
+    in
+    Vars.subst_univs_level_constr usubst rhs
   in
-  let rhs = Vars.subst_univs_level_constr usubst rhs in
+  let rhs = update_rhs rhs in
+  let equalities = List.map (fun (l, r) -> (update_rhs l, update_rhs r)) eqs in
   let head_symbol, head_umask = match head_pat with PHSymbol (symb, mask) -> symb, mask | _ ->
     CErrors.user_err ?loc
     Pp.(str "Cast is not recognised as a head-pattern.")
   in
-  head_symbol, { nvars = (nvars' - 1, nvarqs', nvarus'); lhs_pat = head_umask, elims; rhs; equalities = [] }
+  head_symbol, { nvars = (nvars' - 1, nvarqs', nvarus'); lhs_pat = head_umask, elims; rhs; equalities }
 
 
 (** This function declares a new observational equality axiom, and updates the state
@@ -742,7 +743,7 @@ let declare_ctor_cast_rule ?loc ~poly env uinst state ind univ (ctor, ctor_const
   Feedback.msg_debug (str "The right side has type "
                       ++ Termops.Internal.print_constr_env env sigma ty_right) ;
 
-  let rew = make_rewrite_rule ?loc env sigma uinst (EConstr.Unsafe.to_constr rew_left) rew_right in
+  let rew = make_rewrite_rule ?loc env sigma uinst (EConstr.Unsafe.to_constr rew_left) rew_right [] in
   Global.add_rewrite_rules id { rewrules_rules = [rew] }
 
 
@@ -804,7 +805,7 @@ let declare_normal_to_forded ?loc ~poly env uinst state ind univ (normal_ctor, n
   Feedback.msg_debug (str "The right side has type "
                       ++ Termops.Internal.print_constr_env env sigma ty_right) ;
 
-  let rew = make_rewrite_rule ?loc env sigma uinst (EConstr.Unsafe.to_constr rew_left) rew_right in
+  let rew = make_rewrite_rule ?loc env sigma uinst (EConstr.Unsafe.to_constr rew_left) rew_right [] in
   Global.add_rewrite_rules id { rewrules_rules = [rew] }
 
 
@@ -812,17 +813,46 @@ let declare_normal_to_forded ?loc ~poly env uinst state ind univ (normal_ctor, n
    - normal_constr is defined in context `params ; indx ; args`
    - forded_constr is defined in context `params ; indx ; args ; forded_args` *)
 
-let declare_forded_to_normal ?loc ~poly env uinst ind univ (normal_ctor, normal_constr) (forded_ctor, forded_constr) =
+let declare_forded_to_normal ?loc ~poly env sigma uinst ind univ (normal_ctor, normal_constr) (forded_ctor, forded_constr) =
+  let full_arg_ctxt = forded_ctor.csi_args in  (* defined in `params ; indx` *)
   let size_normal = List.length normal_ctor.cs_args in
-  let size_total = List.length arg_ctxt in
+  let size_total = List.length full_arg_ctxt in
   let size_forded = size_total - size_normal in
   let param_ctxt = ind.idi_params in
   let indx_ctxt = ind.idi_indx in  (* defined in `params` *)
-  let full_arg_ctxt = forded_ctor.csi_args in  (* defined in `params ; indx` *)
-  let forded_arg_ctxt, normal_arg_ctxt = separate size_forded full_arg_ctxt in
 
   let normal_constr = EConstr.Vars.lift size_forded normal_constr in
-  ()
+  let expected_inst = Array.to_list (normal_ctor.cs_concl_realargs) in (* defined in params ; indx ; args *)
+  let expected_inst = List.map (EConstr.Vars.lift size_forded) expected_inst in
+  let actual_inst = Context.Rel.instance_list EConstr.mkRel size_total indx_ctxt in
+  let equations = List.combine expected_inst actual_inst in
+
+  (* We build the evar instance of the context. *)
+  let sigma, esubst = evar_ctxt false env sigma (full_arg_ctxt @ indx_ctxt @ param_ctxt) in
+
+  let rew_left = EConstr.Vars.substl esubst forded_constr in
+  let rew_right = EConstr.Vars.substl esubst normal_constr in
+  let rew_equations = List.map (fun (l, r) -> EConstr.(Vars.substl esubst l, Vars.substl esubst r)) equations in
+  let id = Names.Id.of_string ("rewrite_" ^ Names.Id.to_string forded_ctor.csi_name ^ "_refl") in
+
+  (* optional debug *)
+  let debug_str = (strbrk "We are trying to declare the rewrite rule "
+                   ++ Termops.Internal.print_constr_env env sigma rew_left
+                   ++ fnl ()
+                   ++ str " ==> "
+                   ++ Termops.Internal.print_constr_env env sigma rew_right
+                   ++ fnl ()
+                   ++ str "With equations ") in
+  let debug_str = List.fold_left
+      (fun s (l, r) -> s ++ (Termops.Internal.print_constr_env env sigma l)
+                       ++ str " = "
+                       ++ (Termops.Internal.print_constr_env env sigma r)
+                       ++ fnl ())
+      debug_str rew_equations in
+  Feedback.msg_debug debug_str ;
+
+  let rew = make_rewrite_rule ?loc env sigma uinst (EConstr.Unsafe.to_constr rew_left) rew_right rew_equations in
+  Global.add_rewrite_rules id { rewrules_rules = [rew] }
 
 
 (** Grabs the universes from ctxt after pushing local_ctxt in the environment *)
@@ -974,7 +1004,7 @@ let declare_one_inductive_obs_eqs ?loc ind =
          let normal_ctor_constr = Inductiveops.build_dependent_constructor ctors.(i) in
          declare_normal_to_forded ?loc ~poly env u state instantiated_ind univ
            (ctors.(i), normal_ctor_constr) (forded_ctor, forded_ctor_constr) ;
-         declare_forded_to_normal ?loc ~poly env u state instantiated_ind univ
+         declare_forded_to_normal ?loc ~poly env sigma u instantiated_ind univ
            (ctors.(i), normal_ctor_constr) (forded_ctor, forded_ctor_constr) ;
          (* match and fix for forded contstructor *)
          (* declare_forded_ctor_match_rule *)

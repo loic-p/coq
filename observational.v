@@ -92,35 +92,52 @@ End Basic_Test.
 
 Definition ap_ty1 (A : Type) (B : A -> Type)
   (a0 : A) (a1 : A) (ae : a0 ~ a1)
-  : (B a0) ~ (B a1) :=
-  obseq_sind A a0 (fun x _ => (B a0) ~ (B x)) obseq_refl a1 ae.
+  : (B a0) ~ (B a1).
+Proof.
+  exact (obseq_sind A a0 (fun x _ => (B a0) ~ (B x)) obseq_refl a1 ae).
+Qed.
 
 Definition ap_ty2 (A : Type) (B : A -> Type) (C : forall (a : A) (b : B a), Type)
   (a0 : A) (a1 : A) (ae : a0 ~ a1)
   (b0 : B a0) (b1 : B a1) (be : cast (B a0) (B a1) (ap_ty1 A B a0 a1 ae) b0 ~ b1)
-  : (C a0 b0) ~ (C a1 b1) :=
-  obseq_sind A a0 (fun x e => forall (y : B x) (ye : cast (B a0) (B x) (ap_ty1 A B a0 x e) b0 ~ y), (C a0 b0) ~ (C x y))
-    (fun y ye => ap_ty1 (B a0) (C a0) b0 y ye)
-    a1 ae b1 be.
+  : (C a0 b0) ~ (C a1 b1).
+Proof.
+  exact (obseq_sind A a0
+           (fun x e => forall (y : B x) (ye : cast (B a0) (B x) (ap_ty1 A B a0 x e) b0 ~ y)
+              , (C a0 b0) ~ (C x y))
+           (fun y ye => ap_ty1 (B a0) (C a0) b0 y ye)
+           a1 ae b1 be).
+Qed.
 
 Definition ap_ty3 (A : Type) (B : A -> Type) (C : forall (a : A) (b : B a), Type) (D : forall (a : A) (b : B a) (c : C a b), Type)
   (a0 : A) (a1 : A) (ae : a0 ~ a1)
   (b0 : B a0) (b1 : B a1) (be : cast (B a0) (B a1) (ap_ty1 A B a0 a1 ae) b0 ~ b1)
   (c0 : C a0 b0) (c1 : C a1 b1) (ce : cast (C a0 b0) (C a1 b1) (ap_ty2 A B C a0 a1 ae b0 b1 be) c0 ~ c1)
-  : (D a0 b0 c0) ~ (D a1 b1 c1) :=
-  obseq_sind A a0 (fun x e => forall (y : B x) (ye : cast (B a0) (B x) (ap_ty1 A B a0 x e) b0 ~ y) (z : C x y) (ze : cast (C a0 b0) (C x y) (ap_ty2 A B C a0 x e b0 y ye) c0 ~ z), (D a0 b0 c0) ~ (D x y z))
-    (fun y ye z ze => ap_ty2 (B a0) (C a0) (D a0) b0 y ye c0 z ze)
-    a1 ae b1 be c1 ce.
+  : (D a0 b0 c0) ~ (D a1 b1 c1).
+Proof.
+  exact (obseq_sind A a0
+           (fun x e => forall (y : B x) (ye : cast (B a0) (B x) (ap_ty1 A B a0 x e) b0 ~ y)
+                              (z : C x y) (ze : cast (C a0 b0) (C x y) (ap_ty2 A B C a0 x e b0 y ye) c0 ~ z)
+              , (D a0 b0 c0) ~ (D x y z))
+           (fun y ye z ze => ap_ty2 (B a0) (C a0) (D a0) b0 y ye c0 z ze)
+           a1 ae b1 be c1 ce).
+Qed.
 
 Definition ap_ty4 (A : Type) (B : A -> Type) (C : forall (a : A) (b : B a), Type) (D : forall (a : A) (b : B a) (c : C a b), Type) (E : forall (a : A) (b : B a) (c : C a b) (d : D a b c), Type)
   (a0 : A) (a1 : A) (ae : a0 ~ a1)
   (b0 : B a0) (b1 : B a1) (be : cast (B a0) (B a1) (ap_ty1 A B a0 a1 ae) b0 ~ b1)
   (c0 : C a0 b0) (c1 : C a1 b1) (ce : cast (C a0 b0) (C a1 b1) (ap_ty2 A B C a0 a1 ae b0 b1 be) c0 ~ c1)
   (d0 : D a0 b0 c0) (d1 : D a1 b1 c1) (de : cast (D a0 b0 c0) (D a1 b1 c1) (ap_ty3 A B C D a0 a1 ae b0 b1 be c0 c1 ce) d0 ~ d1)
-  : (E a0 b0 c0 d0) ~ (E a1 b1 c1 d1) :=
-  obseq_sind A a0 (fun x e => forall (y : B x) (ye : cast (B a0) (B x) (ap_ty1 A B a0 x e) b0 ~ y) (z : C x y) (ze : cast (C a0 b0) (C x y) (ap_ty2 A B C a0 x e b0 y ye) c0 ~ z) (t : D x y z) (te : cast (D a0 b0 c0) (D x y z) (ap_ty3 A B C D a0 x e b0 y ye c0 z ze) d0 ~ t), (E a0 b0 c0 d0) ~ (E x y z t))
-    (fun y ye z ze t te => ap_ty3 (B a0) (C a0) (D a0) (E a0) b0 y ye c0 z ze d0 t te)
-    a1 ae b1 be c1 ce d1 de.
+  : (E a0 b0 c0 d0) ~ (E a1 b1 c1 d1).
+Proof.
+  exact (obseq_sind A a0
+           (fun x e => forall (y : B x) (ye : cast (B a0) (B x) (ap_ty1 A B a0 x e) b0 ~ y)
+                              (z : C x y) (ze : cast (C a0 b0) (C x y) (ap_ty2 A B C a0 x e b0 y ye) c0 ~ z)
+                              (t : D x y z) (te : cast (D a0 b0 c0) (D x y z) (ap_ty3 A B C D a0 x e b0 y ye c0 z ze) d0 ~ t)
+              , (E a0 b0 c0 d0) ~ (E x y z t))
+           (fun y ye z ze t te => ap_ty3 (B a0) (C a0) (D a0) (E a0) b0 y ye c0 z ze d0 t te)
+           a1 ae b1 be c1 ce d1 de).
+Qed.
 
 (* Set Printing Universes. *)
 
@@ -185,11 +202,11 @@ Inductive vect (A : Type) : nat -> Type :=
 | vnil : vect A 0
 | vcons : forall (a : A) (n : nat) (v : vect A n), vect A (S n).
 
-Parameter grille pain : Type.
-Parameter toast : vect grille 0 ~ vect pain 1.
-Parameter uhh : vect grille 0 ~ vect grille 0.
+Monomorphic Universe u.
+Parameter grille pain : Type@{u}.
+Parameter toast : vect grille 1 ~ vect pain 0.
 Parameter yea : 1 ~ 0.
-Eval lazy in (cast (vect grille 0) (vect pain 1) toast (vnil_cast grille 0 obseq_refl)).
+Eval cbn in (cast (vect grille 1) (vect pain 0) toast (vnil_cast grille 1 yea)).
 
 Definition test : cast (vect grille 0) (vect pain 1) toast (vnil grille) = vnil_cast pain 1 yea := eq_refl.
 
