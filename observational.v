@@ -15,6 +15,9 @@ Definition obseq_trans {A : Type} {a b c : A} (e : a ~ b) (e' : b ~ c) : a ~ c :
   obseq_sind _ b (fun X _ => a ~ X) e c e'.
 Notation "e @@@ f" := (obseq_trans e f) (at level 40, left associativity, only parsing).
 
+Definition obseq_sym {A : Type} {a b : A} (e : a ~ b) : b ~ a :=
+  obseq_sind _ a (fun X _ => X ~ a) obseq_refl b e.
+
 (* Type casting *)
 (* cast has two universe parameters because we use obseq instead of obseqU *)
 
@@ -139,6 +142,27 @@ Proof.
            a1 ae b1 be c1 ce d1 de).
 Qed.
 
+Definition ap_ty5 (A : Type) (B : A -> Type) (C : forall (a : A) (b : B a), Type) (D : forall (a : A) (b : B a) (c : C a b), Type)
+  (E : forall (a : A) (b : B a) (c : C a b) (d : D a b c), Type)
+  (F : forall (a : A) (b : B a) (c : C a b) (d : D a b c) (e : E a b c d), Type)
+  (a0 : A) (a1 : A) (ae : a0 ~ a1)
+  (b0 : B a0) (b1 : B a1) (be : cast (B a0) (B a1) (ap_ty1 A B a0 a1 ae) b0 ~ b1)
+  (c0 : C a0 b0) (c1 : C a1 b1) (ce : cast (C a0 b0) (C a1 b1) (ap_ty2 A B C a0 a1 ae b0 b1 be) c0 ~ c1)
+  (d0 : D a0 b0 c0) (d1 : D a1 b1 c1) (de : cast (D a0 b0 c0) (D a1 b1 c1) (ap_ty3 A B C D a0 a1 ae b0 b1 be c0 c1 ce) d0 ~ d1)
+  (e0 : E a0 b0 c0 d0) (e1 : E a1 b1 c1 d1) (ee : cast (E a0 b0 c0 d0) (E a1 b1 c1 d1) (ap_ty4 A B C D E a0 a1 ae b0 b1 be c0 c1 ce d0 d1 de) e0 ~ e1)
+  : (F a0 b0 c0 d0 e0) ~ (F a1 b1 c1 d1 e1).
+Proof.
+  exact (obseq_sind A a0
+           (fun x e => forall (y : B x) (ye : cast (B a0) (B x) (ap_ty1 A B a0 x e) b0 ~ y)
+                              (z : C x y) (ze : cast (C a0 b0) (C x y) (ap_ty2 A B C a0 x e b0 y ye) c0 ~ z)
+                              (t : D x y z) (te : cast (D a0 b0 c0) (D x y z) (ap_ty3 A B C D a0 x e b0 y ye c0 z ze) d0 ~ t)
+                              (u : E x y z t) (ue : cast (E a0 b0 c0 d0) (E x y z t) (ap_ty4 A B C D E a0 x e b0 y ye c0 z ze d0 t te) e0 ~ u)
+              , (F a0 b0 c0 d0 e0) ~ (F x y z t u))
+           (fun y ye z ze t te u ue => ap_ty4 (B a0) (C a0) (D a0) (E a0) (F a0) b0 y ye c0 z ze d0 t te e0 u ue)
+           a1 ae b1 be c1 ce d1 de e1 ee).
+Qed.
+
+
 (* Set Printing Universes. *)
 
 About ap_ty1.
@@ -201,6 +225,32 @@ Inductive I (a0 : A0) (a1 : A1 a0) : forall (x0 : X0 a0 a1) (x1 : X1 a0 a1 x0) (
 Inductive vect (A : Type) : nat -> Type :=
 | vnil : vect A 0
 | vcons : forall (a : A) (n : nat) (v : vect A n), vect A (S n).
+
+Rewrite Rule match_vnil :=
+| @{u v?} |- match vnil_cast@{u} ?A ?n ?e as v in (vect _ n) return@{v} ?P with
+           | vnil _ => ?t
+           | vcons _ a m tl => ?u
+           end
+             >->
+             cast@{v} (?P@{n := 0 ; v := vnil ?A}) (?P@{n := ?n ; v := vnil_cast ?A ?n ?e})
+             (obseq_sym (ap_ty2 nat (vect ?A) (fun n v => ?P) ?n 0 ?e (vnil_cast ?A ?n ?e) (vnil ?A) obseq_refl)) ?t.
+
+Rewrite Rule match_vcons :=
+| @{u v?} |- match vcons_cast@{u} ?A ?n ?a ?m ?tl ?e as v in (vect _ n) return@{v} ?P with
+           | vnil _ => ?t
+           | vcons _ a0 m0 tl0 => ?u
+           end
+             >->
+             cast@{v} (?P@{n := S ?m ; v := vcons ?A ?a ?m ?tl}) (?P@{n := ?n ; v := vcons_cast@{u} ?A ?n ?a ?m ?tl ?e})
+             (obseq_sym (ap_ty2 nat (vect ?A) (fun n v => ?P) ?n (S ?m) ?e (vcons_cast ?A ?n ?a ?m ?tl ?e) (vcons ?A ?a ?m ?tl) obseq_refl)) ?u@{a0 := ?a ; m0 := ?m ; tl0 := ?tl}.
+
+(* in other words we need
+   params ; indx ; args ; forded_args
+
+   we instantiate the forded constructor
+   we instantiate the normal constructor
+   we are also going to need expected_inst
+   i suppose there is a bit of work around the evar instantiation *)
 
 Monomorphic Universe u.
 Parameter grille pain : Type@{u}.
