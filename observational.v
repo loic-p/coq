@@ -122,7 +122,7 @@ Definition ap_ty4 (A : Type) (B : A -> Type) (C : forall (a : A) (b : B a), Type
     (fun y ye z ze t te => ap_ty3 (B a0) (C a0) (D a0) (E a0) b0 y ye c0 z ze d0 t te)
     a1 ae b1 be c1 ce d1 de.
 
-Set Printing Universes.
+(* Set Printing Universes. *)
 
 About ap_ty1.
 About ap_ty2.
@@ -130,7 +130,7 @@ About ap_ty3.
 About ap_ty4.
 
 (** Inductive types *)
-Unset Universe Polymorphism.
+Set Universe Polymorphism.
 Set Observational Inductives.
 
 
@@ -178,9 +178,25 @@ Inductive III (a0 : A0) (a1 : A1 a0) (x0 : X0 a0 a1) (x1 : X1 a0 a1 x0) : Type :
 Inductive II (a0 : A0) (a1 : A1 a0) : forall (x0 : X0 a0 a1) (x1 : X1 a0 a1 x0), Type :=
 | cII : forall (b0 : B0 a0 a1) (b1 : B1 a0 a1 b0) (b2 : B2 a0 a1 b0 b1), II a0 a1 (t0 a0 a1 b0 b1 b2) (t1 a0 a1 b0 b1 b2).
 
+Inductive I (a0 : A0) (a1 : A1 a0) : forall (x0 : X0 a0 a1) (x1 : X1 a0 a1 x0) (x2 : X2 a0 a1 x0 x1) (x3 : X3 a0 a1 x0 x1 x2), Type :=
+| c0 : forall (b0 : B0 a0 a1) (b1 : B1 a0 a1 b0) (b2 : B2 a0 a1 b0 b1), I a0 a1 (t0 a0 a1 b0 b1 b2) (t1 a0 a1 b0 b1 b2) (t2 a0 a1 b0 b1 b2) (t3 a0 a1 b0 b1 b2).
+
 Inductive vect (A : Type) : nat -> Type :=
 | vnil : vect A 0
 | vcons : forall (a : A) (n : nat) (v : vect A n), vect A (S n).
+
+Rewrite Rule plz :=
+| @{u?} |- cast (vect@{u} _ 0) (vect@{u} ?T0 ?n0) ?o (vnil ?T)
+ >-> let e : @obseq nat ?n0 O := cast_prop (@obseq nat 0 O) (@obseq nat ?n0 O) (obseq_vnil_0 ?T ?T0 0 ?n0 ?o) (@obseq_refl nat O) in
+     vnil_cast ?T0 ?n0 e.
+
+Parameter grille pain : Type.
+Parameter toast : vect grille 0 ~ vect pain 1.
+Parameter uhh : vect grille 0 ~ vect grille 0.
+Parameter yea : 1 ~ 0.
+Eval lazy in (cast (vect grille 0) (vect pain 1) toast (vnil_cast grille 0 obseq_refl)).
+
+Definition test : cast (vect grille 0) (vect pain 1) toast (vnil grille) = vnil_cast pain 1 yea := eq_refl.
 
 (* Print II_rect. *)
 (* About cII_cast. *)

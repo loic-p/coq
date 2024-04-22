@@ -64,7 +64,7 @@ type ind_ty_info = {
     idi_indx : EConstr.rel_context;
     idi_indx_univs : (Univ.Universe.t * EConstr.ESorts.t) list;
     idi_ind_type : Inductiveops.inductive_type;
-    idi_ind_constr : EConstr.t;
+    idi_ind_constr : EConstr.t; (* in context params ; indx *)
     idi_sort : EConstr.ESorts.t ;
   }
 
@@ -148,6 +148,19 @@ let rec fold_right4 f l1 l2 l3 l4 accu =
   | (a1::l1, a2::l2, a3::l3, a4::l4) -> f a1 a2 a3 a4 (fold_right4 f l1 l2 l3 l4 accu)
   | (_, _, _, _) -> invalid_arg "fold_right4"
 
+let rec map3 f l1 l2 l3 =
+  match (l1, l2, l3) with
+    ([], [], []) -> []
+  | (a1::l1, a2::l2, a3::l3) -> let r = f a1 a2 a3 in r :: map3 f l1 l2 l3
+  | (_, _, _) -> invalid_arg "map3"
+
+let rec separate n l =
+  if n > 0 then
+    match l with
+    | [] -> [], []
+    | hd::tl -> let l1, l2 = separate (n-1) tl in hd::l1, l2
+  else
+    [], l
 
 
 (** Duplicate all the entries in a context, and return a substitution from the duplicated context *)
@@ -190,6 +203,40 @@ let evar_ctxt ignored env sigma ctx =
     | [] -> sigma, subst
   in
   reln sigma [] ctx
+
+
+(* let complex_instantiate mk ctx = *)
+(*   let rec aux = function *)
+(*     | Context.Rel.Declaration.LocalAssum (annot, ty) :: hyps -> *)
+(*        let n, subst = aux hyps in *)
+(*        let ty = EConstr.Vars.substl subst ty in *)
+(*        let tm = mk n ty in *)
+(*        n+1, (tm :: subst) *)
+(*     | Context.Rel.Declaration.LocalDef (annot, tm, ty) :: hyps -> *)
+(*        let n, subst = aux hyps in *)
+(*        let tm = EConstr.Vars.substl subst tm in *)
+(*        n, (tm :: subst) *)
+(*     | [] -> 1, [] *)
+(*   in *)
+(*   snd (aux ctx) *)
+
+
+let types_of_instance ctx inst =
+  let rec aux ctx inst =
+    match ctx, inst with
+    | Context.Rel.Declaration.LocalDef (annot, tm, ty) :: hyps , _ ->
+       let subst, tys = aux hyps inst in
+       let tm = EConstr.Vars.substl subst tm in
+       (tm :: subst), tys
+    | Context.Rel.Declaration.LocalAssum (annot, ty) :: hyps , tm :: tl ->
+       let subst, tys = aux hyps tl in
+       let ty = EConstr.Vars.substl subst ty in
+       (tm :: subst), (ty :: tys)
+    | [] , [] ->
+       [], []
+    | _ , _ -> invalid_arg "types_of_instance"
+  in
+  List.rev (snd (aux ctx (List.rev inst)))
 
 
 (** Relocation of evars into de Bruijn indices
@@ -279,7 +326,7 @@ let fetch_observational_data () =
 
 (** Building an observational equality term *)
 
-let make_obseq sigma u ty tm1 tm2 =
+let make_obseq u ty tm1 tm2 =
   match !obseq_constant with
   | None -> user_err Pp.(str "The observational equality does not exist.")
   | Some obseq ->
@@ -287,7 +334,7 @@ let make_obseq sigma u ty tm1 tm2 =
      let obseq_fam = Inductiveops.make_ind_family ((obseq, univs), [ty ; tm1]) in
      Inductiveops.mkAppliedInd (Inductiveops.make_ind_type (obseq_fam, [tm2]))
 
-let make_obseqU ?(is_sprop = false) env sigma u tm1 tm2 =
+let make_obseqU ?(is_sprop = false) u tm1 tm2 =
   let u = if is_sprop then Univ.Universe.type0 else u in
   let unext = if is_sprop then Univ.Universe.type1 else Univ.Universe.super u in
   let ty = EConstr.(mkSort (if is_sprop then ESorts.sprop else (ESorts.make (Sorts.mkType u)))) in
@@ -297,6 +344,14 @@ let make_obseqU ?(is_sprop = false) env sigma u tm1 tm2 =
      let univs = EConstr.EInstance.make (UVars.Instance.of_array ([| |], [| unext |])) in
      let obseq_fam = Inductiveops.make_ind_family ((obseq, univs), [ty; tm1]) in
      Inductiveops.mkAppliedInd (Inductiveops.make_ind_type (obseq_fam, [tm2]))
+
+let make_obseq_refl u ty tm =
+  match !obseq_constant with
+  | None -> user_err Pp.(str "The observational equality does not exist.")
+  | Some obseq ->
+     let univs = EConstr.EInstance.make (UVars.Instance.of_array ([| |], [| u |])) in
+     let ctor = EConstr.mkConstructUi ((obseq, univs), 1) in
+     EConstr.mkApp (ctor, [| ty ; tm |])
 
 (** Building a cast term *)
 
@@ -364,7 +419,7 @@ let telescope_equality env sigma telescope univs inst0 inst1 =
     let ty_x = EConstr.Vars.substl subst_x (Context.Rel.Declaration.get_type ty) in
     let ty_y = EConstr.Vars.substl subst_y (Context.Rel.Declaration.get_type ty) in
     let is_sprop = EConstr.ESorts.is_sprop sigma sort in
-    let ty_ap_ty = make_obseqU ~is_sprop env sigma u ty_x ty_y in
+    let ty_ap_ty = make_obseqU ~is_sprop u ty_x ty_y in
     (* we add it to the context *)
     let annot = Context.make_annot (Names.Name.mk_name (Names.Id.of_string "h")) Sorts.Irrelevant in
     let ctxt = Context.Rel.Declaration.LocalDef (annot, ap_ty, ty_ap_ty) :: ctxt in
@@ -372,7 +427,7 @@ let telescope_equality env sigma telescope univs inst0 inst1 =
     let cast_x = make_cast u (EConstr.Vars.lift 1 ty_x) (EConstr.Vars.lift 1 ty_y)
                    (EConstr.mkRel 1) (EConstr.Vars.lift 1 x) in
     (* finally we build the equality type between cast_x and y and we add it to the context *)
-    let eq_x_y = make_obseq sigma u (EConstr.Vars.lift 1 ty_y) cast_x (EConstr.Vars.lift 1 y) in
+    let eq_x_y = make_obseq u (EConstr.Vars.lift 1 ty_y) cast_x (EConstr.Vars.lift 1 y) in
     let eqannot = Context.make_annot (Names.Name.mk_name (Names.Id.of_string "e")) Sorts.Irrelevant in
     let ctxt = Context.Rel.Declaration.LocalAssum (eqannot, eq_x_y) :: ctxt in
     (* we update all the data to be in the new context for the recursive call *)
@@ -389,7 +444,7 @@ let telescope_equality env sigma telescope univs inst0 inst1 =
   | ty0::telescope, (u0, sort0)::univs, x0::inst0, y0::inst1 ->
      begin
        let telescope, univs, inst0, inst1 = List.rev telescope, List.rev univs, List.rev inst0, List.rev inst1 in
-       let eq0 = make_obseq sigma u0 (Context.Rel.Declaration.get_type ty0) x0 y0 in
+       let eq0 = make_obseq u0 (Context.Rel.Declaration.get_type ty0) x0 y0 in
        (* let ids = Id.Set.of_list (Termops.ids_of_rel_context (rel_context env)) in *)
        let eq0_annot = Context.make_annot (Names.Name.mk_name (Names.Id.of_string "e")) Sorts.Irrelevant in
        let init_ctxt = [ Context.Rel.Declaration.LocalAssum (eq0_annot, eq0) ] in
@@ -428,6 +483,19 @@ let get_forded_ctor env sigma instanciated_ind ctor ctor_name =
   ; csi_base_name = ctor_name }
 
 
+(** Reflexivity for all the forded arguments *)
+
+let forded_reflexive_instance instanciated_ind ctor =
+  let wk = (List.length ctor.cs_args + List.length instanciated_ind.idi_indx) in
+  (* from context `params` to `params ; indx ; args` *)
+  let indx_ctxt = EConstr.Vars.lift_rel_context wk instanciated_ind.idi_indx in
+  let indx_univs = instanciated_ind.idi_indx_univs in
+  let expected_inst = Array.to_list ctor.cs_concl_realargs in (* in context params ; indx ; args *)
+  let index_tys = types_of_instance indx_ctxt expected_inst in
+  (* in context params ; indx ; args *)
+  map3 (fun univ ty tm -> make_obseq_refl (fst univ) ty tm) indx_univs index_tys expected_inst
+
+
 (** This function declares a forded constructor and returns the declared name with the universe entry *)
 
 let declare_forded_ctor ?loc ~poly env sigma ctor =
@@ -455,7 +523,7 @@ let declare_forded_ctor ?loc ~poly env sigma ctor =
 
 (** Building a rewrite rule *)
 
-let make_rewrite_rule ?loc env sigma uinst u1 ty lhs rhs =
+let make_rewrite_rule ?loc env sigma uinst lhs rhs =
   (* at this point there are two kinds of universes:
      - the ones that come from the instance of the inductive (if polymorphic), call them v1 v2...
      - the ones that we added, u1 and u2
@@ -519,7 +587,7 @@ let declare_ctorarg_obs_eq ~poly env u1 name decl (sigma, ctxt, ren1, ren2, cnt)
 
      (* TODO: Instead of using the universe level of the constructor argument type, I lazily reuse
         the levels from the inductive type family. I think that cumulativity guarantees it's okay *)
-     let eq_ty = make_obseqU ~is_sprop env sigma u1 ty1 ty2 in
+     let eq_ty = make_obseqU ~is_sprop u1 ty1 ty2 in
      let axiom = EConstr.it_mkProd_or_LetIn eq_ty full_ctxt in
      let name = Names.Id.of_string (name ^ string_of_int cnt) in
 
@@ -586,7 +654,7 @@ let declare_ctor_obs_eqs ?loc ~poly env sigma ind univ ctor =
   let indty = ind.idi_ind_constr in
   let indty1 = e_exliftn ren indty in
   let indty2 = e_exliftn (Esubst.el_liftn 1 ren) indty in
-  let eq_hyp = make_obseqU env sigma univ indty1 indty2 in
+  let eq_hyp = make_obseqU univ indty1 indty2 in
   let eq_annot = Context.make_annot (Names.Name.mk_name (Names.Id.of_string "e")) Sorts.Irrelevant in
   let hyp_ctxt = (Context.Rel.Declaration.LocalAssum (eq_annot, eq_hyp))::dup_ctxt in
 
@@ -601,25 +669,28 @@ let declare_ctor_obs_eqs ?loc ~poly env sigma ind univ ctor =
 
 
 let declare_ctor_cast_rule ?loc ~poly env uinst state ind univ (ctor, ctor_constr) =
-  let sigma, (param_ctxt, arg_ctxt, arg0_ctxt), ren1, ren2, _ = state in
-  (* param_ctxt: two instances of parameters and indices + the equality between the two instanciated families *)
+  let sigma, (double_param_ctxt, arg_ctxt, arg0_ctxt), ren1, ren2, _ = state in
+  (* double_param_ctxt: two instances of parameters and indices + the equality between the two instanciated families *)
   (* arg_ctxt: an instance for the arguments of the current constructor *)
   (* arg0_ctxt: local definitions for the casted arguments *)
   (* ren1, ren2: term defined in the context of parameters and indices -> term defined in hyp_ctxt *)
   let n_args = List.length arg_ctxt in
 
   let indty = ind.idi_ind_constr in
+  (* from params to double_params ; args *)
   let indty1 = e_exliftn (wkn n_args ren1) indty in
   let indty2 = e_exliftn (wkn n_args ren2) indty in
-  let eq_hyp = EConstr.mkRel (List.length arg_ctxt + 1) in
+  let eq_hyp = EConstr.mkRel (n_args + 1) in
 
+  (* from a term defined in `params ; args` to `double_params ; args` *)
   let inst_ctor_1 = e_exliftn (Esubst.el_liftn n_args ren1) ctor_constr in
+  (* from a term defined in `params ; args` to `double_params ; args ; args0` *)
   let inst_ctor_2 = e_exliftn (Esubst.el_liftn n_args (wkn n_args ren2)) ctor_constr in
 
   (* We build evar instances of the context. esubst is made of MatchingVar's for normal holes,
      esubst_ignored is made of InternalHole's for ignored holes. *)
-  let sigma, esubst = evar_ctxt false env sigma (arg_ctxt @ param_ctxt) in
-  let sigma, esubst_ignored = evar_ctxt true env sigma (arg_ctxt @ param_ctxt) in
+  let sigma, esubst = evar_ctxt false env sigma (arg_ctxt @ double_param_ctxt) in
+  let sigma, esubst_ignored = evar_ctxt true env sigma (arg_ctxt @ double_param_ctxt) in
 
   (* the parameters in indty1 are subsumed by the parameters in inst_ctor_1, so we make them
      InternalHole's to avoid unnecessary equations. TODO: is it fine for indices? *)
@@ -646,8 +717,71 @@ let declare_ctor_cast_rule ?loc ~poly env uinst state ind univ (ctor, ctor_const
   Feedback.msg_debug (str "The right side has type "
                       ++ Termops.Internal.print_constr_env env sigma ty_right) ;
 
-  let rew = make_rewrite_rule ?loc env sigma uinst univ indty2 (EConstr.Unsafe.to_constr rew_left) rew_right in
+  let rew = make_rewrite_rule ?loc env sigma uinst (EConstr.Unsafe.to_constr rew_left) rew_right in
   Global.add_rewrite_rules id { rewrules_rules = [rew] }
+
+
+let declare_normal_to_forded ?loc ~poly env uinst state ind univ (normal_ctor, normal_constr) (forded_ctor, forded_constr) =
+  let sigma, (double_param_ctxt, arg_ctxt, arg0_ctxt), ren1, ren2, _ = state in
+  (* double_param_ctxt: two instances of parameters and indices + the equality between the two instanciated families *)
+  (* arg_ctxt: an instance for the arguments of the current constructor *)
+  (* arg0_ctxt: local definitions for the casted arguments *)
+  (* ren1, ren2: term defined in the context of parameters and indices -> term defined in hyp_ctxt *)
+  let size_normal = List.length normal_ctor.cs_args in
+  let size_total = List.length arg_ctxt in
+  let size_forded = size_total - size_normal in
+  let forded_arg_ctxt, normal_arg_ctxt = separate size_forded arg_ctxt in
+  let reflexive_inst = forded_reflexive_instance ind normal_ctor in
+  let reflexive_inst = List.map (e_exliftn (Esubst.el_liftn size_normal ren1)) reflexive_inst in
+  let reflexive_subst = EConstr.Vars.subst_of_rel_context_instance_list forded_arg_ctxt reflexive_inst in
+
+  let indty = ind.idi_ind_constr in
+  (* from `params ; indx` to `double_params ; double_index ; eq ; normal_args` *)
+  let indty1 = e_exliftn (wkn size_normal ren1) indty in
+  let indty2 = e_exliftn (wkn size_normal ren2) indty in
+  let eq_hyp = EConstr.mkRel (size_normal + 1) in
+
+  (* from `params ; indx ; normal_args` to `double_params ; double_indx ; eq ; normal_args` *)
+  let inst_ctor_1 = e_exliftn (Esubst.el_liftn size_normal ren1) normal_constr in
+  (* from `params ; indx ; normal_args ; forded_args` to
+     `double_params ; double_indx ; eq ; normal_args ; forded_args ; normal_args0 ; forded_args0` *)
+  let inst_ctor_2 = e_exliftn (Esubst.el_liftn size_total (wkn size_total ren2)) forded_constr in
+
+  (* We build evar instances of the context. esubst is made of MatchingVar's for normal holes,
+     esubst_ignored is made of InternalHole's for ignored holes. *)
+  let sigma, esubst = evar_ctxt false env sigma (normal_arg_ctxt @ double_param_ctxt) in
+  let sigma, esubst_ignored = evar_ctxt true env sigma (normal_arg_ctxt @ double_param_ctxt) in
+
+  (* the parameters in indty1 are subsumed by the parameters in inst_ctor_1, so we make them
+     InternalHole's to avoid unnecessary equations. TODO: is it fine for indices? *)
+  (* TODO: i deactivated this but now there is some superfluous equations on parameters.. *)
+  (* let indty1 = EConstr.Vars.substl esubst_ignored indty1 in *)
+  let rew_left = make_cast univ indty1 indty2 eq_hyp inst_ctor_1 in
+  let rew_left = EConstr.Vars.substl esubst rew_left in
+
+  let rew_right = EConstr.it_mkLambda_or_LetIn inst_ctor_2 arg0_ctxt in
+  let rew_right = EConstr.Vars.substl reflexive_subst rew_right in
+  let rew_right = EConstr.Vars.substl esubst rew_right in
+
+  let id = Names.Id.of_string ("rewrite_" ^ Names.Id.to_string forded_ctor.csi_base_name) in
+
+  (* optional debug *)
+  Feedback.msg_debug (strbrk "We are trying to declare the rewrite rule "
+                      ++ Termops.Internal.print_constr_env env sigma rew_left
+                      ++ fnl ()
+                      ++ str " ==> "
+                      ++ Termops.Internal.print_constr_env env sigma rew_right) ;
+
+  let ty_left = Retyping.get_type_of env sigma rew_left in
+  Feedback.msg_debug (str "The left side has type "
+                      ++ Termops.Internal.print_constr_env env sigma ty_left) ;
+  let ty_right = Retyping.get_type_of env sigma rew_right in
+  Feedback.msg_debug (str "The right side has type "
+                      ++ Termops.Internal.print_constr_env env sigma ty_right) ;
+
+  let rew = make_rewrite_rule ?loc env sigma uinst (EConstr.Unsafe.to_constr rew_left) rew_right in
+  Global.add_rewrite_rules id { rewrules_rules = [rew] }
+
 
 
 let get_context_univs env sigma local_ctxt ctxt =
@@ -716,6 +850,7 @@ let get_ctor_info instanciated_ind ctor ctor_name =
   ; csi_base_name = ctor_name }
 
 
+(* in context `params ; indices ; args ; forded args` *)
 let build_forded_constructor ctor (name, univs) =
   let ctor_constr = match fst univs with
     | UState.Polymorphic_entry uc ->
@@ -786,13 +921,16 @@ let declare_one_inductive_obs_eqs ?loc ind =
          let sigma_plus, (univ, _) = univ_for_inductive env sigma instanciated_ind.idi_sort in
          let state = declare_ctor_obs_eqs ?loc ~poly env sigma_plus instanciated_ind univ forded_ctor in
          declare_ctor_cast_rule ?loc ~poly env u state instanciated_ind univ (forded_ctor, forded_ctor_constr) ;
-         (* rewrite rules between forded and non-forded constructor *)
-         (* declare_forded_ctor_cast_rule *)
+         (* relating the normal constructor to the forded constructor with rewrite rules *)
+         let normal_ctor_constr = Inductiveops.build_dependent_constructor ctors.(i) in
+         declare_normal_to_forded ?loc ~poly env u state instanciated_ind univ
+           (ctors.(i), normal_ctor_constr) (forded_ctor, forded_ctor_constr) ;
+         (* declare_forded_to_normal ... *)
          (* match and fix for forded contstructor *)
          (* declare_forded_ctor_match_rule *)
          ()
        else
-         let ctor_constr = Inductiveops.build_dependent_constructor ctors.(i) in
+         let ctor_constr = Inductiveops.build_dependent_constructor ctors.(i) in (* defined in context `params ; args` *)
          let ctor = get_ctor_info instanciated_ind ctors.(i) ctors_names.(i) in
          let sigma_plus, (univ, _) = univ_for_inductive env sigma instanciated_ind.idi_sort in
          let state = declare_ctor_obs_eqs ?loc ~poly env sigma_plus instanciated_ind univ ctor in
