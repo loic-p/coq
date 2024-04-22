@@ -185,11 +185,6 @@ Inductive vect (A : Type) : nat -> Type :=
 | vnil : vect A 0
 | vcons : forall (a : A) (n : nat) (v : vect A n), vect A (S n).
 
-Rewrite Rule plz :=
-| @{u?} |- cast (vect@{u} _ 0) (vect@{u} ?T0 ?n0) ?o (vnil ?T)
- >-> let e : @obseq nat ?n0 O := cast_prop (@obseq nat 0 O) (@obseq nat ?n0 O) (obseq_vnil_0 ?T ?T0 0 ?n0 ?o) (@obseq_refl nat O) in
-     vnil_cast ?T0 ?n0 e.
-
 Parameter grille pain : Type.
 Parameter toast : vect grille 0 ~ vect pain 1.
 Parameter uhh : vect grille 0 ~ vect grille 0.
