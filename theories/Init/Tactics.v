@@ -13,6 +13,9 @@ Require Import Ltac.
 Require Import Logic.
 Require Import Specif.
 
+Set Observational Inductives.
+Set Universe Polymorphism.
+
 (** * Useful tactics *)
 
 (** Ex falso quodlibet : a tactic for proving False instead of the current goal.
@@ -64,7 +67,7 @@ Ltac false_hyp H G :=
 
 (* A case with no loss of information. *)
 
-Ltac case_eq x := generalize (eq_refl x); pattern x at -1; case x.
+Ltac case_eq x := generalize (obseq_refl x); pattern x at -1; case x.
 
 (* use either discriminate or injection on a hypothesis *)
 
@@ -192,16 +195,16 @@ Ltac now_show c := change c.
 
 Set Implicit Arguments.
 
-Lemma decide_left : forall (C:Prop) (decide:{C}+{~C}),
-  C -> forall P:{C}+{~C}->Prop, (forall H:C, P (left _ H)) -> P decide.
+Lemma decide_left : forall (C:SProp) (decide:{C}+{~C}),
+  C -> forall P:{C}+{~C}->SProp, (forall H:C, P (left _ H)) -> P decide.
 Proof.
   intros C decide H P H0; destruct decide.
   - apply H0.
   - contradiction.
 Qed.
 
-Lemma decide_right : forall (C:Prop) (decide:{C}+{~C}),
-  ~C -> forall P:{C}+{~C}->Prop, (forall H:~C, P (right _ H)) -> P decide.
+Lemma decide_right : forall (C:SProp) (decide:{C}+{~C}),
+  ~C -> forall P:{C}+{~C}->SProp, (forall H:~C, P (right _ H)) -> P decide.
 Proof.
   intros C decide H P H0; destruct decide.
   - contradiction.
@@ -260,38 +263,26 @@ Tactic Notation "dependent" "destruction" ident(H) :=
 
 Ltac lookup_inversion_sigma_rect H :=
   lazymatch type of H with
-  | ex_intro _ _ _ = ex_intro _ _ _
-    => uconstr:(eq_ex_rect_ex_intro)
   | exist _ _ _ = exist _ _ _
     => uconstr:(eq_sig_rect_exist)
   | existT _ _ _ = existT _ _ _
     => uconstr:(eq_sigT_rect_existT)
-  | _ = ex_intro _ _ _
-    => uconstr:(eq_ex_rect_ex_intro_r)
   | _ = exist _ _ _
     => uconstr:(eq_sig_rect_exist_r)
   | _ = existT _ _ _
     => uconstr:(eq_sigT_rect_existT_r)
-  | ex_intro _ _ _ = _
-    => uconstr:(eq_ex_rect_ex_intro_l)
   | exist _ _ _ = _
     => uconstr:(eq_sig_rect_exist_l)
   | existT _ _ _ = _
     => uconstr:(eq_sigT_rect_existT_l)
-  | ex_intro2 _ _ _ _ _ = ex_intro2 _ _ _ _ _
-    => uconstr:(eq_ex2_rect_ex_intro2)
   | exist2 _ _ _ _ _ = exist2 _ _ _ _ _
     => uconstr:(eq_sig2_rect_exist2)
   | existT2 _ _ _ _ _ = existT2 _ _ _ _ _
     => uconstr:(eq_sigT2_rect_existT2)
-  | _ = ex_intro2 _ _ _ _ _
-    => uconstr:(eq_ex2_rect_ex_intro2_r)
   | _ = exist2 _ _ _ _ _
     => uconstr:(eq_sig2_rect_exist2_r)
   | _ = existT2 _ _ _ _ _
     => uconstr:(eq_sigT2_rect_existT2_r)
-  | ex_intro2 _ _ _ _ _ = _
-    => uconstr:(eq_ex2_rect_ex_intro2_l)
   | exist2 _ _ _ _ _ = _
     => uconstr:(eq_sig2_rect_exist2_l)
   | existT2 _ _ _ _ _ = _

@@ -14,6 +14,7 @@
     from a well-founded ordering on a given set *)
 
 Set Implicit Arguments.
+Set Universe Polymorphism.
 
 Require Import Notations.
 Require Import Ltac.
@@ -83,12 +84,12 @@ Section Well_founded.
   Fixpoint Fix_F (x:A) (a:Acc x) : P x :=
     F (fun (y:A) (h:R y x) => Fix_F (Acc_inv a h)).
 
-  Scheme Acc_inv_dep := Induction for Acc Sort Prop.
+  Scheme Acc_inv_dep := Induction for Acc Sort SProp.
 
   Lemma Fix_F_eq (x:A) (r:Acc x) :
      F (fun (y:A) (p:R y x) => Fix_F (x:=y) (Acc_inv r p)) = Fix_F (x:=x) r.
   Proof.
-   destruct r using Acc_inv_dep; auto.
+    destruct r using Acc_inv_dep; auto.
   Qed.
 
   Definition Fix (x:A) := Fix_F (Rwf x).

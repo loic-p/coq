@@ -53,14 +53,14 @@ Table of contents:
 
 (** [prop_degeneracy] (also referred to as propositional completeness)
     asserts (up to consistency) that there are only two distinct formulas *)
-Definition prop_degeneracy := forall A:Prop, A = True \/ A = False.
+Definition prop_degeneracy := forall A:SProp, A = True \/ A = False.
 
 (** [prop_extensionality] asserts that equivalent formulas are equal *)
-Definition prop_extensionality := forall A B:Prop, (A <-> B) -> A = B.
+Definition prop_extensionality := forall A B:SProp, (A <-> B) -> A = B.
 
 (** [excluded_middle] asserts that we can reason by case on the truth
     or falsity of any formula *)
-Definition excluded_middle := forall A:Prop, A \/ ~ A.
+Definition excluded_middle := forall A:SProp, A \/ ~ A.
 
 (** We show [prop_degeneracy <-> (prop_extensionality /\ excluded_middle)] *)
 

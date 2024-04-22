@@ -872,7 +872,7 @@ Arguments except [P] _.
 Theorem absurd_set : forall (A:SProp) (C:Set), A -> ~ A -> C.
 Proof.
   intros A C h1 h2.
-  apply SFalse_rec.
+  apply False_rec.
   apply (h2 h1).
 Defined.
 

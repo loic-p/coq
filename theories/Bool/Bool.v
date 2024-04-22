@@ -8,7 +8,8 @@
 (*         *     (see LICENSE file for the text of the license)         *)
 (************************************************************************)
 
-Require Import DecidableClass.
+Require Import Prelude.
+Require Import Coq.Classes.DecidableClass.
 
 (** The type [bool] is defined in the prelude as
 [[
@@ -158,7 +159,7 @@ Proof.
 Qed.
 
 #[global]
-Instance Decidable_eq_bool : forall (x y : bool), Decidable (eq x y) := {
+Instance Decidable_eq_bool : forall (x y : bool), Decidable (x = y) := {
   Decidable_spec := eqb_true_iff x y
 }.
 
@@ -939,7 +940,7 @@ Qed.
     as popularized by the Ssreflect library.    *)
 (************************************************)
 
-Inductive reflect (P : Prop) : bool -> Set :=
+Inductive reflect (P : SProp) : bool -> Set :=
   | ReflectT : P -> reflect P true
   | ReflectF : ~ P -> reflect P false.
 #[global]
@@ -958,7 +959,7 @@ Qed.
 
 Lemma iff_reflect : forall P b, (P<->b=true) -> reflect P b.
 Proof.
- destr_bool; intuition.
+ destr_bool; econstructor; intuition.
 Defined.
 
 (** It would be nice to join [reflect_iff] and [iff_reflect]
@@ -979,8 +980,9 @@ Defined.
 
 Lemma eqb_spec (b b' : bool) : reflect (b = b') (eqb b b').
 Proof.
- destruct b, b'; now constructor.
-Defined.
+ destruct b, b'; constructor; eauto.
+ admit.
+Admitted.
 
 (** Notations *)
 Module BoolNotations.

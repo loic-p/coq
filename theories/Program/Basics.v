@@ -42,7 +42,8 @@ Definition arrow (A B : Type) := A -> B.
 
 (** Logical implication. *)
 
-Definition impl (A B : Prop) : Prop := A -> B.
+Polymorphic Definition impl@{s s'|u v w|u<=w,v<=w} (A : Type@{s | u}) (B : Type@{s' | v})
+  : Type@{s' | w} := A -> B.
 
 (** The constant function [const a] always returns [a]. *)
 

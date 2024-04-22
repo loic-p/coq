@@ -55,17 +55,21 @@ Infix "=~=" := pequiv (at level 70, no associativity) : equiv_scope.
 
 #[global]
 Program Instance equiv_reflexive `(sa : Equivalence A) : Reflexive equiv.
+Next Obligation.
+  intros. eapply reflexivity.
+Qed.
 
 #[global]
 Program Instance equiv_symmetric `(sa : Equivalence A) : Symmetric equiv.
+Next Obligation.
+  intros. eapply symmetry; eauto.
+Qed.
 
 #[global]
 Program Instance equiv_transitive `(sa : Equivalence A) : Transitive equiv.
-
-  Next Obligation.
-  Proof. intros A R sa x y z Hxy Hyz.
-         now transitivity y.
-  Qed.
+Next Obligation.
+intros; eapply transitivity; eauto.
+Qed.
 
 Arguments equiv_symmetric {A R} sa x y : rename.
 Arguments equiv_transitive {A R} sa x y z : rename.
@@ -124,6 +128,16 @@ Section Respecting.
                    forall (x y : A), R x y -> R' (projT1 f x) (projT1 g y)).
 
   Solve Obligations with unfold respecting in * ; simpl_crelation ; program_simpl.
+
+  Next Obligation.
+  Proof.
+    red; intros. unfold respecting in *. program_simpl. reflexivity.
+  Qed.
+
+  Next Obligation.
+  Proof.
+  intros; eapply symmetry;eauto.
+  Qed.
 
   Next Obligation.
   Proof. 

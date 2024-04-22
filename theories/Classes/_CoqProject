@@ -1,3 +1,2 @@
--arg -allow-rewrite-rules
 -I /Users/nicolastabareau/Software/coq-obs/_build/install/default/lib
 -coqlib /Users/nicolastabareau/Software/coq-obs/_build/default

@@ -17,6 +17,8 @@
    Institution: LRI, CNRS UMR 8623 - University Paris Sud
 *)
 
+Require Import Prelude.
+
 Require Export Coq.Classes.Init.
 Require Import Coq.Program.Basics.
 Require Import Coq.Program.Tactics.
@@ -25,7 +27,7 @@ Generalizable Variables A B C D R S T U l eqA eqB eqC eqD.
 
 Set Universe Polymorphism.
 
-Definition crelation (A : Type) := A -> A -> Type.
+Definition crelation@{s|u v|} (A : Type@{u}) := A -> A -> Type@{s|v}.
 
 Definition arrow (A B : Type) := A -> B.
 
@@ -36,15 +38,18 @@ Definition iffT (A B : Type) := ((A -> B) * (B -> A))%type.
 (** We allow to unfold the [crelation] definition while doing morphism search. *)
 
 Section Defs.
-  Context {A : Type}.
+
+  Universe u v w.
+  Constraint u<=w, v<=w.
+  Context {A : Type@{u}}.
 
   (** We rebind crelational properties in separate classes to be able to overload each proof. *)
 
-  Class Reflexive (R : crelation A) :=
-    reflexivity : forall x : A, R x x.
+  Class Reflexive@{s| |} (R : crelation@{s|u v} A) : Type@{s|w} :=
+    reflexivity : forall x : A, R x x : Type@{s|w}.
 
-  Definition complement (R : crelation A) : crelation A := 
-    fun x y => R x y -> False.
+  Definition complement@{s| |} (R : crelation@{s|u v} A) : crelation A :=
+    fun x y => R x y -> empty@{s|v}.
 
   (** Opaque for proof-search. *)
   Typeclasses Opaque complement iffT.
@@ -53,17 +58,17 @@ Section Defs.
   Lemma complement_inverse R : complement (flip R) = flip (complement R).
   Proof. reflexivity. Qed.
 
-  Class Irreflexive (R : crelation A) :=
+  Class Irreflexive@{s| |} (R : crelation@{s|u v} A) :=
     irreflexivity : Reflexive (complement R).
 
-  Class Symmetric (R : crelation A) :=
-    symmetry : forall {x y}, R x y -> R y x.
+  Class Symmetric@{s| |} (R : crelation@{s|u v} A) : Type@{s|w} :=
+    symmetry : forall {x y}, R x y -> R y x: Type@{s|w}.
   
-  Class Asymmetric (R : crelation A) :=
-    asymmetry : forall {x y}, R x y -> (complement R y x : Type).
+  Class Asymmetric@{s| |} (R : crelation@{s|u v} A)  : Type@{s|w} :=
+    asymmetry : forall {x y}, R x y -> complement R y x : Type@{s|w}.
   
-  Class Transitive (R : crelation A) :=
-    transitivity : forall {x y z}, R x y -> R y z -> R x z.
+  Class Transitive@{s| |} (R : crelation @{s|u v} A)  : Type@{s|w} :=
+    transitivity : forall {x y z}, R x y -> R y z -> R x z: Type@{s|w}.
 
   (** Various combinations of reflexivity, symmetry and transitivity. *)
   
@@ -85,13 +90,13 @@ Section Defs.
 
   (** A partial equivalence crelation is Symmetric and Transitive. *)
   
-  Class PER (R : crelation A)  := {
+  Class PER@{s| |} (R : crelation@{s|u v} A)  : Type@{s|w} := {
     #[global] PER_Symmetric :: Symmetric R | 3 ;
     #[global] PER_Transitive :: Transitive R | 3 }.
 
   (** Equivalence crelations. *)
 
-  Class Equivalence (R : crelation A)  := {
+  Class Equivalence@{s | |} (R : crelation@{s|u v} A)  : Type@{s|w} := {
     #[global] Equivalence_Reflexive :: Reflexive R ;
     #[global] Equivalence_Symmetric :: Symmetric R ;
     #[global] Equivalence_Transitive :: Transitive R }.
@@ -104,11 +109,11 @@ Section Defs.
 
   (** We can now define antisymmetry w.r.t. an equivalence crelation on the carrier. *)
   
-  Class Antisymmetric eqA `{equ : Equivalence eqA} (R : crelation A) :=
-    antisymmetry : forall {x y}, R x y -> R y x -> eqA x y.
+  Class Antisymmetric@{s| |} eqA `{equ : Equivalence eqA} (R : crelation@{s|u v} A)  : Type@{s|w} :=
+    antisymmetry : forall {x y}, R x y -> R y x -> eqA x y: Type@{s|w}.
 
-  Class subrelation (R R' : crelation A) :=
-    is_subrelation : forall {x y}, R x y -> R' x y.
+  Class subrelation@{s| |} (R R' : crelation@{s|u v} A) : Type@{s|w} :=
+    is_subrelation : forall {x y}, R x y -> R' x y: Type@{s|w}.
   
   (** Any symmetric crelation is equal to its inverse. *)
   
@@ -142,13 +147,13 @@ Section Defs.
     Proof. firstorder. Qed.
 
     Lemma flip_StrictOrder `(StrictOrder R) : StrictOrder (flip R).
-    Proof. firstorder. Qed.
+    Proof. destruct H. econstructor; eauto. eapply flip_Transitive; eauto. Qed.
 
     Lemma flip_PER `(PER R) : PER (flip R).
-    Proof. firstorder. Qed.
+    Proof. econstructor. apply flip_Symmetric, PER_Symmetric. apply flip_Transitive, PER_Transitive.  Qed.
 
     Lemma flip_Equivalence `(Equivalence R) : Equivalence (flip R).
-    Proof. firstorder. Qed.
+    Proof. econstructor. apply flip_Reflexive. apply flip_Symmetric, PER_Symmetric. apply flip_Transitive, PER_Transitive. Qed.
 
   End flip.
 
@@ -156,7 +161,7 @@ Section Defs.
 
     Definition complement_Irreflexive `(Reflexive R)
       : Irreflexive (complement R).
-    Proof. firstorder. Qed.
+    Proof. compute; intuition. Qed.
 
     Definition complement_Symmetric `(Symmetric R) : Symmetric (complement R).
     Proof. firstorder. Qed.
@@ -171,7 +176,7 @@ Section Defs.
    crelations. This is also done automatically by the [Declare Relation A RA]
    commands. *)
 
-  Class RewriteRelation (RA : crelation A).
+  Class RewriteRelation@{s| |} (RA : crelation@{s| u v} A).
 
   (** Any [Equivalence] declared in the context is automatically considered
    a rewrite crelation. *)
@@ -181,15 +186,15 @@ Section Defs.
 
   (** Leibniz equality. *)
   Section Leibniz.
-    Global Instance eq_Reflexive : Reflexive (@eq A) := @eq_refl A.
-    Global Instance eq_Symmetric : Symmetric (@eq A) := @eq_sym A.
-    Global Instance eq_Transitive : Transitive (@eq A) := @eq_trans A.
+    Global Instance eq_Reflexive : Reflexive (@obseq A) := @obseq_refl A.
+    Global Instance eq_Symmetric : Symmetric (@obseq A) := @eq_sym A.
+    Global Instance eq_Transitive : Transitive (@obseq A) := @eq_trans A.
     
     (** Leibinz equality [eq] is an equivalence crelation.
         The instance has low priority as it is always applicable
         if only the type is constrained. *)
     
-    Global Program Instance eq_equivalence : Equivalence (@eq A) | 10.
+    Global Program Instance eq_equivalence : Equivalence (@obseq A) | 10.
   End Leibniz.
   
 End Defs.

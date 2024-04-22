@@ -54,14 +54,14 @@ Variant decimal :=
  | Decimal (i:int) (f:uint)
  | DecimalExp (i:int) (f:uint) (e:int).
 
-Scheme Equality for uint.
+(* Scheme Equality for uint.
 Scheme Equality for int.
 Scheme Equality for decimal.
 Notation int_eq_dec := signed_int_eq_dec.
 Notation int_beq := signed_int_beq.
 Notation internal_int_dec_lb := internal_signed_int_dec_lb.
 Notation internal_int_dec_bl := internal_signed_int_dec_bl.
-
+ *)
 Declare Scope dec_uint_scope.
 Delimit Scope dec_uint_scope with uint.
 Bind Scope dec_uint_scope with uint.

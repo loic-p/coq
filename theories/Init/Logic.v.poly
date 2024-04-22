@@ -30,16 +30,8 @@ Register True as core.True.type.
 Register I as core.True.I.
 
 (** [False] is the always false SProposition *)
-(** [False] is the always false SProposition *)
-
-Inductive empty@{s|u|} : Type@{s|u} :=.
 Inductive False : SProp :=.
-
-Definition empty_sind@{u|} (P : empty -> SProp) (f : empty@{Type|u}) : P f :=
-  match f as f0 return (P f0) with end.
-
-Definition empty_rect@{u v|} (P : empty -> Type@{v}) (f : empty@{Type|u}) : P f :=
-    match f as f0 return (P f0) with end.
+Inductive SFalse : SProp :=.
 
 Register False as core.False.type.
 
@@ -391,27 +383,38 @@ Unset Implicit Arguments.
 
 (* The observational equality *)
 
-Inductive obseq@{u} (A : Type@{u}) (a : A) : forall (b : A), SProp :=
+Polymorphic Inductive obseq@{s s'|u v|} (A : Type@{s|u}) (a : A) : forall (b : A), Type@{s'|v} :=
 | obseq_refl : obseq A a a.
-Notation "a ~ b" := (obseq _ a b) (at level 50).
+
+Definition obseq'@{s |u|} := obseq@{s SProp|u Set}.
+Definition obseq_refl'@{s|u|} := obseq_refl@{s SProp|u Set}.
 
 Arguments obseq {A} a _.
 Arguments obseq_refl {A a} , [A] a.
-Arguments obseq_sind {A} a P f b o.
 
-Definition obseq_trans {A : Type} {a b c : A} (e : a ~ b) (e' : b ~ c) : a ~ c :=
-  obseq_sind b (fun X _ => a ~ X) e c e'.
-Notation "e @@@ f" := (obseq_trans e f) (at level 40, left associativity, only parsing).
+Arguments obseq' {A} a _.
+Arguments obseq_refl' {A a} , [A] a.
 
-(* The equality on the universe is annoying, because it needs a superfluous universe level.
-   The other option is to have a second observational equality exclusively for universes: *)
-Inductive obseqU@{u} (A : Type@{u}) : Type@{u} -> SProp :=
-| obseqU_refl : obseqU A A.
+Notation "a = b" := (obseq a b).
+
+Notation "a ~ b" := (obseq' a b) (at level 50).
+
+Definition eq_elim@{s s'|u v v'|} (A : Type@{s|u}) (a : A) (P : forall b : A, (@obseq@{s s'|u v} A a b) -> Type@{s'|v'}) 
+  (f : P a obseq_refl) (b : A) (e : a = b : Type@{s'|v}): P b e :=
+  match e as e0 in (@obseq _ _ b0) return (P b0 e0) with
+  | @obseq_refl _ _ => f
+  end.
+
+Definition eq_rect_type@{s|u v v'|} := eq_elim@{s Type|u v v'}.
+
+Definition obseq_sind@{s|u|} := eq_elim@{s SProp|u Set Set}.
+
+Arguments obseq_sind {A} a P f b e.
 
 (* Type casting *)
 (* cast has two universe parameters because we use obseq instead of obseqU *)
 
-Symbol cast@{u v} : forall (A B : Type@{u}), @obseq@{v} Type@{u} A B -> A -> B.
+Symbol cast@{u v|u<v} : forall (A B : Type@{u}), @obseq'@{Type|v} Type@{u} A B -> A -> B.
 Notation "e # a" := (cast _ _ e a) (at level 55, only parsing).
 
 (* SSProp casting *)
@@ -426,24 +429,22 @@ Rewrite Rule cast_refl :=
 
 (* We can use cast to derive large elimination principles for obseq *)
 
-Definition ap {A B} (f : A -> B) {x y} (e : x ~ y) : f x ~ f y :=
-  obseq_sind x (fun y _ => f x ~ f y) obseq_refl _ e.
+Definition ap@{s|u|} {A B : Type@{s|u}} (f : A -> B) {x y} (e : x ~ y) : f x ~ f y :=
+  obseq_sind@{s|u} x (fun y _ => f x ~ f y) obseq_refl _ e.
 
-Definition apd {A} {a} (P : forall b : A, a ~ b -> Type) (b : A) (e : a ~ b) : P a obseq_refl ~ P b e :=
-  obseq_sind a (fun b e => P a obseq_refl ~ P b e) obseq_refl b e.
+Definition apd@{s s'|u v v'|v<v'} {A:Type@{s|u}} {a} (P : forall b : A, a ~ b -> Type@{s'|v}) (b : A) (e : a ~ b) : P a obseq_refl ~ P b e :=
+  obseq_sind@{s|u} a (fun b e => P a obseq_refl ~ P b e) obseq_refl'@{Type|v'} b e.
 
-Definition obseq_rect@{u v v'} : forall (A : Type@{u}) (a : A) (P : forall b : A, obseq@{u} a b -> Type@{v}),
-    P a obseq_refl@{u} -> forall (b : A) (e : obseq@{u} a b), P b e :=
+Definition obseq_rect_dep@{s|u v v'|v<v'} : forall (A : Type@{s|u}) (a : A) (P : forall b : A, obseq'@{s|u} a b -> Type@{v}),
+    P a obseq_refl'@{s|u} -> forall (b : A) (e : obseq'@{s|u} a b), P b e :=
   fun A a P t b e => cast@{v v'} (P a obseq_refl) (P b e) (apd P b e) t.
 
-Definition obseq_rec@{u v} : forall (A : Type@{u}) (a : A) (P : forall b : A, obseq@{u} a b -> Set),
-    P a obseq_refl@{u} -> forall (b : A) (e : obseq@{u} a b), P b e :=
-  fun A a P t b e => cast@{Set v} (P a obseq_refl) (P b e) (apd P b e) t.
+Definition eq_rec@{s|u v|Set < v} := obseq_rect_dep@{s|u Set v}.
 
 (* The SProp eliminator is an axiom.
    The observational equality should not be used with SProp anyway. *)
-Parameter obseq_ind@{u} : forall (A : Type@{u}) (a : A) (P : forall b : A, obseq@{u} a b -> SProp),
-   P a obseq_refl@{u} -> forall (b : A) (e : obseq@{u} a b), P b e.
+Parameter obseq_ind@{s|u|} : forall (A : Type@{s|u}) (a : A) (P : forall b : A, obseq'@{s|u} a b -> Prop),
+   P a obseq_refl'@{s|u} -> forall (b : A) (e : obseq'@{s|u} a b), P b e.
 
 (** Definition of the observational equality on pi's *)
 
@@ -480,11 +481,11 @@ where "x = y :> A" := (@eq A x y) : type_scope.
 
 Notation "x = y :> A" := (@obseq A x y) : type_scope.
 
-Arguments obseq_rec [A] x P _ y _ : rename.
-Arguments obseq_rect [A] x P _ y _ : rename.
+Arguments eq_rec [A] x P _ y _ : rename.
+Arguments obseq_rect_dep [A] x P _ y _ : rename.
 
-Notation "x = y" := (obseq x y) : type_scope.
-Notation "x <> y  :> T" := (~ x = y :>T) : type_scope.
+Notation "x = y" := (obseq' x y) : type_scope.
+Notation "x <> y  :> T" := (~ x = y :> T) : type_scope.
 Notation "x <> y" := (~ (x = y)) : type_scope.
 
 #[global]
@@ -496,24 +497,22 @@ Hint Resolve obseq_refl : core.
 #[global]
 Hint Resolve ex_intro ex_intro2: core.
 
-Definition eq_rect : forall [A : Type] (x : A) (P : A -> Type),
-P x -> forall a : A, x = a -> P a := fun A x P => @obseq_rect A x (fun a _ => P a).
+Definition eq_rect@{s|u v v'|v<v'} : forall [A : Type@{s|u}] (x : A) (P : A -> Type@{v}),
+P x -> forall a : A, x = a -> P a := fun A x P => @obseq_rect_dep@{s|u v v'} A x (fun a _ => P a).
 
-Definition eq_sind : forall [A : Type] (x : A) (P : A -> SProp),
+Definition eq_sind@{s|u|} : forall [A : Type@{s|u}] (x : A) (P : A -> SProp),
 P x -> forall a : A, x = a -> P a := fun A x P => @obseq_sind A x (fun a _ => P a).
 
 Arguments eq_rect [A] x P _ y _ : rename.
 
-(* Register obseq as core.obseq.type. *)
 Register obseq as core.eq.type.
-(* Register obseq_refl as core.obseq.refl. *)
 Register obseq_refl as core.eq.refl.
-(* Register obseq_ind as core.obseq.ind. *)
 Register obseq_ind as core.eq.ind.
-(* Register eq_sind as core.obseq.sind. *)
 Register eq_sind as core.eq.sind.
-(* Register eq_rect as core.obseq.rect. *)
 Register eq_rect as core.eq.rect.
+(* Register eq_elim as core.eq.rect. *)
+(* Register obseq_rect_dep as core.eq.rect. *)
+(* Register eq_rect as core.eq.rect. *)
 
 Section Logic_lemmas.
 
@@ -524,40 +523,34 @@ Section Logic_lemmas.
   Qed.
 
   Section equality.
-    Variables A B : Type.
-    Variable f : A -> B.
-    Variables x y z : A.
 
-    Theorem eq_sym : x = y -> y = x.
+    Theorem eq_sym@{s s'|u v|} (A:Type@{s|u}) (x y : A) :obseq@{s s'|u v} x y -> obseq@{s s'|u v} y x.
     Proof.
       destruct 1; reflexivity.
     Defined.
-
-    Register eq_sym as core.obseq.sym.
+  
     Register eq_sym as core.eq.sym.
 
-    Theorem eq_trans : x = y -> y = z -> x = z.
+    Theorem eq_trans@{s s'|u v|} (A:Type@{s|u}) (x y z : A) : obseq@{s s'|u v} x y -> obseq@{s s'|u v} y z -> obseq@{s s'|u v} x z.
     Proof.
       destruct 2; trivial.
     Defined.
 
-    Register eq_trans as core.obseq.trans.
     Register eq_trans as core.eq.trans.
 
-    Theorem eq_trans_r : x = y -> z = y -> x = z.
+    Theorem eq_trans_r@{s s'|u v|} (A:Type@{s|u}) (x y z : A) : obseq@{s s'|u v} x y -> obseq@{s s'|u v} z y -> obseq@{s s'|u v} x z.
     Proof.
       destruct 2; trivial.
     Defined.
 
-    Theorem f_equal : x = y -> f x = f y.
+    Theorem f_equal@{s s' s''|u u' u'' v|u' <= u''} {A:Type@{s|u}} {B:Type@{s''|u'}} {x y : A} (f : A -> B) : obseq@{s s'|u v} x y -> obseq@{s'' s'|u'' v} (f x) (f y).
     Proof.
       destruct 1; reflexivity.
     Defined.
 
-    Register f_equal as core.obseq.congr.
     Register f_equal as core.eq.congr.
 
-    Theorem not_eq_sym : x <> y -> y <> x.
+    Theorem not_eq_sym@{s s'|u v|} (A:Type@{s|u}) (x y : A): x <> y -> y <> x.
     Proof.
       red. intros h1 h2; apply h1; destruct h2; reflexivity.
     Qed.
@@ -567,31 +560,29 @@ Section Logic_lemmas.
   Definition eq_sind_r :
     forall (A:Type) (x:A) (P:A -> SProp), P x -> forall y:A, y = x -> P y.
   Proof.
-    intros A x P H y H0. elim eq_sym with (1 := H0); assumption.
+    intros A x P H y H0. induction H0 using eq_sind; assumption.
   Defined.
 
-  Register eq_sind_r as core.obseq.sind_r.
   Register eq_sind_r as core.eq.sind_r.
 
   Definition eq_ind_r :
     forall (A:Type) (x:A) (P:A -> SProp), P x -> forall y:A, y = x -> P y.
-    intros A x P H y H0. elim eq_sym with (1 := H0); assumption.
+    intros A x P H y H0. induction H0 using eq_sind; assumption.
   Defined.
 
-  Register eq_ind_r as core.obseq.ind_r.
   Register eq_ind_r as core.eq.ind_r.
 
   Definition eq_rec_r :
-    forall (A:Type) (x:A) (P:A -> Set), P x -> forall y:A, y = x -> P y.
-    intros A x P H y H0; elim eq_sym with (1 := H0); assumption.
-  Defined.
+    forall (A:Type) (x:A) (P:A -> Set), P x -> forall y:A, y = x -> P y 
+    := fun A x P t y e => eq_rect _ P t _ (eq_sym e).
+    (* intros A x P H y H0; induction H0 using eq_rect; assumption.
+  Defined. *)
 
   Definition eq_rect_r :
-    forall (A:Type) (x:A) (P:A -> Type), P x -> forall y:A, y = x -> P y.
-    intros A x P H y H0; elim eq_sym with (1 := H0); assumption.
-  Defined.
-
-  Definition obseq_rect_r := eq_rect_r.
+    forall (A:Type) (x:A) (P:A -> Type), P x -> forall y:A, y = x -> P y 
+    := fun A x P t y e => eq_rect _ P t _ (eq_sym e).
+    (* intros A x P H y H0; elim eq_sym with (1 := H0); assumption.
+  Defined. *)
 End Logic_lemmas.
 
 Module EqNotations.
@@ -631,37 +622,37 @@ Module EqNotations.
 
 
   Notation "'rew' 'dependent' H 'in' H'"
-    := (obseq_rect _ _ H' _ H)
+    := (eq_rect _ _ H' _ H)
          (at level 10, H' at level 10,
           format "'[' 'rew'  'dependent'  '/    ' H  in  '/' H' ']'").
   Notation "'rew' 'dependent' -> H 'in' H'"
-    := (obseq_rect _ _ H' _ H)
+    := (eq_rect _ _ H' _ H)
          (at level 10, H' at level 10, only parsing).
   Notation "'rew' 'dependent' <- H 'in' H'"
-    := (obseq_rect _ _ H' _ (eq_sym H))
+    := (eq_rect _ _ H' _ (eq_sym H))
          (at level 10, H' at level 10,
           format "'[' 'rew'  'dependent'  <-  '/    ' H  in  '/' H' ']'").
   Notation "'rew' 'dependent' [ 'fun' y p => P ] H 'in' H'"
-    := (obseq_rect _ (fun y p => P) H' _ H)
+    := (eq_rect _ (fun y p => P) H' _ H)
          (at level 10, H' at level 10, y name, p name,
           format "'[' 'rew'  'dependent'  [ 'fun'  y  p  =>  P ]  '/    ' H  in  '/' H' ']'").
   Notation "'rew' 'dependent' -> [ 'fun' y p => P ] H 'in' H'"
-    := (obseq_rect _ (fun y p => P) H' _ H)
+    := (eq_rect _ (fun y p => P) H' _ H)
          (at level 10, H' at level 10, y name, p name, only parsing).
   Notation "'rew' 'dependent' <- [ 'fun' y p => P ] H 'in' H'"
-    := (obseq_rect _ (fun y p => P) H' _ (eq_sym H))
+    := (eq_rect _ (fun y p => P) H' _ (eq_sym H))
          (at level 10, H' at level 10, y name, p name,
           format "'[' 'rew'  'dependent'  <-  [ 'fun'  y  p  =>  P ]  '/    ' H  in  '/' H' ']'").
   Notation "'rew' 'dependent' [ P ] H 'in' H'"
-    := (obseq_rect _ P H' _ H)
+    := (eq_rect _ P H' _ H)
          (at level 10, H' at level 10,
           format "'[' 'rew'  'dependent'  [ P ]  '/    ' H  in  '/' H' ']'").
   Notation "'rew' 'dependent' -> [ P ] H 'in' H'"
-    := (obseq_rect _ P H' _ H)
+    := (eq_rect _ P H' _ H)
          (at level 10, H' at level 10,
           only parsing).
   Notation "'rew' 'dependent' <- [ P ] H 'in' H'"
-    := (obseq_rect _ P H' _ (eq_sym H))
+    := (eq_rect _ P H' _ (eq_sym H))
          (at level 10, H' at level 10,
           format "'[' 'rew'  'dependent'  <-  [ P ]  '/    ' H  in  '/' H' ']'").
 
@@ -727,7 +718,7 @@ Defined.
 
 Lemma rew_opp_r A (P:A->Type) (x y:A) (H:x=y) (a:P y) : rew H in rew <- H in a = a.
 Proof.
-destruct H.
+destruct H. 
 reflexivity.
 Defined.
 
@@ -744,7 +735,6 @@ Proof.
   destruct 1; destruct 1; reflexivity.
 Qed.
 
-Register f_equal2 as core.obseq.congr2.
 Register f_equal2 as core.eq.congr2.
 
 Theorem f_equal3 :
@@ -773,17 +763,18 @@ Proof.
   destruct 1; destruct 1; destruct 1; destruct 1; destruct 1; reflexivity.
 Qed.
 
-(*
+
 Theorem f_equal_compose A B C (a b:A) (f:A->B) (g:B->C) (e:a=b) :
   f_equal g (f_equal f e) = f_equal (fun a => g (f a)) e.
 Proof.
   destruct e. reflexivity.
 Defined.
-*)
+
 
 (** The groupoid structure of equality *)
 
-(*
+Notation eq_refl := obseq_refl.
+
 Theorem eq_trans_refl_l A (x y:A) (e:x=y) : eq_trans eq_refl e = e.
 Proof.
   destruct e. reflexivity.
@@ -814,7 +805,6 @@ Theorem eq_trans_assoc A (x y z t:A) (e:x=y) (e':y=z) (e'':z=t) :
 Proof.
   destruct e''; reflexivity.
 Defined.
-*)
 
 Theorem rew_map A B (P:B->Type) (f:A->B) x1 x2 (H:x1=x2) (y:P (f x1)) :
   rew [fun x => P (f x)] H in y = rew f_equal f H in y.
@@ -855,10 +845,12 @@ Defined.
 
 (** Extra SProperties of equality *)
 
-(* Theorem eq_id_comm_l A (f:A->A) (Hf:forall a, a = f a) a : f_equal f (Hf a) = Hf (f a).
+(*
+Theorem eq_id_comm_l A (f:A->A) (Hf:forall a, a ~ f a) a : f_equal f (Hf a) ~ Hf (f a).
 Proof.
   unfold f_equal.
-  rewrite <- (eq_trans_sym_inv_l (Hf a)).
+  Fail rewrite <- (eq_trans_sym_inv_l (Hf a)).
+  refine (eq_elim _ _ (fun y _ => _) _ _ (eq_trans_sym_inv_l (Hf a))).
   destruct (Hf a) at 1 2.
   destruct (Hf a).
   reflexivity.
@@ -878,6 +870,7 @@ Proof.
   rewrite eq_trans_refl_l.
   reflexivity.
 Defined.
+*)
 
 Lemma eq_refl_map_distr A B x (f:A->B) : f_equal f (eq_refl x) = eq_refl (f x).
 Proof.
@@ -901,7 +894,6 @@ Proof.
 destruct e, e'.
 reflexivity.
 Defined.
-*)
 
 Lemma eq_trans_rew_distr A (P:A -> Type) (x y z:A) (e:x=y) (e':y=z) (k:P x) :
     rew (eq_trans e e') in k = rew e' in rew e in k.
@@ -955,8 +947,8 @@ Proof.
   - intros (x,(Hx,Huni)); split.
     + exists x; assumption.
     + intros x' x'' Hx' Hx''; transitivity x.
-      * symmetry; auto.
-      * auto.
+      * symmetry. apply Huni; eauto.
+      * apply Huni; auto.
 Qed.
 
 Lemma forall_exists_unique_domain_coincide :
@@ -966,7 +958,7 @@ Proof.
   intros A P (x & Hp & Huniq); split.
   - intro; exists x; auto.
   - intros (x0 & HPx0 & HQx0) x1 HPx1.
-    assert (H : x0 = x1) by (transitivity x; [symmetry|]; auto).
+    assert (H : x0 = x1) by (transitivity x; [symmetry|]; apply Huniq; auto).
     destruct H.
     assumption.
 Qed.
@@ -1013,7 +1005,7 @@ Qed.
 
 Lemma eq_stepl : forall (A : Type) (x y z : A), x = y -> x = z -> z = y.
 Proof.
-  intros A x y z H1 H2. rewrite <- H2; exact H1.
+  intros A x y z H1 H2. induction H2 using eq_sind; exact H1.
 Qed.
 
 Declare Left Step eq_stepl.
@@ -1029,28 +1021,27 @@ Declare Right Step iff_trans.
 
 
 (** Equality for [ex] *)
-(* Section ex.
+ Section ex.
   Local Unset Implicit Arguments.
- *)  (** Projecting an equality of a pair to equality of the first components *)
+   (** Projecting an equality of a pair to equality of the first components *)
 
-  (* This is not true anymore  *)
-(*   Definition ex_proj1_eq {A : SProp} {P : A -> SProp} {u v : exists a : A, P a} (p : u = v)
+   Definition ex_proj1_eq {A : SProp} {P : A -> SProp} {u v : exists a : A, P a} (p : u = v)
     : ex_proj1 u = ex_proj1 v
     := f_equal (@ex_proj1 _ _) p.
- *)
-  (** Projecting an equality of a pair to equality of the second components *)
-(*   Definition ex_proj2_eq {A : SProp} {P : A -> SProp} {u v : exists a : A, P a} (p : u = v)
-    : rew ex_proj1_eq p in ex_proj2 u = ex_proj2 v
-    := rew dependent p in eq_refl.
- *)
 
- (*
+  (** Projecting an equality of a pair to equality of the second components *)
+   Definition ex_proj2_eq {A : SProp} {P : A -> SProp} {u v : exists a : A, P a} (p : u = v)
+    : srew ex_proj1_eq p in ex_proj2 u = ex_proj2 v := eq_refl.
+    (* := srew dependent p in eq_refl. *)
+ End ex. 
+
+    (*
 Section ex2_SProp.
   Variables (A:SProp) (P Q:A->SProp).
 
   Definition ex2_rect (P0 : ex2 P Q -> Type) (f : forall x p q, P0 (ex_intro2 P Q x p q))
     : forall e, P0 e.
-    intros e. eapply f.  destruct e.
+    intros e. destruct e; eauto.
     := fun e => f _ _ _.
   Definition ex2_rec : forall (P0 : ex2 P Q -> Set) (f : forall x p q, P0 (ex_intro2 P Q x p q)),
       forall e, P0 e

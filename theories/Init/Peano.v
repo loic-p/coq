@@ -24,7 +24,6 @@
    including Peano's axioms of arithmetic (in Coq, these are provable).
    Case analysis on [nat] and induction on [nat * nat] are provided too
  *)
-
 Require Import Notations.
 Require Import Ltac.
 Require Import Datatypes.
@@ -64,7 +63,7 @@ Qed.
 #[global]
 Hint Resolve not_eq_S: core.
 
-Definition IsSucc (n:nat) : Prop :=
+Definition IsSucc (n:nat) : SProp :=
   match n with
   | O => False
   | S p => True
@@ -94,7 +93,7 @@ Infix "+" := Nat.add : nat_scope.
 Definition f_equal2_plus := f_equal2 plus.
 Definition f_equal2_nat := f_equal2 (A1:=nat) (A2:=nat). 
 #[global]
-Hint Resolve f_equal2_nat: core.
+Hint Resolve f_equal2_nat f_equal: core.
 
 Lemma plus_n_O : forall n:nat, n = n + 0.
 Proof.
@@ -102,9 +101,9 @@ Proof.
 Qed.
 
 #[global]
-Remove Hints eq_refl : core.
+Remove Hints obseq_refl : core.
 #[global]
-Hint Resolve plus_n_O eq_refl: core.  (* We want eq_refl to have higher priority than plus_n_O *)
+Hint Resolve plus_n_O obseq_refl: core.  (* We want eq_refl to have higher priority than plus_n_O *)
 
 Lemma plus_O_n : forall n:nat, 0 + n = n.
 Proof.
@@ -166,7 +165,7 @@ Infix "-" := Nat.sub : nat_scope.
 (** Definition of the usual orders, the basic properties of [le] and [lt]
     can be found in files Le and Lt *)
 
-Inductive le (n:nat) : nat -> Prop :=
+Inductive le (n:nat) : nat -> SProp :=
   | le_n : n <= n
   | le_S : forall m:nat, n <= m -> n <= S m
 
@@ -229,7 +228,7 @@ Qed.
 (** Case analysis *)
 
 Theorem nat_case :
- forall (n:nat) (P:nat -> Prop), P 0 -> (forall m:nat, P (S m)) -> P n.
+ forall (n:nat) (P:nat -> SProp), P 0 -> (forall m:nat, P (S m)) -> P n.
 Proof.
   intros n P IH0 IHS; case n; auto.
 Qed.
@@ -237,7 +236,7 @@ Qed.
 (** Principle of double induction *)
 
 Theorem nat_double_ind :
- forall R:nat -> nat -> Prop,
+ forall R:nat -> nat -> SProp,
    (forall n:nat, R 0 n) ->
    (forall n:nat, R (S n) 0) ->
    (forall n m:nat, R n m -> R (S n) (S m)) -> forall n m:nat, R n m.
@@ -255,31 +254,30 @@ Notation min := Nat.min (only parsing).
 Lemma max_l n m : m <= n -> Nat.max n m = n.
 Proof.
  revert m; induction n as [|n IHn]; intro m; destruct m; simpl; trivial.
- - inversion 1.
+ - admit. (* inversion 1. *)
  - intros. apply f_equal, IHn, le_S_n; trivial.
-Qed.
+Admitted.
 
 Lemma max_r n m : n <= m -> Nat.max n m = m.
 Proof.
  revert m; induction n as [|n IHn]; intro m; destruct m; simpl; trivial.
- - inversion 1.
+ - admit. (* inversion 1. *)
  - intros. apply f_equal, IHn, le_S_n; trivial.
-Qed.
+Admitted.
 
 Lemma min_l n m : n <= m -> Nat.min n m = n.
 Proof.
  revert m; induction n as [|n IHn]; intro m; destruct m; simpl; trivial.
- - inversion 1.
+ - admit. (* inversion 1. *)
  - intros. apply f_equal, IHn, le_S_n; trivial.
-Qed.
+Admitted.
 
 Lemma min_r n m : m <= n -> Nat.min n m = m.
 Proof.
  revert m; induction n as [|n IHn]; intro m; destruct m; simpl; trivial.
- - inversion 1.
+ - admit. (* inversion 1. *)
  - intros. apply f_equal, IHn, le_S_n; trivial.
-Qed.
-
+Admitted.
 
 Lemma nat_rect_succ_r {A} (f: A -> A) (x:A) n :
   nat_rect (fun _ => A) x (fun _ => f) (S n) = nat_rect (fun _ => A) (f x) (fun _ => f) n.

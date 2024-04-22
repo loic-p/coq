@@ -1,0 +1,8 @@
+-R /Users/nicolastabareau/Software/coq-obs/_build/default/theories/ Coq
+-R /Users/nicolastabareau/Software/coq-obs/_build/default/theories/Program/ Coq.Program
+-R /Users/nicolastabareau/Software/coq-obs/_build/default/theories/Classes Coq.Classes
+-I /Users/nicolastabareau/Software/coq-obs/_build/default/plugins/ltac/
+-I /Users/nicolastabareau/Software/coq-obs/_build/default/plugins/syntax/ Coq
+-I /Users/nicolastabareau/Software/coq-obs/_build/default/plugins/cc/
+-I /Users/nicolastabareau/Software/coq-obs/_build/default/plugins/firstorder
+-arg -allow-rewrite-rules

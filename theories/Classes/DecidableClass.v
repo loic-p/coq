@@ -8,11 +8,13 @@
 (*         *     (see LICENSE file for the text of the license)         *)
 (************************************************************************)
 
+Require Import Prelude.
+
 (** * A typeclass to ease the handling of decidable properties. *)
 
 (** A proposition is decidable whenever it is reflected by a boolean. *)
 
-Class Decidable (P : Prop) := {
+Class Decidable (P : SProp) := {
   Decidable_witness : bool;
   Decidable_spec : Decidable_witness = true <-> P
 }.

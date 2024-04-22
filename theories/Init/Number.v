@@ -19,14 +19,14 @@ Notation int := signed_int.
 
 Variant number := Decimal (d:Decimal.decimal) | Hexadecimal (h:Hexadecimal.hexadecimal).
 
-Scheme Equality for uint.
+(* Scheme Equality for uint.
 Scheme Equality for int.
 Scheme Equality for number.
 Notation int_eq_dec := signed_int_eq_dec.
 Notation int_beq := signed_int_beq.
 Notation internal_int_dec_lb := internal_signed_int_dec_lb.
 Notation internal_int_dec_bl := internal_signed_int_dec_bl.
-
+ *)
 Register uint as num.num_uint.type.
 Register int as num.num_int.type.
 Register number as num.number.type.

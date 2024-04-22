@@ -813,7 +813,7 @@ Definition to_bits (b : byte) : bool * (bool * (bool * (bool * (bool * (bool * (
      end.
 
 Lemma of_bits_to_bits (b : byte) : of_bits (to_bits b) = b.
-Proof. destruct b; exact eq_refl. Qed.
+Proof. destruct b; reflexivity. Qed.
 
 Lemma to_bits_of_bits (b : _) : to_bits (of_bits b) = b.
 Proof.
@@ -821,7 +821,7 @@ Proof.
          | p : prod _ _ |- _ => destruct p
          | b : bool |- _ => destruct b
          end;
-    exact eq_refl.
+    reflexivity.
 Qed.
 
 Definition byte_of_byte (b : byte) : byte := b.

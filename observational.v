@@ -1,5 +1,6 @@
 (* -*- mode: coq; coq-prog-args: ("-allow-rewrite-rules") -*- *)
 
+Require Import Notations.
 Set Universe Polymorphism.
 
 (* The observational equality *)
