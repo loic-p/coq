@@ -37,7 +37,8 @@ let max_indices = 4
 let obseq_constant = ref None
 let cast_constant = ref None
 let prop_cast_constant = ref None
-let ap_ty_constant = Array.make max_indices None
+let sym_constant = ref None
+let ap_ty_constant = Array.make (max_indices+1) None
 
 let declare_observational_equality = ref (fun ~univs ~name c ->
     CErrors.anomaly (Pp.str "observational axioms declarator not registered"))
@@ -326,19 +327,21 @@ let universe_of_sort env sigma s =
 
 let fetch_observational_data () =
   let obseq_qualid = Libnames.qualid_of_ident (Names.Id.of_string "obseq") in
+  let sym_qualid = Libnames.qualid_of_ident (Names.Id.of_string "obseq_sym") in
   let cast_qualid = Libnames.qualid_of_ident (Names.Id.of_string "cast") in
   let prop_cast_qualid = Libnames.qualid_of_ident (Names.Id.of_string "cast_prop") in
   try
     obseq_constant := Some (Nametab.global_inductive obseq_qualid) ;
+    sym_constant := Some (Nametab.locate_constant sym_qualid) ;
     cast_constant := Some (Nametab.locate_constant cast_qualid) ;
     prop_cast_constant := Some (Nametab.locate_constant prop_cast_qualid) ;
-    for i = 1 to max_indices do
+    for i = 1 to max_indices+1 do
       ap_ty_constant.(i - 1) <- Some (Nametab.locate_constant
                                     (Libnames.qualid_of_ident
                                        (Names.Id.of_string ("ap_ty" ^ (string_of_int i))))) ;
     done ;
   with
-    Not_found -> user_err Pp.(str "The observational equality or the cast operator does not exist.\
+    Not_found -> user_err Pp.(str "One of the observational primitives (cast, cast_prop, observational equality, ap_ty) does not exist.
                                    Did you forget to open the observational library?")
 
 
@@ -365,6 +368,17 @@ let make_obseqU ?(is_sprop = false) u tm1 tm2 =
      let univs = EConstr.EInstance.make (UVars.Instance.of_array ([| |], [| unext |])) in
      let obseq_fam = Inductiveops.make_ind_family ((obseq, univs), [ty; tm1]) in
      Inductiveops.mkAppliedInd (Inductiveops.make_ind_type (obseq_fam, [tm2]))
+
+let make_symU ?(is_sprop = false) u tm1 tm2 eq =
+  let u = if is_sprop then Univ.Universe.type0 else u in
+  let unext = if is_sprop then Univ.Universe.type1 else Univ.Universe.super u in
+  let ty = EConstr.(mkSort (if is_sprop then ESorts.sprop else (ESorts.make (Sorts.mkType u)))) in
+  match !sym_constant with
+  | None -> user_err Pp.(str "The observational equality does not exist.")
+  | Some sym ->
+     let univs = EConstr.EInstance.make (UVars.Instance.of_array ([| |], [| unext |])) in
+     let sym = EConstr.mkConstU (sym, univs) in
+     EConstr.mkApp (sym, [| ty ; tm1 ; tm2 ; eq |])
 
 (** Building @obseq_refl@{u} ty tm *)
 
@@ -587,7 +601,7 @@ let make_rewrite_rule ?loc env sigma uinst lhs rhs eqs =
     CErrors.user_err ?loc
     Pp.(str "Cast is not recognised as a head-pattern.")
   in
-  head_symbol, { nvars = (nvars' - 1, nvarqs', nvarus'); lhs_pat = head_umask, elims; rhs; equalities }
+  head_symbol, { nvars = (nvars' - 1, nvarqs', nvarus'); lhs_pat = (head_umask, elims); rhs; equalities }
 
 
 (** This function declares a new observational equality axiom, and updates the state
@@ -855,26 +869,125 @@ let declare_forded_to_normal ?loc ~poly env sigma uinst ind (normal_ctor, normal
   Global.add_rewrite_rules id { rewrules_rules = [rew] }
 
 
-let declare_forded_match_rule ?loc ~poly env sigma uinst (ind, instanciated_ind) (normal_ctor, normal_constr) (forded_ctor, forded_constr) =
-  let full_arg_ctxt = forded_ctor.csi_args in  (* defined in `params ; indx` *)
+let declare_forded_match_rule ?loc ~poly env sigma uinst (ind, idi) ctor_i (normal_ctor, normal_constr) (forded_ctor, forded_constr) =
+  let n_indx = List.length idi.idi_indx_univs in
+  let param_ctxt = idi.idi_params in
+  let indx_ctxt = idi.idi_indx in  (* defined in `params_ctxt` *)
+  let full_arg_ctxt = forded_ctor.csi_args in  (* defined in `params_ctxt ; indx_ctxt` *)
   let size_normal = List.length normal_ctor.cs_args in
   let size_total = List.length full_arg_ctxt in
   let size_forded = size_total - size_normal in
-  let param_ctxt = instanciated_ind.idi_params in
-  let indx_ctxt = instanciated_ind.idi_indx in  (* defined in `params` *)
-
-  let normal_constr = EConstr.Vars.lift size_forded normal_constr in
-  let expected_inst = Array.to_list (normal_ctor.cs_concl_realargs) in (* defined in params ; indx ; args *)
-  let expected_inst = List.map (EConstr.Vars.lift size_forded) expected_inst in
-  let actual_inst = Context.Rel.instance_list EConstr.mkRel size_total indx_ctxt in
-
-  let case_info = Inductiveops.make_case_info env ind Constr.RegularStyle in
-  (* let lhs = Inductiveops.make_case_or_project env sigma instanciated_ind.idi_ind_type case_info pred scrutinee branches in *)
+  let forded_arg_ctxt, normal_arg_ctxt = separate size_forded full_arg_ctxt in
 
   (* We build the evar instance of the context. *)
   let sigma, esubst = evar_ctxt false env sigma (full_arg_ctxt @ indx_ctxt @ param_ctxt) in
+  (* we substitute the inductive family with all the evars *)
+  let ind_family = fst (Inductiveops.dest_ind_type idi.idi_ind_type) in
+  let ind_family = Inductiveops.lift_inductive_family size_total ind_family in
+  let ind_family = Inductiveops.substnl_ind_family esubst 0 ind_family in
 
-  ()
+  (* these are all defined in params ; indx ; args ; forded *)
+  let normal_arg_inst = Context.Rel.instance_list EConstr.mkRel size_forded normal_arg_ctxt in
+  let normal_arg_inst = List.map (EConstr.Vars.substl esubst) normal_arg_inst in
+  let forded_arg_inst = Context.Rel.instance_list EConstr.mkRel 0 forded_arg_ctxt in
+  let forded_arg_inst = List.map (EConstr.Vars.substl esubst) forded_arg_inst in
+  let forded_indx_inst = Context.Rel.instance_list EConstr.mkRel size_total indx_ctxt in
+  let forded_indx_inst = List.map (EConstr.Vars.substl esubst) forded_indx_inst in
+  let indx_inst = Array.to_list (normal_ctor.cs_concl_realargs) in
+  let indx_inst = List.map (EConstr.Vars.lift size_forded) indx_inst in
+  let indx_inst = List.map (EConstr.Vars.substl esubst) indx_inst in
+
+  let ind_constr = EConstr.Vars.lift size_total idi.idi_ind_constr in
+  let ind_constr = EConstr.Vars.substl esubst ind_constr in
+  let forded_constr = EConstr.Vars.substl esubst forded_constr in
+  let normal_constr = EConstr.Vars.lift size_forded normal_constr in
+  let normal_constr = EConstr.Vars.substl esubst normal_constr in
+
+  let add_evar_in_context env sigma ctxt ty =
+    let env = EConstr.push_rel_context ctxt env in
+    let relevance = Some Sorts.Relevant in
+    let src = Some (None , Evar_kinds.MatchingVar (Evar_kinds.FirstOrderPatVar (Names.Id.of_string "_"))) in
+    Evarutil.new_evar ?src ?relevance env sigma ty
+  in
+
+  (* return predicate *)
+  let pred_arity = Inductiveops.make_arity_signature env sigma true ind_family in
+  let sigma, pred_u = Evd.new_univ_level_variable Evd.univ_rigid sigma in
+  let pred_u = Univ.Universe.make pred_u in
+  let pred_sort = EConstr.ESorts.make (Sorts.mkType pred_u) in
+  let sigma, pred_ev = add_evar_in_context env sigma pred_arity (EConstr.mkSort pred_sort) in
+  let pred = EConstr.it_mkLambda_or_LetIn pred_ev pred_arity, EConstr.EQualUniv.of_sort sigma pred_sort in
+  (* branches *)
+  let ctors = Inductiveops.get_constructors env ind_family in
+  let do_branch ctor (sigma, branches, branch_evs) =
+    let branch_args = name_context env sigma ctor.cs_args in
+    let branch_indx_inst = Array.to_list ctor.cs_concl_realargs in
+    let branch_ctor = Inductiveops.build_dependent_constructor ctor in
+    let branch_ty = EConstr.Vars.substl (branch_ctor :: (List.rev branch_indx_inst)) pred_ev in
+    let sigma, branch_ev = add_evar_in_context env sigma branch_args branch_ty in
+    let branch = EConstr.it_mkLambda_or_LetIn branch_ev branch_args in
+    sigma, branch::branches, branch_ev::branch_evs
+  in
+  let (sigma, branches, branch_evs) = Array.fold_right do_branch ctors (sigma, [], []) in
+  let branches = Array.of_list branches in
+  (* match statement *)
+  let case_info = Inductiveops.make_case_info env ind Constr.RegularStyle in
+  let lhs= Inductiveops.make_case_or_project env sigma idi.idi_ind_type case_info pred forded_constr branches in
+
+  (* return predicate instanciated with the normal constructor *)
+  let indx_subst = normal_constr :: List.rev indx_inst in
+  let indx_ty = EConstr.Vars.substl indx_subst pred_ev in
+  (* return predicate instanciated with the forded constructor *)
+  let forded_indx_subst = forded_constr :: List.rev forded_indx_inst in
+  let forded_indx_ty = EConstr.Vars.substl forded_indx_subst pred_ev in
+  (* equality between the two predicates *)
+  let refl_normal_constr = make_obseq_refl idi.idi_univ ind_constr normal_constr in
+  let forded_arg_subst = forded_arg_inst @ [refl_normal_constr] in
+  let telescope = EConstr.Vars.smash_rel_context pred_arity in
+  (* let semi_applied_ind = *)
+  (*   let ind, params = Inductiveops.dest_ind_family ind_family in *)
+  (*   let indx = Context.Rel.instance_list EConstr.mkRel 0 telescope in *)
+  (*   let c = EConstr.applist (EConstr.mkIndU ind, params @ indx) in *)
+  (*   let annot = Context.make_annot Names.Name.Anonymous Sorts.Relevant in *)
+  (*   Context.Rel.Declaration.LocalAssum (annot, c) *)
+  (* in *)
+  (* let telescope = semi_applied_ind :: telescope in *)
+  let telescope =
+    let annot = Context.make_annot Names.Name.Anonymous Sorts.Relevant in
+    Context.Rel.Declaration.LocalAssum (annot, pred_ev) :: telescope
+  in
+  let tel_univs = List.map fst idi.idi_indx_univs in
+  let tel_univs = tel_univs @ [idi.idi_univ; pred_u] in
+  let eq_tm = make_ap_ty (n_indx+1) telescope (List.rev tel_univs) forded_indx_subst indx_subst (List.rev forded_arg_subst) in
+  let eq_tm = make_symU pred_u forded_indx_ty indx_ty eq_tm in
+  let eq_ty = make_obseqU pred_u indx_ty forded_indx_ty in
+  let eq_annot = Context.make_annot (Names.Name.mk_name (Names.Id.of_string "e")) Sorts.Irrelevant in
+  let eq_ctxt = [Context.Rel.Declaration.LocalDef (eq_annot, eq_tm, eq_ty)] in
+  let eq_var = EConstr.mkRel 1 in
+  (* branch for the normal constructor instanciated with the arguemnts of the forded constructor *)
+  let branch_ev = List.nth branch_evs ctor_i in
+  let branch_ev = EConstr.Vars.substl (List.rev normal_arg_inst) branch_ev in
+  (* cast branch *)
+  let rhs = make_cast pred_u indx_ty forded_indx_ty eq_var branch_ev in
+  let rhs = EConstr.it_mkLambda_or_LetIn rhs eq_ctxt in
+
+  (* optional debug *)
+  Feedback.msg_debug (strbrk "We are trying to declare the rewrite rule "
+                      ++ Termops.Internal.print_constr_env env sigma lhs
+                      ++ fnl ()
+                      ++ str " ==> "
+                      ++ Termops.Internal.print_constr_env env sigma rhs) ;
+
+  let ty_left = Retyping.get_type_of env sigma lhs in
+  Feedback.msg_debug (str "The left side has type "
+                      ++ Termops.Internal.print_constr_env env sigma ty_left) ;
+  let ty_right = Retyping.get_type_of env sigma rhs in
+  Feedback.msg_debug (str "The right side has type "
+                      ++ Termops.Internal.print_constr_env env sigma ty_right) ;
+
+  let id = Names.Id.of_string ("match_" ^ Names.Id.to_string forded_ctor.csi_name) in
+  let rew = make_rewrite_rule ?loc env sigma uinst (EConstr.Unsafe.to_constr lhs) rhs [] in
+  Global.add_rewrite_rules id { rewrules_rules = [rew] }
 
 (** Grabs the universes from ctxt after pushing local_ctxt in the environment *)
 
@@ -1029,7 +1142,7 @@ let declare_one_inductive_obs_eqs ?loc ind =
            (ctors.(i), normal_ctor_constr) (forded_ctor, forded_ctor_constr) ;
          (* reduction of match on forded contstructors *)
          declare_forded_match_rule ?loc ~poly env sigma u (ind, instantiated_ind)
-           (ctors.(i), normal_ctor_constr) (forded_ctor, forded_ctor_constr) ;
+           i (ctors.(i), normal_ctor_constr) (forded_ctor, forded_ctor_constr) ;
          ()
        else
          let ctor_constr = Inductiveops.build_dependent_constructor ctors.(i) in (* defined in context `params ; args` *)
