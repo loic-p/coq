@@ -544,10 +544,10 @@ let declare_forded_ctor ?loc ~poly env sigma ctor =
   let forded_ctor = EConstr.it_mkProd_or_LetIn ty ctxt in
 
   (* optional debug *)
-  Feedback.msg_debug (str "Observational inductives: Declaring parameter "
-                      ++ str (Names.Id.to_string ctor.csi_name)
-                      ++ str " whose type is "
-                      ++ Termops.Internal.print_constr_env env sigma forded_ctor) ;
+  (* Feedback.msg_debug (str "Observational inductives: Declaring parameter " *)
+  (*                     ++ str (Names.Id.to_string ctor.csi_name) *)
+  (*                     ++ str " whose type is " *)
+  (*                     ++ Termops.Internal.print_constr_env env sigma forded_ctor) ; *)
 
   (* normalizing the universes in the evar map and in the body of the axiom *)
   let uctx = Evd.evar_universe_context sigma in
@@ -632,10 +632,10 @@ let declare_ctorarg_obs_eq ~poly env u1 name decl (sigma, ctxt, ren1, ren2, cnt)
      let name = Names.Id.of_string (name ^ string_of_int cnt) in
 
      (* optional debug *)
-     Feedback.msg_debug (str "Observational inductives: Declaring parameter "
-                         ++ str (Names.Id.to_string name)
-                         ++ str " whose type is "
-                         ++ Termops.Internal.print_constr_env env sigma axiom) ;
+     (* Feedback.msg_debug (str "Observational inductives: Declaring parameter " *)
+     (*                     ++ str (Names.Id.to_string name) *)
+     (*                     ++ str " whose type is " *)
+     (*                     ++ Termops.Internal.print_constr_env env sigma axiom) ; *)
 
      (* normalizing the universes in the evar map and in the body of the axiom *)
      let uctx = Evd.evar_universe_context sigma in
@@ -744,18 +744,18 @@ let declare_ctor_cast_rule ?loc ~poly env uinst state ind (ctor, ctor_constr) =
   let id = Names.Id.of_string ("rewrite_" ^ Names.Id.to_string ctor.csi_name) in
 
   (* optional debug *)
-  Feedback.msg_debug (strbrk "We are trying to declare the rewrite rule "
-                      ++ Termops.Internal.print_constr_env env sigma rew_left
-                      ++ fnl ()
-                      ++ str " ==> "
-                      ++ Termops.Internal.print_constr_env env sigma rew_right) ;
+  (* Feedback.msg_debug (strbrk "We are trying to declare the rewrite rule " *)
+  (*                     ++ Termops.Internal.print_constr_env env sigma rew_left *)
+  (*                     ++ fnl () *)
+  (*                     ++ str " ==> " *)
+  (*                     ++ Termops.Internal.print_constr_env env sigma rew_right) ; *)
 
-  let ty_left = Retyping.get_type_of env sigma rew_left in
-  Feedback.msg_debug (str "The left side has type "
-                      ++ Termops.Internal.print_constr_env env sigma ty_left) ;
-  let ty_right = Retyping.get_type_of env sigma rew_right in
-  Feedback.msg_debug (str "The right side has type "
-                      ++ Termops.Internal.print_constr_env env sigma ty_right) ;
+  (* let ty_left = Retyping.get_type_of env sigma rew_left in *)
+  (* Feedback.msg_debug (str "The left side has type " *)
+  (*                     ++ Termops.Internal.print_constr_env env sigma ty_left) ; *)
+  (* let ty_right = Retyping.get_type_of env sigma rew_right in *)
+  (* Feedback.msg_debug (str "The right side has type " *)
+  (*                     ++ Termops.Internal.print_constr_env env sigma ty_right) ; *)
 
   let rew = make_rewrite_rule ?loc env sigma uinst (EConstr.Unsafe.to_constr rew_left) rew_right [] in
   Global.add_rewrite_rules id { rewrules_rules = [rew] }
@@ -806,18 +806,18 @@ let declare_normal_to_forded ?loc ~poly env uinst state ind (normal_ctor, normal
   let id = Names.Id.of_string ("rewrite_" ^ Names.Id.to_string forded_ctor.csi_base_name) in
 
   (* optional debug *)
-  Feedback.msg_debug (strbrk "We are trying to declare the rewrite rule "
-                      ++ Termops.Internal.print_constr_env env sigma rew_left
-                      ++ fnl ()
-                      ++ str " ==> "
-                      ++ Termops.Internal.print_constr_env env sigma rew_right) ;
+  (* Feedback.msg_debug (strbrk "We are trying to declare the rewrite rule " *)
+  (*                     ++ Termops.Internal.print_constr_env env sigma rew_left *)
+  (*                     ++ fnl () *)
+  (*                     ++ str " ==> " *)
+  (*                     ++ Termops.Internal.print_constr_env env sigma rew_right) ; *)
 
-  let ty_left = Retyping.get_type_of env sigma rew_left in
-  Feedback.msg_debug (str "The left side has type "
-                      ++ Termops.Internal.print_constr_env env sigma ty_left) ;
-  let ty_right = Retyping.get_type_of env sigma rew_right in
-  Feedback.msg_debug (str "The right side has type "
-                      ++ Termops.Internal.print_constr_env env sigma ty_right) ;
+  (* let ty_left = Retyping.get_type_of env sigma rew_left in *)
+  (* Feedback.msg_debug (str "The left side has type " *)
+  (*                     ++ Termops.Internal.print_constr_env env sigma ty_left) ; *)
+  (* let ty_right = Retyping.get_type_of env sigma rew_right in *)
+  (* Feedback.msg_debug (str "The right side has type " *)
+  (*                     ++ Termops.Internal.print_constr_env env sigma ty_right) ; *)
 
   let rew = make_rewrite_rule ?loc env sigma uinst (EConstr.Unsafe.to_constr rew_left) rew_right [] in
   Global.add_rewrite_rules id { rewrules_rules = [rew] }
@@ -850,20 +850,20 @@ let declare_forded_to_normal ?loc ~poly env sigma uinst ind (normal_ctor, normal
   let id = Names.Id.of_string ("rewrite_" ^ Names.Id.to_string forded_ctor.csi_name ^ "_refl") in
 
   (* optional debug *)
-  let debug_str = (strbrk "We are trying to declare the rewrite rule "
-                   ++ Termops.Internal.print_constr_env env sigma rew_left
-                   ++ fnl ()
-                   ++ str " ==> "
-                   ++ Termops.Internal.print_constr_env env sigma rew_right
-                   ++ fnl ()
-                   ++ str "With equations ") in
-  let debug_str = List.fold_left
-      (fun s (l, r) -> s ++ (Termops.Internal.print_constr_env env sigma l)
-                       ++ str " = "
-                       ++ (Termops.Internal.print_constr_env env sigma r)
-                       ++ fnl ())
-      debug_str rew_equations in
-  Feedback.msg_debug debug_str ;
+  (* let debug_str = (strbrk "We are trying to declare the rewrite rule " *)
+  (*                  ++ Termops.Internal.print_constr_env env sigma rew_left *)
+  (*                  ++ fnl () *)
+  (*                  ++ str " ==> " *)
+  (*                  ++ Termops.Internal.print_constr_env env sigma rew_right *)
+  (*                  ++ fnl () *)
+  (*                  ++ str "With equations ") in *)
+  (* let debug_str = List.fold_left *)
+  (*     (fun s (l, r) -> s ++ (Termops.Internal.print_constr_env env sigma l) *)
+  (*                      ++ str " = " *)
+  (*                      ++ (Termops.Internal.print_constr_env env sigma r) *)
+  (*                      ++ fnl ()) *)
+  (*     debug_str rew_equations in *)
+  (* Feedback.msg_debug debug_str ; *)
 
   let rew = make_rewrite_rule ?loc env sigma uinst (EConstr.Unsafe.to_constr rew_left) rew_right rew_equations in
   Global.add_rewrite_rules id { rewrules_rules = [rew] }
@@ -972,18 +972,18 @@ let declare_forded_match_rule ?loc ~poly env sigma uinst (ind, idi) ctor_i (norm
   let rhs = EConstr.it_mkLambda_or_LetIn rhs eq_ctxt in
 
   (* optional debug *)
-  Feedback.msg_debug (strbrk "We are trying to declare the rewrite rule "
-                      ++ Termops.Internal.print_constr_env env sigma lhs
-                      ++ fnl ()
-                      ++ str " ==> "
-                      ++ Termops.Internal.print_constr_env env sigma rhs) ;
+  (* Feedback.msg_debug (strbrk "We are trying to declare the rewrite rule " *)
+  (*                     ++ Termops.Internal.print_constr_env env sigma lhs *)
+  (*                     ++ fnl () *)
+  (*                     ++ str " ==> " *)
+  (*                     ++ Termops.Internal.print_constr_env env sigma rhs) ; *)
 
-  let ty_left = Retyping.get_type_of env sigma lhs in
-  Feedback.msg_debug (str "The left side has type "
-                      ++ Termops.Internal.print_constr_env env sigma ty_left) ;
-  let ty_right = Retyping.get_type_of env sigma rhs in
-  Feedback.msg_debug (str "The right side has type "
-                      ++ Termops.Internal.print_constr_env env sigma ty_right) ;
+  (* let ty_left = Retyping.get_type_of env sigma lhs in *)
+  (* Feedback.msg_debug (str "The left side has type " *)
+  (*                     ++ Termops.Internal.print_constr_env env sigma ty_left) ; *)
+  (* let ty_right = Retyping.get_type_of env sigma rhs in *)
+  (* Feedback.msg_debug (str "The right side has type " *)
+  (*                     ++ Termops.Internal.print_constr_env env sigma ty_right) ; *)
 
   let id = Names.Id.of_string ("match_" ^ Names.Id.to_string forded_ctor.csi_name) in
   let rew = make_rewrite_rule ?loc env sigma uinst (EConstr.Unsafe.to_constr lhs) rhs [] in
