@@ -8,8 +8,11 @@ theory which is described in
 
 ### Observational Equality
 
-The core language is extended with two new primitives:
+The core language is extended with two new primitives, which are defined in
+Init/Logic.v
 ```
+Require Import Logic.
+
 obseq : forall (A : Type), A -> A -> SProp
 Notation "a ~ b" := obseq _ a b.
 
@@ -63,23 +66,11 @@ Information on how to build and install from sources can be found in
 
 ## Documentation
 
-The sources of the documentation can be found in directory [`doc`](doc).
-See [`doc/README.md`](/doc/README.md) to learn more about the documentation,
-in particular how to build it. The
-documentation of the last released version is available on the Coq
+The documentation for the main branch of Coq is avaiblable on the Coq
 web site at [coq.inria.fr/documentation](http://coq.inria.fr/documentation).
 See also [Cocorico](https://github.com/coq/coq/wiki) (the Coq wiki),
 and the [Coq FAQ](https://github.com/coq/coq/wiki/The-Coq-FAQ),
 for additional user-contributed documentation.
-
-The documentation of the master branch is continuously deployed.  See:
-- [Reference Manual (master)][refman-master]
-- [Documentation of the standard library (master)][stdlib-master]
-- [Documentation of the ML API (master)][api-master]
-
-[api-master]: https://coq.github.io/doc/master/api/
-[refman-master]: https://coq.github.io/doc/master/refman/
-[stdlib-master]: https://coq.github.io/doc/master/stdlib/
 
 ## Questions and discussion
 
@@ -95,17 +86,7 @@ lists several other active platforms.
 
 ## Bug reports
 
-Please report any bug / feature request in [our issue tracker](https://github.com/coq/coq/issues).
-
-To be effective, bug reports should mention the OCaml version used
-to compile and run Coq, the Coq version (`coqtop -v`), the configuration
-used, and include a complete source example leading to the bug.
-
-## Contributing to Coq
-
-Guidelines for contributing to Coq in various ways are listed in the [contributor's guide](CONTRIBUTING.md).
-
-Information about release plans is at https://github.com/coq/coq/wiki/Release-Plan
+Please open an issue for any bug or feature request with observational Coq!
 
 ## Supporting Coq
 
