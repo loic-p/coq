@@ -112,7 +112,7 @@ let default_logic_config = {
   impredicative_set = false;
   indices_matter = false;
   type_in_type = false;
-  rewrite_rules = false;
+  rewrite_rules = true;
   toplevel_name = TopLogical default_toplevel;
 }
 
