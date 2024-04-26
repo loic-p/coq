@@ -550,13 +550,13 @@ let sprop_allowed env = env.env_typing_flags.sprop_allowed
 
 let allow_rewrite_rules env =
   (* We need to be safe with reduction machines *)
-  let flags = typing_flags env in
-  let env = set_typing_flags
-    { flags with
-      enable_VM = false;
-      enable_native_compiler = false }
-    env
-  in
+  (* let flags = typing_flags env in *)
+  (* let env = set_typing_flags *)
+  (*   { flags with *)
+  (*     enable_VM = false; *)
+  (*     enable_native_compiler = false } *)
+  (*   env *)
+  (* in *)
   { env with rewrite_rules_allowed = true }
 
 let rewrite_rules_allowed env = env.rewrite_rules_allowed
