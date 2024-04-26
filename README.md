@@ -1,51 +1,63 @@
-# Coq
+# Observational Coq
 
-[![GitLab CI][gitlab-badge]][gitlab-link]
-[![GitHub macOS CI][gh-macos-badge]][gh-macos-link]
-[![GitHub Windows CI][gh-win-badge]][gh-win-link]
-[![Zulip][zulip-badge]][zulip-link]
-[![Discourse][discourse-badge]][discourse-link]
-[![DOI][doi-badge]][doi-link]
+Observational Coq is an extension of Coq that implements the observational type
+theory which is described in
+[Observational Equality meets CIC](https://link.springer.com/chapter/10.1007/978-3-031-57262-3_12).
 
-[gitlab-badge]: https://gitlab.inria.fr/coq/coq/badges/master/pipeline.svg
-[gitlab-link]: https://gitlab.inria.fr/coq/coq/commits/master
+## Features
 
-[gh-macos-badge]: https://github.com/coq/coq/actions/workflows/ci-macos.yml/badge.svg
-[gh-macos-link]: https://github.com/coq/coq/actions/workflows/ci-macos.yml
+### Observational Equality
 
-[gh-win-badge]: https://github.com/coq/coq/actions/workflows/ci-windows.yml/badge.svg
-[gh-win-link]: https://github.com/coq/coq/actions/workflows/ci-windows.yml
+The core language is extended with two new primitives:
+```
+obseq : forall (A : Type), A -> A -> SProp
+Notation "a ~ b" := obseq _ a b.
 
-[discourse-badge]: https://img.shields.io/badge/Discourse-forum-informational.svg
-[discourse-link]: https://coq.discourse.group/
+cast : forall (A B : Type) (e : A ~ B), A -> B
+Notation "e # t" := cast _ _ e t.
+```
+The observational equality `a ~ b` is intended as a replacement for the usual
+equality of Coq. It satisfies the extensionality of functions (`funext`) as well
+as the extensionality of propositions (`propext`), and by virtue of being a
+strict proposition, it satisfies the principle of uniqueness of identity proofs
+(UIP).
 
-[zulip-badge]: https://img.shields.io/badge/Zulip-chat-informational.svg
-[zulip-link]: https://coq.zulipchat.com/
+Unlike the inductive equality, observational equality does not support large
+elimination via pattern-matching. Instead, you may use the `cast` operator to
+perform coercions between two observationally equal types, which is just as
+expressive as pattern-matching.
 
-[doi-badge]: https://zenodo.org/badge/DOI/10.5281/zenodo.1003420.svg
-[doi-link]: https://doi.org/10.5281/zenodo.1003420
+The file observational.v contains a handful of examples for the basic
+manipulation of observational equality.
 
-Coq is a formal proof management system. It provides a formal language to write
-mathematical definitions, executable algorithms and theorems together with an
-environment for semi-interactive development of machine-checked proofs.
+### Inductive Types
+
+In order to use inductive types with observational equality, you should
+activate the flag `Set Observational Inductives`. This way, Coq will
+automatically generate new observational principles at every inductive
+declaration. For instance, if you define the type of lists as follows:
+```
+Set Observational Inductives.
+Inductive list (A : Type) :=
+| nil : list A
+| cons : A -> list A -> list A.
+```
+Then Coq will generate the observational principle `obseq_cons_0` which
+has type `list A ~ list B -> A ~ B`.
+
+Quotient types should be supported in the near future.
+
+### Compatibility
+
+Observational Coq is an experimental branch. For the time being, it is
+incompatible with several other features of Coq, including coinductive types,
+sections, and extraction.
+
+Observational Coq is also incompatible with the universe Prop, for theoretical
+reasons. You should use SProp instead.
 
 ## Installation
 
-[![latest packaged version(s)][repology-badge]][repology-link]
-
-[![Docker Hub package][dockerhub-badge]][dockerhub-link]
-[![latest dockerized version][coqorg-badge]][coqorg-link]
-
-[repology-badge]: https://repology.org/badge/latest-versions/coq.svg
-[repology-link]: https://repology.org/metapackage/coq/versions
-
-[dockerhub-badge]: https://img.shields.io/badge/images%20on-Docker%20Hub-blue.svg
-[dockerhub-link]: https://hub.docker.com/r/coqorg/coq#supported-tags "Supported tags on Docker Hub"
-
-[coqorg-badge]: https://img.shields.io/docker/v/coqorg/coq/latest
-[coqorg-link]: https://github.com/coq-community/docker-coq/wiki#docker-coq-images "coqorg/coq:latest"
-
-Please see https://coq.inria.fr/download.
 Information on how to build and install from sources can be found in
 [`INSTALL.md`](INSTALL.md).
 
@@ -68,15 +80,6 @@ The documentation of the master branch is continuously deployed.  See:
 [api-master]: https://coq.github.io/doc/master/api/
 [refman-master]: https://coq.github.io/doc/master/refman/
 [stdlib-master]: https://coq.github.io/doc/master/stdlib/
-
-## Changes
-
-The [Recent
-changes](https://coq.github.io/doc/master/refman/changes.html) chapter
-of the reference manual explains the differences and the
-incompatibilities of each new version of Coq. If you upgrade Coq,
-please read it carefully as it contains important advice on how to
-approach some problems you may encounter.
 
 ## Questions and discussion
 
